@@ -1,6 +1,6 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.4";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.5";
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -158,17 +158,59 @@ const MUTATION_RULES = {
   piebaldChance: 0.05
 };
 const ODDS_COLORS = ["#14726f", "#b94a2c", "#b8861c", "#4d6d3c", "#5b5b8f", "#a73535", "#2f6f8f", "#7a5b35", "#996c9e"];
-const FLAME_STALKER_TURNTABLE_BASE = "./assets/skins/flame-stalker/";
-const FLAME_STALKER_TURNTABLES = new Map([
-  ["ashfall", "ashfall.mp4"],
-  ["blue flame", "blue-flame.mp4"],
-  ["brindle", "brindle.mp4"],
-  ["burnout", "burnout.mp4"],
-  ["iconic", "iconic.mp4"],
-  ["lava rock", "lava-rock.mp4"],
-  ["leucistic", "leucistic.mp4"],
-  ["leumelan", "leumelan.mp4"],
-  ["melanistic", "melanistic.mp4"]
+const SKIN_TURNTABLES = new Map([
+  ["Flame Stalker::ashfall", "flame-stalker/ashfall.mp4"],
+  ["Flame Stalker::blue flame", "flame-stalker/blue-flame.mp4"],
+  ["Flame Stalker::brindle", "flame-stalker/brindle.mp4"],
+  ["Flame Stalker::burnout", "flame-stalker/burnout.mp4"],
+  ["Flame Stalker::iconic", "flame-stalker/iconic.mp4"],
+  ["Flame Stalker::lava rock", "flame-stalker/lava-rock.mp4"],
+  ["Flame Stalker::leucistic", "flame-stalker/leucistic.mp4"],
+  ["Flame Stalker::leumelan", "flame-stalker/leumelan.mp4"],
+  ["Flame Stalker::melanistic", "flame-stalker/melanistic.mp4"],
+  ["Acid Spitter::alpine burst", "acid-spitter/alpine-burst.mp4"],
+  ["Acid Spitter::brindle", "acid-spitter/brindle.mp4"],
+  ["Acid Spitter::hyena", "acid-spitter/hyena.mp4"],
+  ["Acid Spitter::iconic", "acid-spitter/iconic.mp4"],
+  ["Acid Spitter::leucistic", "acid-spitter/leucistic.mp4"],
+  ["Acid Spitter::leumelan", "acid-spitter/leumelan.mp4"],
+  ["Acid Spitter::melanistic", "acid-spitter/melanistic.mp4"],
+  ["Acid Spitter::pack hunter", "acid-spitter/pack-hunter.mp4"],
+  ["Acid Spitter::purple roan", "acid-spitter/purple-roan.mp4"],
+  ["Acid Spitter::wild savannah", "acid-spitter/wild-savannah.mp4"],
+  ["Blitz Striker::aftershock", "blitz-striker/aftershock.mp4"],
+  ["Blitz Striker::brindle", "blitz-striker/brindle.mp4"],
+  ["Blitz Striker::constrictor", "blitz-striker/constrictor.mp4"],
+  ["Blitz Striker::iconic", "blitz-striker/iconic.mp4"],
+  ["Blitz Striker::melanistic", "blitz-striker/melanistic.mp4"],
+  ["Blitz Striker::thunder flash", "blitz-striker/thunder-flash.mp4"],
+  ["Blitz Striker::vertigo", "blitz-striker/vertigo.mp4"],
+  ["Inferno Ravager::brindle", "inferno-ravager/brindle.mp4"],
+  ["Inferno Ravager::burning ash", "inferno-ravager/burning-ash.mp4"],
+  ["Inferno Ravager::ember dawn", "inferno-ravager/ember-dawn.mp4"],
+  ["Inferno Ravager::hellfire", "inferno-ravager/hellfire.mp4"],
+  ["Inferno Ravager::hot iron", "inferno-ravager/hot-iron.mp4"],
+  ["Inferno Ravager::iconic", "inferno-ravager/iconic.mp4"],
+  ["Inferno Ravager::leumelan", "inferno-ravager/leumelan.mp4"],
+  ["Inferno Ravager::melanistic", "inferno-ravager/melanistic.mp4"],
+  ["Inferno Ravager::sulfire", "inferno-ravager/sulfire.mp4"],
+  ["Inferno Ravager::tigerclaw", "inferno-ravager/tigerclaw.mp4"],
+  ["Shadow Scale::brindle", "shadow-scale/brindle.mp4"],
+  ["Shadow Scale::eclipse", "shadow-scale/eclipse.mp4"],
+  ["Shadow Scale::leucistic", "shadow-scale/leucistic.mp4"],
+  ["Shadow Scale::leumelan", "shadow-scale/leumelan.mp4"],
+  ["Shadow Scale::melanistic", "shadow-scale/melanistic.mp4"],
+  ["Shadow Scale::piebald", "shadow-scale/piebald.mp4"],
+  ["Shadow Scale::stardust", "shadow-scale/stardust.mp4"],
+  ["Shadow Scale::stellar nebula", "shadow-scale/stellar-nebula.mp4"],
+  ["Shadow Scale::twilight", "shadow-scale/twilight.mp4"],
+  ["Brood Watcher::bone breaker", "brood-watcher/bone-breaker.mp4"],
+  ["Brood Watcher::brindle", "brood-watcher/brindle.mp4"],
+  ["Brood Watcher::broken", "brood-watcher/broken.mp4"],
+  ["Brood Watcher::fractured", "brood-watcher/fractured.mp4"],
+  ["Brood Watcher::leucistic", "brood-watcher/leucistic.mp4"],
+  ["Brood Watcher::melanistic", "brood-watcher/melanistic.mp4"],
+  ["Brood Watcher::severed", "brood-watcher/severed.mp4"]
 ]);
 const SPECIES_ALIASES = new Map([
   ["shadow scale", "Shadow Scale"],
@@ -1301,6 +1343,7 @@ function bindEvents() {
   els.skinList.addEventListener("pointerout", handleSkinTurntableStop);
   els.skinList.addEventListener("focusin", handleSkinTurntableStart);
   els.skinList.addEventListener("focusout", handleSkinTurntableStop);
+  els.skinList.addEventListener("change", handleSkinTurntableVariantChange);
   els.upstatList?.addEventListener("click", handleUpstatAction);
   els.mapPinList?.addEventListener("click", handleMapPinAction);
 }
@@ -2314,7 +2357,7 @@ function renderSkins() {
 }
 
 function renderSkinCard(skin) {
-  const turntable = flameStalkerTurntableForSkin(skin);
+  const turntable = turntableForSkin(skin);
   return `
     <article class="skin-card${turntable ? " has-turntable" : ""}" data-id="${escapeAttr(skin.id)}">
       ${renderSkinTurntable(turntable, skin)}
@@ -2338,20 +2381,39 @@ function renderSkinCard(skin) {
   `;
 }
 
-function flameStalkerTurntableForSkin(skin) {
-  const file = FLAME_STALKER_TURNTABLES.get(canonicalSkinName(skin.name));
-  if (!file) return "";
-  if (skin.species !== "Flame Stalker" && skin.species !== "All") return "";
-  return `${FLAME_STALKER_TURNTABLE_BASE}${file}`;
+function turntableForSkin(skin) {
+  const skinName = canonicalSkinName(skin.name);
+  const requestedSpecies = canonicalSpeciesName(skin.species);
+  const speciesNames = requestedSpecies === "All"
+    ? DEFAULT_SPECIES.map((species) => species.name)
+    : [requestedSpecies];
+  const variants = speciesNames.map((species) => {
+    const file = SKIN_TURNTABLES.get(`${species}::${skinName}`);
+    return file ? { species, src: `./assets/skins/${file}` } : null;
+  }).filter(Boolean);
+
+  if (!variants.length) return null;
+  return { ...variants[0], variants };
 }
 
-function renderSkinTurntable(src, skin) {
-  if (!src) return "";
-  const label = `${skin.name} Flame Stalker turntable`;
+function renderSkinTurntable(turntable, skin) {
+  if (!turntable) return "";
+  const label = `${skin.name} ${turntable.species} turntable`;
+  const picker = turntable.variants.length > 1 ? `
+    <label class="skin-turntable-variant">
+      <span class="visually-hidden">Preview species</span>
+      <select class="skin-turntable-picker" aria-label="Preview species for ${escapeAttr(skin.name)}">
+        ${turntable.variants.map((variant) => `<option value="${escapeAttr(variant.src)}"${variant.src === turntable.src ? " selected" : ""}>${escapeHtml(variant.species)}</option>`).join("")}
+      </select>
+    </label>
+  ` : "";
   return `
-    <button class="skin-turntable" type="button" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}" tabindex="0">
-      <video src="${escapeAttr(src)}" muted loop playsinline preload="metadata"></video>
-    </button>
+    <div class="skin-turntable-group">
+      ${picker}
+      <button class="skin-turntable" type="button" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}" tabindex="0">
+        <video src="${escapeAttr(turntable.src)}" muted loop playsinline preload="metadata"></video>
+      </button>
+    </div>
   `;
 }
 
@@ -2377,6 +2439,23 @@ function handleSkinTurntableStop(event) {
   if (!video) return;
   video.pause();
   video.currentTime = 0;
+}
+
+function handleSkinTurntableVariantChange(event) {
+  const picker = event.target.closest?.(".skin-turntable-picker");
+  if (!picker || !els.skinList.contains(picker)) return;
+  const group = picker.closest(".skin-turntable-group");
+  const video = group?.querySelector("video");
+  const button = group?.querySelector(".skin-turntable");
+  if (!video || !button || video.getAttribute("src") === picker.value) return;
+  const species = picker.options[picker.selectedIndex]?.text || "skin";
+  const skinName = group.closest(".skin-card")?.querySelector(".card-title h3")?.textContent || "Skin";
+  const label = `${skinName} ${species} turntable`;
+  video.pause();
+  video.currentTime = 0;
+  video.setAttribute("src", picker.value);
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
 }
 
 function groupBySpecies(skins) {

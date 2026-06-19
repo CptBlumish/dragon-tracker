@@ -782,6 +782,30 @@ input[type="checkbox"] {
   grid-template-rows: auto auto auto 1fr;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skin-turntable-group {
+  display: grid;
+  gap: 6px;
+}
+
+.skin-turntable-variant select {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 26px 4px 8px;
+  font-size: 0.72rem;
+}
+
 .skin-turntable {
   position: relative;
   display: block;
