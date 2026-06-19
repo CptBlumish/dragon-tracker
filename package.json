@@ -1,0 +1,103 @@
+{
+  "name": "dragon-tracker",
+  "version": "1.0.0",
+  "description": "A local-first Day of Dragons tracker packaged as a desktop app.",
+  "main": "desktop/main.cjs",
+  "author": "Dragon Tracker",
+  "license": "UNLICENSED",
+  "private": true,
+  "homepage": "https://github.com/CptBlumish/dragon-tracker#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CptBlumish/dragon-tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CptBlumish/dragon-tracker/issues"
+  },
+  "scripts": {
+    "start": "electron .",
+    "desktop": "electron .",
+    "check": "node --check app.js && node --check desktop/main.cjs",
+    "pack": "electron-builder --dir",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win nsis portable && powershell -NoProfile -ExecutionPolicy Bypass -File desktop/package-windows-folder.ps1",
+    "build:mac": "electron-builder --mac dmg zip",
+    "build:linux": "electron-builder --linux AppImage deb",
+    "release": "electron-builder --publish always"
+  },
+  "build": {
+    "appId": "com.dragontracker.app",
+    "productName": "Dragon Tracker",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "package.json",
+      "index.html",
+      "app.js",
+      "styles.css",
+      "assets/**/*",
+      "README.md",
+      "DESKTOP.md",
+      "desktop/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Dragon-Tracker-Setup.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dragon Tracker"
+    },
+    "portable": {
+      "artifactName": "${productName}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "CptBlumish",
+        "repo": "dragon-tracker"
+      }
+    ],
+    "npmRebuild": false
+  },
+  "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

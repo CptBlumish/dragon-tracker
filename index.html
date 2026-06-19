@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dragon Tracker</title>
+  <link rel="stylesheet" href="./styles.css?v=20260618-map-single-layer">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="title-block">
+        <p class="eyebrow">Local Ledger</p>
+        <h1>Dragon Tracker</h1>
+      </div>
+      <div class="top-actions" aria-label="Backup actions">
+        <button class="tool-button" type="button" data-action="import-json" title="Import JSON backup">
+          <span class="button-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3v10m0-10 4 4m-4-4-4 4M4 14v4a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-4"/></svg>
+          </span>
+          Import
+        </button>
+        <button class="tool-button" type="button" data-action="import-genetics-png" title="Import a genetics screenshot PNG">
+          <span class="button-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 9h8M8 13h5M8 17h3"/></svg>
+          </span>
+          PNG
+        </button>
+        <button class="tool-button" type="button" data-action="export-json" title="Export JSON backup">
+          <span class="button-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 21V11m0 10-4-4m4 4 4-4M4 10V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v4"/></svg>
+          </span>
+          Backup
+        </button>
+        <button class="tool-button" type="button" data-action="export-csv" title="Export dragon list as CSV">
+          <span class="button-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9h16M9 4v16M15 4v16"/></svg>
+          </span>
+          CSV
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Tracker sections">
+      <button class="tab" type="button" data-tab="dragons">Dragons</button>
+      <button class="tab" type="button" data-tab="players">Players</button>
+      <button class="tab" type="button" data-tab="nesting">Nesting Planner</button>
+      <button class="tab is-active" type="button" data-tab="skins">Skins</button>
+      <button class="tab" type="button" data-tab="upstats">Upstats</button>
+      <button class="tab" type="button" data-tab="map">Map</button>
+      <button class="tab" type="button" data-tab="backup">Backup</button>
+    </nav>
+
+    <main>
+      <section class="tab-panel" id="dragons-panel" data-panel="dragons">
+        <div class="toolbar">
+          <div class="field search-field">
+            <label for="dragonSearch">Search</label>
+            <input id="dragonSearch" type="search" placeholder="Player, account, skin, server, tag">
+          </div>
+          <div class="field">
+            <label for="speciesFilter">Species</label>
+            <select id="speciesFilter"></select>
+          </div>
+          <div class="field">
+            <label for="statusFilter">Status</label>
+            <select id="statusFilter"></select>
+          </div>
+          <div class="field">
+            <label for="sortBy">Sort</label>
+            <select id="sortBy">
+              <option value="updated">Recently updated</option>
+              <option value="name">Account</option>
+              <option value="species">Species</option>
+              <option value="bloodline">Bloodline</option>
+              <option value="elder">Elder %</option>
+            </select>
+          </div>
+          <label class="toggle-field">
+            <input id="hideInactive" type="checkbox">
+            Grown only
+          </label>
+          <button class="primary-button" type="button" id="addDragonBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            Add Dragon
+          </button>
+          <button class="tool-button" type="button" data-action="add-random-dragon" title="Add a random test dragon">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M21 21l-7-7M3 8V3h5M3 3l7 7"/></svg>
+            </span>
+            Add Random
+          </button>
+        </div>
+
+        <div class="stats-bar" id="statsBar"></div>
+        <div class="dragon-grid" id="dragonList"></div>
+      </section>
+
+      <section class="tab-panel" id="players-panel" data-panel="players">
+        <div class="toolbar accounts-toolbar">
+          <div class="field search-field">
+            <label for="accountSearch">Search</label>
+            <input id="accountSearch" type="search" placeholder="Player, account, dragon">
+          </div>
+          <button class="primary-button" type="button" id="addAccountBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            Add Player
+          </button>
+          <button class="tool-button" type="button" data-action="add-random-dragon" title="Add a random test dragon">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M21 21l-7-7M3 8V3h5M3 3l7 7"/></svg>
+            </span>
+            Add Random
+          </button>
+        </div>
+
+        <div class="account-list" id="accountList"></div>
+      </section>
+
+      <section class="tab-panel" id="nesting-panel" data-panel="nesting">
+        <div class="toolbar nesting-toolbar">
+          <div class="field">
+            <label for="parentOne">Parent A</label>
+            <select id="parentOne"></select>
+          </div>
+          <div class="field">
+            <label for="parentTwo">Parent B</label>
+            <select id="parentTwo"></select>
+          </div>
+          <button class="primary-button" type="button" id="createEggBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3c4 3 7 7 7 11a7 7 0 0 1-14 0c0-4 3-8 7-11Z"/></svg>
+            </span>
+            Create Egg
+          </button>
+          <label class="toggle-field" title="Brood Watcher brooding can enable supercrits; use the in-game brooding tooltip for the current chance.">
+            <input id="broodWatcherBrooding" type="checkbox">
+            BW brooding
+          </label>
+          <button class="tool-button" type="button" data-action="add-random-dragon" title="Add a random test dragon">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M21 21l-7-7M3 8V3h5M3 3l7 7"/></svg>
+            </span>
+            Add Random
+          </button>
+        </div>
+        <div id="nestingOutput" class="nesting-output"></div>
+      </section>
+
+      <section class="tab-panel is-active" id="skins-panel" data-panel="skins">
+        <div class="toolbar">
+          <div class="field search-field">
+            <label for="skinSearch">Search</label>
+            <input id="skinSearch" type="search" placeholder="Skin, recipe, source">
+          </div>
+          <div class="field">
+            <label for="skinSpeciesFilter">Species</label>
+            <select id="skinSpeciesFilter"></select>
+          </div>
+          <div class="field">
+            <label for="skinTypeFilter">Rarity</label>
+            <select id="skinTypeFilter"></select>
+          </div>
+          <label class="toggle-field">
+            <input id="mutatedSkinsOnly" type="checkbox">
+            Mutations only
+          </label>
+          <button class="primary-button" type="button" id="addSkinBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            Add Skin
+          </button>
+        </div>
+        <div class="skin-list" id="skinList"></div>
+      </section>
+
+      <section class="tab-panel" id="upstats-panel" data-panel="upstats">
+        <div class="toolbar upstats-toolbar">
+          <div class="field search-field">
+            <label for="upstatSearch">Search</label>
+            <input id="upstatSearch" type="search" placeholder="Skin, species, account, notes">
+          </div>
+          <div class="field">
+            <label for="upstatSpeciesFilter">Species</label>
+            <select id="upstatSpeciesFilter"></select>
+          </div>
+          <div class="field">
+            <label for="upstatStatusFilter">Process</label>
+            <select id="upstatStatusFilter"></select>
+          </div>
+          <button class="primary-button" type="button" id="addUpstatBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            Add Upstat
+          </button>
+        </div>
+        <div class="upstat-list" id="upstatList"></div>
+      </section>
+
+      <section class="tab-panel" id="map-panel" data-panel="map">
+        <div class="toolbar map-toolbar">
+          <label class="toggle-field">
+            <input id="mapLayerLocations" type="checkbox" checked>
+            Locations
+          </label>
+          <label class="toggle-field">
+            <input id="mapLayerCrystals" type="checkbox">
+            Crystals
+          </label>
+          <label class="toggle-field">
+            <input id="mapLayerFood" type="checkbox">
+            Food
+          </label>
+          <button class="primary-button" type="button" id="addMapPinBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11Z"/><path d="M12 10h.01"/></svg>
+            </span>
+            Add Pin
+          </button>
+          <button class="tool-button" type="button" data-map-action="import-code">Import Code</button>
+        </div>
+        <div class="map-layout">
+          <div class="map-stage-card">
+            <div class="map-stage" id="mapStage" aria-label="Forgotten Forest map">
+              <img class="map-layer" data-map-layer="locations" src="./assets/map/forgotten-forest-locations-detailed.png" alt="">
+              <img class="map-layer" data-map-layer="crystals" src="./assets/map/forgotten-forest-crystals-display.png" alt="">
+              <img class="map-layer" data-map-layer="food" src="./assets/map/forgotten-forest-food-display.png" alt="">
+              <div class="map-area-layer" id="mapAreaLayer" aria-label="Map area reference buttons"></div>
+              <div class="map-pin-layer" id="mapPinLayer"></div>
+            </div>
+          </div>
+          <div class="map-side-panel">
+            <aside class="map-reference-panel">
+              <div class="map-pin-head">
+                <h2>Area References</h2>
+                <span class="pill" id="mapReferenceCount">0 images</span>
+              </div>
+              <div class="field">
+                <label for="mapAreaSelect">Area</label>
+                <select id="mapAreaSelect"></select>
+              </div>
+              <p class="map-reference-summary" id="mapReferenceSummary"></p>
+              <div class="map-reference-gallery" id="mapReferenceGallery"></div>
+            </aside>
+            <aside class="map-pin-panel">
+              <div class="map-pin-head">
+                <h2>Shared Locations</h2>
+                <span class="pill" id="mapPinCount">0 pins</span>
+              </div>
+              <div class="map-pin-list" id="mapPinList"></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="backup-panel" data-panel="backup">
+        <div class="backup-grid">
+          <div class="backup-panel">
+            <h2>Library</h2>
+            <dl id="backupStats" class="details-list"></dl>
+          </div>
+          <div class="backup-panel">
+            <h2>Files</h2>
+            <div class="button-row">
+              <button class="tool-button" type="button" data-action="export-json">Export JSON</button>
+              <button class="tool-button" type="button" data-action="import-json">Import JSON</button>
+              <button class="tool-button" type="button" data-action="import-genetics-png">Import PNG</button>
+              <button class="tool-button" type="button" data-action="export-csv">Export CSV</button>
+            </div>
+          </div>
+          <div class="backup-panel danger-zone">
+            <h2>Reset</h2>
+            <div class="button-row">
+              <button class="danger-button" type="button" id="clearDragonsBtn">Clear dragons</button>
+              <button class="danger-button" type="button" id="factoryResetBtn">Factory reset</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="modal" id="dragonDialog">
+    <form id="dragonForm" method="dialog">
+      <input type="hidden" name="id" id="dragonId">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Record</p>
+          <h2 id="dragonDialogTitle">Add Dragon</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="dragonDialog" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="form-grid genetics-import">
+        <fieldset>
+          <legend>Identity</legend>
+          <input type="hidden" name="accountId" id="dragonAccountId">
+          <div class="field">
+            <label for="dragonPlayerSelect">Player</label>
+            <select id="dragonPlayerSelect"></select>
+          </div>
+          <div class="field" id="dragonNewPlayerField">
+            <label for="dragonUsername">New player</label>
+            <input id="dragonUsername" name="username" autocomplete="off" placeholder="Player name">
+          </div>
+          <div class="field">
+            <label for="dragonAccountName">Account</label>
+            <input id="dragonAccountName" name="accountName" list="accountOptions" autocomplete="off" placeholder="Account name" required>
+          </div>
+          <div class="field">
+            <label for="dragonSpecies">Species</label>
+            <select id="dragonSpecies" name="species"></select>
+          </div>
+          <div class="two-column">
+            <div class="field">
+              <label for="dragonSex">Sex</label>
+              <select id="dragonSex" name="sex"></select>
+            </div>
+            <div class="field">
+              <label for="dragonStatus">Status</label>
+              <select id="dragonStatus" name="status"></select>
+            </div>
+          </div>
+          <div class="two-column">
+            <div class="field">
+              <label for="dragonNestRole">Nest role</label>
+              <select id="dragonNestRole" name="nestRole"></select>
+            </div>
+            <div class="field">
+              <label for="dragonServer">Server</label>
+              <input id="dragonServer" name="server" autocomplete="off">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="skin-import-panel">
+          <legend>Skins</legend>
+          <div class="two-column">
+            <div class="field">
+              <label for="dragonSkin">Skin</label>
+              <select id="dragonSkin" name="skin"></select>
+            </div>
+            <div class="field">
+              <label for="dragonRecessiveSkin">Recessive skin</label>
+              <select id="dragonRecessiveSkin" name="recessiveSkin"></select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="genetics-lineage-panel">
+          <legend>Lineage</legend>
+          <div class="two-column lineage-import-grid">
+            <div class="field">
+              <label for="dragonFather">Father record</label>
+              <select id="dragonFather" name="fatherId"></select>
+            </div>
+            <div class="field">
+              <label for="dragonMother">Mother record</label>
+              <select id="dragonMother" name="motherId"></select>
+            </div>
+            <div class="field">
+              <label for="dragonFatherName">Father name</label>
+              <input id="dragonFatherName" name="fatherName" list="lineageNameOptions" autocomplete="off" placeholder="Manual parent">
+            </div>
+            <div class="field">
+              <label for="dragonMotherName">Mother name</label>
+              <input id="dragonMotherName" name="motherName" list="lineageNameOptions" autocomplete="off" placeholder="Manual parent">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="genetics-screen-panel">
+          <legend>Genetics</legend>
+          <div class="field">
+            <label for="dragonBloodline">Bloodline Quality</label>
+            <select id="dragonBloodline" name="bloodline"></select>
+          </div>
+          <div class="stat-tools-row">
+            <label class="check-field">
+              <input id="dragonAllAPlus" type="checkbox" disabled>
+              18A+
+            </label>
+            <button class="tool-button" type="button" id="dragonSet18APlusBtn">Set 18A+</button>
+          </div>
+          <div class="stat-editor" id="statEditor"></div>
+          <div class="import-status" id="geneticsImportStatus" hidden></div>
+          <div class="three-column">
+            <div class="field" id="dragonElderProgressField">
+              <label for="dragonElderProgress">Elder %</label>
+              <input id="dragonElderProgress" name="elderProgress" type="number" min="0" max="100" step="0.1">
+            </div>
+            <div class="field">
+              <label for="dragonMutationPoints">Mutation pts</label>
+              <input id="dragonMutationPoints" name="mutationPoints" type="number" min="0" max="7" step="1" readonly>
+            </div>
+            <div class="field">
+              <label for="dragonRemainingMutationPoints">Free pts</label>
+              <input id="dragonRemainingMutationPoints" name="remainingMutationPoints" type="number" min="0" max="7" step="1" readonly>
+            </div>
+          </div>
+          <div class="three-column mutation-tree-grid">
+            <div class="field compact-number">
+              <label for="dragonSocialPoints">Social pts</label>
+              <input id="dragonSocialPoints" name="socialPoints" type="number" min="0" max="3" step="1">
+            </div>
+            <label class="check-field dominant-point-field">
+              <input id="dragonDominantMutation" name="dominantMutation" type="checkbox">
+              Dom
+            </label>
+            <div class="field compact-number">
+              <label for="dragonAgilePoints">Agile pts</label>
+              <input id="dragonAgilePoints" name="agilePoints" type="number" min="0" max="3" step="1">
+            </div>
+            <label class="check-field">
+              <input id="dragonFastMutation" name="fastMutation" type="checkbox">
+              Fast
+            </label>
+          </div>
+          <div class="three-column mutation-tree-grid">
+            <div class="field compact-number">
+              <label for="dragonScavengerPoints">Scavenger pts</label>
+              <input id="dragonScavengerPoints" name="scavengerPoints" type="number" min="0" max="3" step="1">
+            </div>
+            <label class="check-field">
+              <input id="dragonSurvivorMutation" name="survivorMutation" type="checkbox">
+              Survivor
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Journal</legend>
+          <div class="field">
+            <label for="dragonBirthDate">Hatched</label>
+            <input id="dragonBirthDate" name="birthDate" type="date">
+          </div>
+          <div class="field">
+            <label for="dragonTags">Tags</label>
+            <input id="dragonTags" name="tags" placeholder="nesting, pvp, elder">
+          </div>
+          <div class="field">
+            <label for="dragonNotes">Notes</label>
+            <textarea id="dragonNotes" name="notes" rows="5"></textarea>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="dragonDialog">Cancel</button>
+        <button class="primary-button" type="submit">Save Dragon</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="accountDialog">
+    <form id="accountForm" method="dialog">
+      <input type="hidden" name="id" id="accountId">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Roster</p>
+          <h2 id="accountDialogTitle">Add Player</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="accountDialog" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="form-grid single">
+        <fieldset>
+          <legend>Account</legend>
+          <div class="field" id="accountUsernameField">
+            <label for="accountUsername">Player</label>
+            <input id="accountUsername" name="username" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="accountName">Account</label>
+            <input id="accountName" name="accountName" autocomplete="off" required>
+          </div>
+          <div class="two-column">
+            <div class="field">
+              <label for="accountDiscord">Discord</label>
+              <input id="accountDiscord" name="discord" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="accountSteam">Steam ID</label>
+              <input id="accountSteam" name="steam" autocomplete="off">
+            </div>
+          </div>
+          <div class="check-grid" id="accountDlcGrid"></div>
+        </fieldset>
+      </div>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="accountDialog">Cancel</button>
+        <button class="primary-button" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="skinDialog">
+    <form id="skinForm" method="dialog">
+      <input type="hidden" name="id" id="skinId">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Codex</p>
+          <h2 id="skinDialogTitle">Add Skin</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="skinDialog" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="form-grid single">
+        <fieldset>
+          <legend>Skin</legend>
+          <div class="field">
+            <label for="skinName">Name</label>
+            <input id="skinName" name="name" required autocomplete="off">
+          </div>
+          <div class="two-column">
+            <div class="field">
+              <label for="skinType">Type</label>
+              <select id="skinType" name="type"></select>
+            </div>
+            <div class="field">
+              <label for="skinSpecies">Species</label>
+              <select id="skinSpecies" name="species"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="skinSource">Source</label>
+            <input id="skinSource" name="source" autocomplete="off">
+          </div>
+          <div class="two-column">
+            <div class="field">
+              <label for="skinRecipeA">Recipe A</label>
+              <input id="skinRecipeA" name="recipeA" list="skinOptions" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="skinRecipeB">Recipe B</label>
+              <input id="skinRecipeB" name="recipeB" list="skinOptions" autocomplete="off">
+            </div>
+          </div>
+          <label class="check-field">
+            <input id="skinOwned" name="owned" type="checkbox">
+            Owned or available
+          </label>
+        </fieldset>
+      </div>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="skinDialog">Cancel</button>
+        <button class="primary-button" type="submit">Save Skin</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="upstatDialog">
+    <form id="upstatForm" method="dialog">
+      <input type="hidden" name="id" id="upstatId">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Progress</p>
+          <h2 id="upstatDialogTitle">Add Upstat</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="upstatDialog" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="form-grid single">
+        <fieldset>
+          <legend>Skin</legend>
+          <div class="two-column">
+            <div class="field">
+              <label for="upstatSpecies">Species</label>
+              <select id="upstatSpecies" name="species"></select>
+            </div>
+            <div class="field">
+              <label for="upstatSkin">Skin</label>
+              <select id="upstatSkin" name="skin"></select>
+            </div>
+          </div>
+          <div class="two-column">
+            <div class="field">
+              <label for="upstatStatus">Process</label>
+              <select id="upstatStatus" name="status"></select>
+            </div>
+            <div class="field">
+              <label for="upstatAPlusCount">A+ stats</label>
+              <input id="upstatAPlusCount" name="aPlusCount" type="number" min="0" max="18" step="1">
+            </div>
+          </div>
+          <div class="field">
+            <label for="upstatAccount">Account</label>
+            <select id="upstatAccount" name="accountId"></select>
+          </div>
+          <label class="check-field">
+            <input id="upstatComplete" name="complete" type="checkbox">
+            18A+ complete
+          </label>
+          <div class="field">
+            <label for="upstatNotes">Notes</label>
+            <textarea id="upstatNotes" name="notes" rows="4"></textarea>
+          </div>
+        </fieldset>
+      </div>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="upstatDialog">Cancel</button>
+        <button class="primary-button" type="submit">Save Upstat</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input id="importFile" type="file" hidden accept=".json,application/json">
+  <input id="geneticsImageFile" type="file" hidden accept="image/png,image/jpeg,image/webp,image/*">
+  <datalist id="speciesOptions"></datalist>
+  <datalist id="skinOptions"></datalist>
+  <datalist id="accountOptions"></datalist>
+  <datalist id="lineageNameOptions"></datalist>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js?v=20260618-map-single-layer"></script>
+</body>
+</html>
