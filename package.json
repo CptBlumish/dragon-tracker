@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "A local-first Day of Dragons tracker packaged as a desktop app.",
   "main": "desktop/main.cjs",
-  "author": "Dragon Tracker",
+  "author": {
+    "name": "Dragon Tracker",
+    "email": "158067656+CptBlumish@users.noreply.github.com"
+  },
   "license": "UNLICENSED",
   "private": true,
   "homepage": "https://github.com/CptBlumish/dragon-tracker#readme",
