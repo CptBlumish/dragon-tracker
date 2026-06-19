@@ -31,7 +31,7 @@ Only share backup files with people you trust.
 
 ## Feedback
 
-Use the bug report and feature request templates in the Issues tab. Do not attach private backups or screenshots with personal account details to public issues.
+Use the [bug report](.github/ISSUE_TEMPLATE/bug_report.md) and [feature request](.github/ISSUE_TEMPLATE/feature_request.md) templates in the [Issues tab](https://github.com/CptBlumish/dragon-tracker/issues). Do not attach private backups or screenshots with personal account details to public issues.
 
 ## Important Notes
 
