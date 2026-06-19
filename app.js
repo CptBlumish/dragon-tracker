@@ -157,6 +157,18 @@ const MUTATION_RULES = {
   piebaldChance: 0.05
 };
 const ODDS_COLORS = ["#14726f", "#b94a2c", "#b8861c", "#4d6d3c", "#5b5b8f", "#a73535", "#2f6f8f", "#7a5b35", "#996c9e"];
+const FLAME_STALKER_TURNTABLE_BASE = "./assets/skins/flame-stalker/";
+const FLAME_STALKER_TURNTABLES = new Map([
+  ["ashfall", "ashfall.mp4"],
+  ["blue flame", "blue-flame.mp4"],
+  ["brindle", "brindle.mp4"],
+  ["burnout", "burnout.mp4"],
+  ["iconic", "iconic.mp4"],
+  ["lava rock", "lava-rock.mp4"],
+  ["leucistic", "leucistic.mp4"],
+  ["leumelan", "leumelan.mp4"],
+  ["melanistic", "melanistic.mp4"]
+]);
 const SPECIES_ALIASES = new Map([
   ["shadow scale", "Shadow Scale"],
   ["shadow stalker", "Shadow Scale"],
@@ -1282,6 +1294,10 @@ function bindEvents() {
   els.accountList.addEventListener("click", handleAccountAction);
   els.accountList.addEventListener("click", handleDragonAction);
   els.skinList.addEventListener("click", handleSkinAction);
+  els.skinList.addEventListener("pointerover", handleSkinTurntableStart);
+  els.skinList.addEventListener("pointerout", handleSkinTurntableStop);
+  els.skinList.addEventListener("focusin", handleSkinTurntableStart);
+  els.skinList.addEventListener("focusout", handleSkinTurntableStop);
   els.upstatList?.addEventListener("click", handleUpstatAction);
   els.mapPinList?.addEventListener("click", handleMapPinAction);
 }
@@ -2295,8 +2311,10 @@ function renderSkins() {
 }
 
 function renderSkinCard(skin) {
+  const turntable = flameStalkerTurntableForSkin(skin);
   return `
-    <article class="skin-card" data-id="${escapeAttr(skin.id)}">
+    <article class="skin-card${turntable ? " has-turntable" : ""}" data-id="${escapeAttr(skin.id)}">
+      ${renderSkinTurntable(turntable, skin)}
       <div class="card-head">
         <div class="card-title">
           <h3>${escapeHtml(skin.name)}</h3>
@@ -2315,6 +2333,47 @@ function renderSkinCard(skin) {
       </div>
     </article>
   `;
+}
+
+function flameStalkerTurntableForSkin(skin) {
+  const file = FLAME_STALKER_TURNTABLES.get(canonicalSkinName(skin.name));
+  if (!file) return "";
+  if (skin.species !== "Flame Stalker" && skin.species !== "All") return "";
+  return `${FLAME_STALKER_TURNTABLE_BASE}${file}`;
+}
+
+function renderSkinTurntable(src, skin) {
+  if (!src) return "";
+  const label = `${skin.name} Flame Stalker turntable`;
+  return `
+    <button class="skin-turntable" type="button" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}" tabindex="0">
+      <video src="${escapeAttr(src)}" muted loop playsinline preload="metadata"></video>
+    </button>
+  `;
+}
+
+function handleSkinTurntableStart(event) {
+  const turntable = event.target.closest?.(".skin-turntable");
+  if (!turntable || !els.skinList.contains(turntable)) return;
+  document.querySelectorAll(".skin-turntable video").forEach((otherVideo) => {
+    if (otherVideo !== turntable.querySelector("video")) {
+      otherVideo.pause();
+      otherVideo.currentTime = 0;
+    }
+  });
+  const video = turntable.querySelector("video");
+  video?.play().catch(() => {});
+}
+
+function handleSkinTurntableStop(event) {
+  const turntable = event.target.closest?.(".skin-turntable");
+  if (!turntable || !els.skinList.contains(turntable)) return;
+  const related = event.relatedTarget;
+  if (related instanceof Node && turntable.contains(related)) return;
+  const video = turntable.querySelector("video");
+  if (!video) return;
+  video.pause();
+  video.currentTime = 0;
 }
 
 function groupBySpecies(skins) {

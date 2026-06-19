@@ -777,6 +777,37 @@ input[type="checkbox"] {
     linear-gradient(180deg, rgba(255, 106, 36, 0.04), rgba(8, 8, 8, 0.98));
 }
 
+.skin-card.has-turntable {
+  grid-template-rows: auto auto auto 1fr;
+}
+
+.skin-turntable {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(255, 214, 86, 0.22);
+  border-radius: calc(var(--radius) - 2px);
+  background: #030303;
+  box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.52);
+  cursor: pointer;
+}
+
+.skin-turntable:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.skin-turntable video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .skin-card .card-head {
   align-items: start;
   min-height: 44px;
