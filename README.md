@@ -60,11 +60,14 @@ Outputs go into `dist/`.
 
 This repo is prepared for GitHub Actions. The workflow in `.github/workflows/release.yml` builds Windows, macOS, and Linux desktop releases when you push a version tag.
 
+The repository is intended to be public for downloads and updater access, while write access stays restricted to the owner and approved collaborators. Public users can download releases and open issues, but they cannot push code or publish updates.
+
 For first-time GitHub setup and future releases, read:
 
 - `GITHUB_SETUP.md`
 - `UPDATING.md`
 - `DESKTOP.md`
+- `SECURITY.md`
 
 Packaged desktop builds include a Help > Check for Updates menu item. Update checks use the GitHub release metadata created by the release workflow.
 
@@ -72,4 +75,5 @@ Packaged desktop builds include a Help > Check for Updates menu item. Update che
 
 - Windows and macOS may show unsigned-app warnings until the app is code-signed.
 - Do not commit `node_modules/` or `dist/`; they are intentionally ignored.
+- Do not commit exported tracker backups, local databases, `.env` files, logs, API keys, or screenshots containing private player/account data.
 - If your GitHub username or repo name is not `CptBlumish/dragon-tracker`, update the GitHub URLs in `package.json` before publishing releases.

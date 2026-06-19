@@ -117,6 +117,27 @@ function showUpdateMessage(options) {
   return dialog.showMessageBox(options);
 }
 
+function updateErrorDetail(error) {
+  const message = error?.message || String(error || "");
+  if (/\b404\b/.test(message)) {
+    return "The update feed returned 404. This usually means the GitHub repository or release is private, unpublished, or not reachable by the desktop app.";
+  }
+  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|offline/i.test(message)) {
+    return "Check your internet connection and try again.";
+  }
+  return "The update feed did not respond in a way Dragon Tracker could use. Try again later or open GitHub Releases from the Help menu.";
+}
+
+function showUpdateError(error) {
+  showUpdateMessage({
+    type: "warning",
+    buttons: ["OK"],
+    title: "Could Not Check for Updates",
+    message: "Dragon Tracker could not reach the update feed.",
+    detail: updateErrorDetail(error)
+  });
+}
+
 function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -167,13 +188,7 @@ function configureAutoUpdater() {
   autoUpdater.on("error", (error) => {
     if (!manualUpdateCheck) return;
     manualUpdateCheck = false;
-    showUpdateMessage({
-      type: "warning",
-      buttons: ["OK"],
-      title: "Could Not Check for Updates",
-      message: "Dragon Tracker could not reach the update feed.",
-      detail: error?.message || String(error)
-    });
+    showUpdateError(error);
   });
 }
 
@@ -194,13 +209,7 @@ function checkForUpdates(manual = false) {
   autoUpdater.checkForUpdates().catch((error) => {
     if (!manual) return;
     manualUpdateCheck = false;
-    showUpdateMessage({
-      type: "warning",
-      buttons: ["OK"],
-      title: "Could Not Check for Updates",
-      message: "Dragon Tracker could not reach the update feed.",
-      detail: error?.message || String(error)
-    });
+    showUpdateError(error);
   });
 }
 
