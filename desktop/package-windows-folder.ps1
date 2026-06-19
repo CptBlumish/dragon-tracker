@@ -4,7 +4,7 @@ $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $dist = Join-Path $projectRoot "dist"
 $unpacked = Join-Path $dist "win-unpacked"
 $packageRoot = Join-Path $dist "Dragon Tracker"
-$zipPath = Join-Path $dist "Dragon Tracker.zip"
+$zipPath = Join-Path $dist "Dragon-Tracker.zip"
 
 if (!(Test-Path -LiteralPath (Join-Path $unpacked "Dragon Tracker.exe"))) {
   throw "Build the Windows unpacked app before creating the folder package."

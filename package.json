@@ -1,6 +1,6 @@
 {
   "name": "dragon-tracker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A local-first Day of Dragons tracker packaged as a desktop app.",
   "main": "desktop/main.cjs",
   "author": {
@@ -31,7 +31,7 @@
   "build": {
     "appId": "com.dragontracker.app",
     "productName": "Dragon Tracker",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Dragon-Tracker-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -71,7 +71,7 @@
       "shortcutName": "Dragon Tracker"
     },
     "portable": {
-      "artifactName": "${productName}.${ext}"
+      "artifactName": "Dragon-Tracker.${ext}"
     },
     "mac": {
       "target": [
