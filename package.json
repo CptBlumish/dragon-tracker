@@ -20,9 +20,9 @@
     "check": "node --check app.js && node --check desktop/main.cjs",
     "pack": "electron-builder --dir",
     "build": "electron-builder",
-    "build:win": "electron-builder --win nsis portable && powershell -NoProfile -ExecutionPolicy Bypass -File desktop/package-windows-folder.ps1",
-    "build:mac": "electron-builder --mac dmg zip",
-    "build:linux": "electron-builder --linux AppImage deb",
+    "build:win": "electron-builder --win nsis portable --publish never && powershell -NoProfile -ExecutionPolicy Bypass -File desktop/package-windows-folder.ps1",
+    "build:mac": "electron-builder --mac dmg zip --publish never",
+    "build:linux": "electron-builder --linux AppImage deb --publish never",
     "release": "electron-builder --publish always"
   },
   "build": {
