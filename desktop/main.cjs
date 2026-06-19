@@ -36,7 +36,9 @@ function createWindow() {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow.show());
-  mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
+  mainWindow.loadFile(path.join(__dirname, "..", "index.html"), {
+    query: { appVersion: app.getVersion() }
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);

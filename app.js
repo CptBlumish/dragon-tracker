@@ -1,5 +1,6 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.4";
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -364,6 +365,7 @@ const els = {
   mapReferenceCount: document.querySelector("#mapReferenceCount"),
   mapReferenceSummary: document.querySelector("#mapReferenceSummary"),
   backupStats: document.querySelector("#backupStats"),
+  appVersionLabel: document.querySelector("#appVersionLabel"),
   importFile: document.querySelector("#importFile"),
   geneticsImageFile: document.querySelector("#geneticsImageFile"),
   geneticsImportStatus: document.querySelector("#geneticsImportStatus"),
@@ -381,6 +383,7 @@ init();
 function init() {
   if (refreshAllDerivedRecords()) saveState();
   lastKnownStateText = localStorage.getItem(STORAGE_KEY) || "";
+  renderAppVersion();
   buildStaticSelects();
   bindEvents();
   startAutoSync();
@@ -2889,6 +2892,11 @@ function renderBackup() {
     <dt>Saved</dt><dd>${formatDateTime(state.updatedAt)}</dd>
     <dt>Backup size</dt><dd>${formatBytes(bytes)}</dd>
   `;
+}
+
+function renderAppVersion() {
+  if (!els.appVersionLabel) return;
+  els.appVersionLabel.textContent = `Version ${APP_VERSION}`;
 }
 
 function handleDragonSkinControlChange(event) {

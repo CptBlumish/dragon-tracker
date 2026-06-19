@@ -1,15 +1,16 @@
 # Dragon Tracker
 
-Dragon Tracker is a local-first Day of Dragons tracker for dragons, players, accounts, skins, upstats, nesting, lineage, and map references.
+Dragon Tracker is a local-first Day of Dragons tracker for dragons, players, accounts, skins, upstats, nesting, lineage, and map references. Your tracker data stays on your own machine unless you export and share it.
 
-The tracker can run as:
+## Download
 
-- A browser app by opening `index.html`
-- A local web app with `Start Dragon Tracker Local.bat`
-- A desktop app with Electron
-- A GitHub Releases desktop app with installable builds and update checks
+Download the newest version from [GitHub Releases](https://github.com/CptBlumish/dragon-tracker/releases/latest).
 
-Your tracker data stays on your own machine. Use the app's Backup tab before major updates, before switching machines, or before sharing data with another player.
+- Windows users should download `Dragon-Tracker-Setup.exe`.
+- macOS users should download the `.dmg` or `.zip`.
+- Linux users should download the `.AppImage` or `.deb`.
+
+The desktop app can check for updates from the Help menu. The current app version is shown on the Backup tab.
 
 ## What It Tracks
 
@@ -22,58 +23,17 @@ Your tracker data stays on your own machine. Use the app's Backup tab before maj
 - PNG genetics screenshot import for stat letters and bloodline quality
 - JSON backup/import and CSV export
 
-## Desktop Development
+## Backups
 
-Install dependencies:
+Use the Backup tab before switching machines, testing a new build, or sharing tracker data with someone else. Backup files can include player names, account names, Discord handles, Steam IDs, dragon lineage, and map pins.
 
-```bash
-npm install
-```
+Only share backup files with people you trust.
 
-Run the desktop app:
+## Feedback
 
-```bash
-npm run start
-```
-
-Check syntax:
-
-```bash
-npm run check
-```
-
-Build installers for your current platform:
-
-```bash
-npm run build
-```
-
-Windows build:
-
-```bash
-npm run build:win
-```
-
-Outputs go into `dist/`.
-
-## GitHub Releases And Updates
-
-This repo is prepared for GitHub Actions. The workflow in `.github/workflows/release.yml` builds Windows, macOS, and Linux desktop releases when you push a version tag.
-
-The repository is intended to be public for downloads and updater access, while write access stays restricted to the owner and approved collaborators. Public users can download releases and open issues, but they cannot push code or publish updates.
-
-For first-time GitHub setup and future releases, read:
-
-- `GITHUB_SETUP.md`
-- `UPDATING.md`
-- `DESKTOP.md`
-- `SECURITY.md`
-
-Packaged desktop builds include a Help > Check for Updates menu item. Update checks use the GitHub release metadata created by the release workflow.
+Use the bug report and feature request templates in the Issues tab. Do not attach private backups or screenshots with personal account details to public issues.
 
 ## Important Notes
 
 - Windows and macOS may show unsigned-app warnings until the app is code-signed.
-- Do not commit `node_modules/` or `dist/`; they are intentionally ignored.
-- Do not commit exported tracker backups, local databases, `.env` files, logs, API keys, or screenshots containing private player/account data.
-- If your GitHub username or repo name is not `CptBlumish/dragon-tracker`, update the GitHub URLs in `package.json` before publishing releases.
+- Public users can download releases and open issues, but they cannot push code or publish updates.

@@ -201,6 +201,7 @@ svg {
 
 .tab-panel {
   display: none;
+  position: relative;
   padding-top: 18px;
 }
 
@@ -1417,6 +1418,16 @@ input[type="checkbox"] {
 .backup-panel {
   padding: 16px;
   box-shadow: var(--shadow);
+}
+
+.backup-version {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .details-list {

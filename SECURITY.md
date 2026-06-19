@@ -4,23 +4,14 @@ Dragon Tracker is local-first. Dragon records, players, accounts, map pins, and 
 
 ## Reporting A Problem
 
-Please report security issues privately to the repository owner instead of opening a public issue. Include:
+Report security or privacy issues privately to the repository owner instead of opening a public issue. Include:
 
 - What happened
 - Steps to reproduce it
-- Whether local tracker data, exported backups, or update downloads were involved
+- Whether local tracker data, exported backups, screenshots, or update downloads were involved
 
-## Update Safety
-
-Desktop updates are delivered through GitHub Releases. Release assets should never include:
-
-- `.env` files
-- API keys or OAuth secrets
-- Local backup exports
-- Local databases or logs
-- User screenshots containing private account details
-
-## User Data
+## Backup Safety
 
 Backups can contain player names, account names, Discord handles, Steam IDs, dragon lineage, and map pins. Only share backup files with people you trust.
 
+Do not post backup files or screenshots with private account details in public issues.
