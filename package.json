@@ -20,7 +20,7 @@
   "scripts": {
     "start": "electron .",
     "desktop": "electron .",
-    "check": "node --check app.js && node --check desktop/main.cjs",
+    "check": "node --check app.js && node --check sync-client.js && node --check desktop/main.cjs && node --check desktop/preload.cjs",
     "pack": "electron-builder --dir",
     "build": "electron-builder",
     "build:win": "electron-builder --win nsis portable --publish never && powershell -NoProfile -ExecutionPolicy Bypass -File desktop/package-windows-folder.ps1",
@@ -39,10 +39,19 @@
       "package.json",
       "index.html",
       "app.js",
+      "sync-client.js",
       "styles.css",
       "assets/**/*",
       "README.md",
       "desktop/**/*"
+    ],
+    "protocols": [
+      {
+        "name": "Dragon Tracker Authentication",
+        "schemes": [
+          "dragontracker"
+        ]
+      }
     ],
     "win": {
       "target": [

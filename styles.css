@@ -1251,6 +1251,10 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
+.map-pin.is-clan-pin {
+  background: var(--teal);
+}
+
 .map-side-panel {
   display: grid;
   gap: 14px;
@@ -1429,6 +1433,184 @@ input[type="checkbox"] {
   padding: 18px;
 }
 
+.clan-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.clan-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(47, 143, 137, 0.1), rgba(8, 8, 8, 0.98));
+  box-shadow: var(--shadow);
+}
+
+.clan-identity-panel {
+  background: linear-gradient(180deg, rgba(255, 106, 36, 0.1), rgba(8, 8, 8, 0.98));
+}
+
+.clan-panel h2 {
+  margin: 0;
+  color: var(--ember);
+  font-size: 1.08rem;
+}
+
+.clan-copy,
+.clan-error,
+.form-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.field-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.clan-error {
+  padding: 10px;
+  border-left: 3px solid var(--danger);
+  background: rgba(255, 108, 86, 0.08);
+  color: var(--ink);
+}
+
+.clan-member-list,
+.clan-share-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.clan-member-row,
+.clan-share-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.clan-member-row strong,
+.clan-share-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.clan-member-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.clan-member-controls select,
+.clan-member-controls .tool-button,
+.clan-member-controls .danger-button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 0.74rem;
+}
+
+.clan-share-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.clan-share-row span,
+.clan-share-row small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.clan-share-row small {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+
+.clan-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.clan-inline-form {
+  display: grid;
+  gap: 6px;
+}
+
+.clan-inline-form label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.clan-inline-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.clan-inline-form .tool-button,
+.clan-inline-form .primary-button {
+  min-height: 38px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.clan-invite-code {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(246, 217, 86, 0.42);
+  border-radius: var(--radius);
+  background: rgba(246, 217, 86, 0.06);
+}
+
+.clan-invite-code span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.clan-invite-code strong {
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
+
+.clan-invite-code .tool-button {
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0 9px;
+  font-size: 0.76rem;
+}
+
+.full-span {
+  grid-column: 1 / -1;
+}
+
 .primary-button.is-placing {
   box-shadow: 0 0 0 3px rgba(246, 217, 86, 0.2);
 }
@@ -1442,6 +1624,139 @@ input[type="checkbox"] {
 .backup-panel {
   padding: 16px;
   box-shadow: var(--shadow);
+}
+
+.sync-settings-panel {
+  background: linear-gradient(180deg, rgba(47, 143, 137, 0.12), rgba(8, 8, 8, 0.96));
+}
+
+.sync-setup-modal {
+  width: min(980px, calc(100% - 32px));
+}
+
+.sync-setup-intro {
+  margin: 0;
+  padding: 12px;
+  border-left: 3px solid var(--teal);
+  background: rgba(47, 143, 137, 0.1);
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.sync-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sync-setup-route {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sync-setup-route h3 {
+  margin: 0 0 8px;
+  color: var(--gold);
+  font-size: 1.04rem;
+}
+
+.sync-setup-route > p:not(.eyebrow),
+.sync-step-list,
+.sync-request-list,
+.sync-setup-note {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.sync-setup-route > p:not(.eyebrow) {
+  margin: 0;
+}
+
+.sync-step-list,
+.sync-request-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+  padding-left: 22px;
+}
+
+.sync-step-list strong,
+.sync-request-list strong {
+  color: var(--ink);
+}
+
+.sync-setup-note {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(246, 217, 86, 0.32);
+  border-radius: var(--radius);
+  background: rgba(246, 217, 86, 0.06);
+}
+
+.sync-bot-guide {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sync-host-checklist {
+  margin-top: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sync-host-checklist summary {
+  padding: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.sync-host-checklist[open] summary {
+  border-bottom: 1px solid var(--line);
+  color: var(--gold);
+}
+
+.sync-host-checklist .sync-step-list {
+  margin: 0;
+  padding: 14px 16px 14px 34px;
+}
+
+.sync-bot-guide summary {
+  padding: 14px 16px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.94rem;
+  font-weight: 900;
+}
+
+.sync-bot-guide[open] summary {
+  border-bottom: 1px solid var(--line);
+  color: var(--gold);
+}
+
+.sync-bot-guide-content {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.sync-bot-guide-content > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.55;
 }
 
 .backup-version {
@@ -1729,7 +2044,9 @@ legend {
   .nesting-toolbar,
   .upstats-toolbar,
   .map-toolbar,
-  .accounts-toolbar {
+  .accounts-toolbar,
+  .clan-layout,
+  .clan-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1786,6 +2103,9 @@ legend {
   .nesting-output,
   .odds-layout,
   .map-layout,
+  .clan-layout,
+  .clan-form-grid,
+  .sync-setup-grid,
   .family-generation.grandparents,
   .family-generation.parents,
   .family-generation.egg,
@@ -1839,6 +2159,22 @@ legend {
   .account-grid,
   .account-dragon-row {
     grid-template-columns: 1fr;
+  }
+
+  .clan-inline-form > div {
+    grid-template-columns: 1fr;
+  }
+
+  .clan-member-row {
+    grid-template-columns: 1fr;
+  }
+
+  .clan-member-controls {
+    justify-content: flex-start;
+  }
+
+  .clan-invite-code .tool-button {
+    margin-left: 0;
   }
 
   .modal {

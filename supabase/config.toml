@@ -1,0 +1,4 @@
+project_id = "dragon-tracker"
+
+[functions.steam-openid]
+verify_jwt = false

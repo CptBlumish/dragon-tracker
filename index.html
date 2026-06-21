@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260618-map-single-layer">
+  <link rel="stylesheet" href="./styles.css?v=20260621-clan-join-local">
 </head>
 <body>
   <div class="app-shell">
@@ -48,7 +48,8 @@
       <button class="tab is-active" type="button" data-tab="skins">Skins</button>
       <button class="tab" type="button" data-tab="upstats">Upstats</button>
       <button class="tab" type="button" data-tab="map">Map</button>
-      <button class="tab" type="button" data-tab="backup">Backup</button>
+      <button class="tab" type="button" data-tab="clans">Clans</button>
+      <button class="tab" type="button" data-tab="settings">Settings</button>
     </nav>
 
     <main>
@@ -259,19 +260,34 @@
         </div>
       </section>
 
-      <section class="tab-panel" id="backup-panel" data-panel="backup">
+      <section class="tab-panel" id="clans-panel" data-panel="clans">
+        <div class="clan-layout" id="clanContent" aria-live="polite"></div>
+      </section>
+
+      <section class="tab-panel" id="settings-panel" data-panel="settings">
         <div class="backup-grid">
           <div class="backup-panel">
-            <h2>Library</h2>
+            <h2>Tracker</h2>
             <dl id="backupStats" class="details-list"></dl>
           </div>
           <div class="backup-panel">
-            <h2>Files</h2>
+            <h2>Backup & Restore</h2>
             <div class="button-row">
               <button class="tool-button" type="button" data-action="export-json">Export JSON</button>
               <button class="tool-button" type="button" data-action="import-json">Import JSON</button>
               <button class="tool-button" type="button" data-action="import-genetics-png">Import PNG</button>
               <button class="tool-button" type="button" data-action="export-csv">Export CSV</button>
+            </div>
+          </div>
+          <div class="backup-panel sync-settings-panel">
+            <div class="card-head">
+              <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Optional shared dragons and map pins</p></div>
+              <span class="pill" id="syncSettingsState">Local Only</span>
+            </div>
+            <p class="form-note" id="syncSettingsDescription">Your tracker stays on this device until you choose to connect and share something.</p>
+            <div class="button-row">
+              <button class="primary-button" type="button" id="openSyncSetupBtn">Set Up Sync Instructions</button>
+              <button class="tool-button" type="button" id="openSyncConfigBtn">Connect Sync</button>
             </div>
           </div>
           <div class="backup-panel danger-zone">
@@ -616,6 +632,112 @@
     </form>
   </dialog>
 
+  <dialog class="modal compact-modal" id="syncConfigDialog">
+    <form id="syncConfigForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Clan Sync</p>
+          <h2>Connect to a Sync Space</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="syncConfigDialog" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="form-grid">
+        <div class="field full-span">
+          <label for="syncProjectUrl">Sync address</label>
+          <input id="syncProjectUrl" name="projectUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://your-project.supabase.co" required>
+          <p class="field-help">Ask your clan organizer for this. It is also called the Supabase Project URL.</p>
+        </div>
+        <div class="field full-span">
+          <label for="syncAnonKey">Connection key</label>
+          <textarea id="syncAnonKey" name="anonKey" rows="4" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="The public anon key from the clan's sync space" required></textarea>
+          <p class="field-help">This is the public anon or publishable project key. It lets Dragon Tracker find the shared space; it is not an admin password.</p>
+        </div>
+      </div>
+      <p class="form-note">Only paste the two items above. Never paste a service-role key, Discord client secret, Steam API key, password, browser cookie, backup file, email code, or SMS code here.</p>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-sync-dialog-action="instructions">View Instructions</button>
+        <button class="danger-button" type="button" id="clearSyncConfigBtn">Clear Configuration</button>
+        <button class="tool-button" type="button" data-close-modal="syncConfigDialog">Cancel</button>
+        <button class="primary-button" type="submit">Save Secure Sync</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal sync-setup-modal" id="syncSetupDialog">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Clan Sync</p>
+        <h2>Set Up Shared Sync</h2>
+      </div>
+      <button class="icon-only" type="button" data-close-modal="syncSetupDialog" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <p class="sync-setup-intro">Clan Sync is optional. It creates one shared online space for dragons and map pins that members deliberately share. Your regular tracker data, backups, account passwords, login codes, and Steam Guard information always stay out of it.</p>
+    <div class="sync-setup-grid">
+      <section class="sync-setup-route">
+        <p class="eyebrow">Starting a Clan</p>
+        <h3>I am the organizer</h3>
+        <p>You need one trusted person to maintain the shared sync space. This can be you or another clan organizer. Everyone else can join without doing this setup.</p>
+        <ol class="sync-step-list">
+          <li>Create the clan's free Supabase project. Supabase is the service that provides the private online shelf holding only the dragons and pins members choose to share.</li>
+          <li>Use the organizer checklist below to prepare that shelf and connect Discord sign-in. You will need a free Discord developer application for that one-time organizer task.</li>
+          <li>Collect the project's <strong>Sync address</strong> and public <strong>Connection key</strong>. Give those two items to people who should join this shared space.</li>
+          <li>Choose <strong>Connect Sync</strong> below, paste those two items, connect Discord, create the clan, and make one-use invite codes for members.</li>
+        </ol>
+        <p class="sync-setup-note">The project owner should keep its administrator password, secret keys, and Discord app secret private. Clan members never need any of them.</p>
+        <details class="sync-host-checklist">
+          <summary>Organizer checklist before inviting members</summary>
+          <ol class="sync-step-list">
+            <li>Create a free Supabase project. In its <strong>Settings &gt; API</strong> area, copy the Project URL and its public anon or publishable key. Those become the clan's Sync address and Connection key.</li>
+            <li>Open Supabase's <strong>SQL Editor</strong>. Run Dragon Tracker's supplied clan-sync setup file, <code>supabase/migrations/0001_clan_sync.sql</code>. It creates the private clan tables and access rules.</li>
+            <li>Create a Discord application in the Discord Developer Portal. In Supabase Authentication, enable Discord, add the Discord Client ID and Client Secret, and request only the <code>identify</code> permission.</li>
+            <li>In the Discord application, add <code>https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback</code> as the callback address. Replace <code>YOUR_PROJECT_REF</code> with the project reference from your Supabase URL.</li>
+            <li>In Supabase Authentication's allowed redirect addresses, add <code>dragontracker://auth/callback</code> for the installed app. Add the exact local-browser address too, such as <code>http://127.0.0.1:8765/index.html</code>, if members will use it.</li>
+            <li>Connect sync and Discord in Dragon Tracker using a test account, create a test clan, then verify that a second Discord account can join with a one-use invite and view one deliberately shared test dragon.</li>
+          </ol>
+        </details>
+      </section>
+      <section class="sync-setup-route">
+        <p class="eyebrow">Joining a Clan</p>
+        <h3>My organizer set it up</h3>
+        <p>Ask an organizer for these three things:</p>
+        <ul class="sync-request-list">
+          <li><strong>Sync address</strong> (also called the Project URL)</li>
+          <li><strong>Connection key</strong> (also called the public anon key)</li>
+          <li><strong>One-use clan invite code</strong></li>
+        </ul>
+        <ol class="sync-step-list">
+          <li>Choose <strong>Connect Sync</strong>. Paste the organizer's sync address into <strong>Sync address</strong>. It starts with <code>https://</code> and belongs to the clan's shared space, not your own computer. Paste the second item into <strong>Connection key</strong>, then save.</li>
+          <li>Open <strong>Clans</strong> and choose <strong>Connect Discord</strong>. Dragon Tracker opens Discord in your normal browser. Approve the identity screen, then return to the tracker when Discord finishes. Discord confirms your tracker identity; it does not give Dragon Tracker access to messages, servers, email, or your password.</li>
+          <li>Paste the one-use invite code to join. Only then can you see the clan's shared dragons and pins.</li>
+          <li>Use <strong>Share to Clan</strong> on a dragon or map pin when you want other clan members to see it. Nothing is shared automatically.</li>
+        </ol>
+        <p class="sync-setup-note"><strong>Desktop app and browser-local tracker:</strong> both use the same sync address, connection key, Discord identity, and invite code. For the browser-local tracker, open it through <code>http://localhost</code> or <code>http://127.0.0.1</code>, not by double-clicking an <code>index.html</code> file. The organizer must add that exact local address to the shared space's allowed return addresses before you connect Discord.</p>
+      </section>
+    </div>
+    <details class="sync-bot-guide">
+      <summary>Optional: add dragons from a Discord server</summary>
+      <div class="sync-bot-guide-content">
+        <p>A Discord bot should submit proposed shared dragons to the clan's secure backend. It must never edit a member's local tracker automatically, read DMs, or store Discord passwords, Steam credentials, backup files, or login codes.</p>
+        <ol class="sync-step-list">
+          <li>The clan organizer creates a separate Discord application and bot. Install it only in the clan's server, with only the command permissions it needs. Do not give it Administrator.</li>
+          <li>Create a slash command such as <code>/dragon submit</code>. Have it ask for the dragon's display name, species, skin, recessive skin, stage, and optional public notes.</li>
+          <li>Point Discord's Interactions Endpoint at a server-side function, such as a Supabase Edge Function. That function must verify every Discord request signature before accepting data.</li>
+          <li>Keep the bot token, Discord application secret, Discord public-key verification settings, and Supabase service-role key in the host's server secrets. They never belong in Dragon Tracker, a backup, GitHub source, or a clan chat.</li>
+          <li>Make every submission <strong>pending</strong>. A clan owner or admin reviews it before it becomes a shared dragon. The bot should save only the approved shared summary, never accounts or private notes.</li>
+        </ol>
+        <p class="sync-setup-note">This is an optional hosted integration and is not connected automatically in this build. It needs a dedicated server-side function and Discord bot setup per clan. The normal in-app Share to Clan button already works without a bot.</p>
+      </div>
+    </details>
+    <div class="modal-actions">
+      <button class="tool-button" type="button" data-close-modal="syncSetupDialog">Close</button>
+      <button class="primary-button" type="button" data-sync-dialog-action="configure">Connect Sync</button>
+    </div>
+  </dialog>
+
   <input id="importFile" type="file" hidden accept=".json,application/json">
   <input id="geneticsImageFile" type="file" hidden accept="image/png,image/jpeg,image/webp,image/*">
   <datalist id="speciesOptions"></datalist>
@@ -624,6 +746,7 @@
   <datalist id="lineageNameOptions"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="./app.js?v=20260618-map-single-layer"></script>
+  <script src="./sync-client.js?v=20260621-clan-join-local"></script>
+  <script src="./app.js?v=20260621-clan-join-local"></script>
 </body>
 </html>

@@ -20,14 +20,21 @@ The desktop app can check for updates from the Help menu. The current app versio
 - Upstat progress, including 18A+ tracking
 - Nesting planner with species/sex validation, inbred nest warnings, skin odds, stat projection, and family tree display
 - Map tab with locations, crystals, food maps, clickable area references, and share/import location pins
+- Optional Clan Sync with Discord identity, SteamID64 verification, opt-in dragon and map-pin sharing, and role-based clan access
 - PNG genetics screenshot import for stat letters and bloodline quality
 - JSON backup/import and CSV export
 
 ## Backups
 
-Use the Backup tab before switching machines, testing a new build, or sharing tracker data with someone else. Backup files can include player names, account names, Discord handles, Steam IDs, dragon lineage, and map pins.
+Use the Settings tab before switching machines, testing a new build, or sharing tracker data with someone else. Backup files can include player names, account names, Discord handles, Steam IDs, dragon lineage, and map pins.
 
 Only share backup files with people you trust.
+
+## Clan Sync
+
+Clan Sync is optional and begins with no shared data. Connecting Discord establishes an identity for clan permissions; it does not grant access to Discord messages, servers, friend lists, or email. Steam linking verifies only a SteamID64 through Steam OpenID.
+
+Only dragons and map pins that a member explicitly shares are visible to a clan. Local accounts, full backups, and unshared records remain on the device. Project owners can follow [Clan Sync Setup](docs/CLAN_SYNC_SETUP.md) to deploy the secure backend.
 
 ## Feedback
 

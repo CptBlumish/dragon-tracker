@@ -120,7 +120,8 @@ const MAP_REFERENCE_AREAS = [
   { id: "far-pond", region: "Corners", name: "Far Pond", files: ["farpnd.png"], button: [3.2, 5.1, 9, 4.5] }
 ];
 const DEFAULT_TAB = "skins";
-const TAB_NAMES = ["dragons", "players", "nesting", "skins", "upstats", "map", "backup"];
+const TAB_NAMES = ["dragons", "players", "nesting", "skins", "upstats", "map", "clans", "settings"];
+const ACTIVE_CLAN_STORAGE_KEY = "dragon-tracker.active-clan.v1";
 const STAT_FIELDS = [
   { key: "lifeExpectancy", label: "Life Expectancy" },
   { key: "scaleThickness", label: "Scale Thickness" },
@@ -349,6 +350,20 @@ let toastTimer = null;
 let autoSyncTimer = null;
 let lastKnownStateText = "";
 let mapPinPlacementActive = false;
+const clanSync = window.DragonTrackerSyncClient ? new window.DragonTrackerSyncClient() : null;
+const clanUi = {
+  activeClanId: localStorage.getItem(ACTIVE_CLAN_STORAGE_KEY) || "",
+  busy: false,
+  error: "",
+  inviteCode: "",
+  identityLinks: [],
+  lastSignature: "",
+  members: [],
+  memberships: [],
+  sharedDragons: [],
+  sharedPins: [],
+  user: null
+};
 
 const els = {
   tabs: document.querySelectorAll(".tab"),
@@ -406,6 +421,17 @@ const els = {
   mapReferenceGallery: document.querySelector("#mapReferenceGallery"),
   mapReferenceCount: document.querySelector("#mapReferenceCount"),
   mapReferenceSummary: document.querySelector("#mapReferenceSummary"),
+  clanContent: document.querySelector("#clanContent"),
+  syncConfigDialog: document.querySelector("#syncConfigDialog"),
+  syncConfigForm: document.querySelector("#syncConfigForm"),
+  syncSetupDialog: document.querySelector("#syncSetupDialog"),
+  syncProjectUrl: document.querySelector("#syncProjectUrl"),
+  syncAnonKey: document.querySelector("#syncAnonKey"),
+  clearSyncConfigBtn: document.querySelector("#clearSyncConfigBtn"),
+  openSyncSetupBtn: document.querySelector("#openSyncSetupBtn"),
+  openSyncConfigBtn: document.querySelector("#openSyncConfigBtn"),
+  syncSettingsState: document.querySelector("#syncSettingsState"),
+  syncSettingsDescription: document.querySelector("#syncSettingsDescription"),
   backupStats: document.querySelector("#backupStats"),
   appVersionLabel: document.querySelector("#appVersionLabel"),
   importFile: document.querySelector("#importFile"),
@@ -431,6 +457,9 @@ function init() {
   startAutoSync();
   renderAll();
   setTab(startupTab(), { replaceHash: true });
+  bindDesktopAuthCallbacks();
+  bindBrowserAuthCallback();
+  void refreshClanSync({ quiet: true });
 }
 
 function buildStarterSkins() {
@@ -1195,7 +1224,10 @@ function saveState() {
 
 function startAutoSync() {
   if (autoSyncTimer) clearInterval(autoSyncTimer);
-  autoSyncTimer = setInterval(syncStateFromStorage, AUTO_SYNC_INTERVAL_MS);
+  autoSyncTimer = setInterval(() => {
+    syncStateFromStorage();
+    void refreshClanSync({ quiet: true });
+  }, AUTO_SYNC_INTERVAL_MS);
   window.addEventListener("storage", (event) => {
     if (event.key === STORAGE_KEY) syncStateFromStorage();
   });
@@ -1346,6 +1378,16 @@ function bindEvents() {
   els.skinList.addEventListener("change", handleSkinTurntableVariantChange);
   els.upstatList?.addEventListener("click", handleUpstatAction);
   els.mapPinList?.addEventListener("click", handleMapPinAction);
+  els.clanContent?.addEventListener("click", handleClanAction);
+  els.clanContent?.addEventListener("change", handleClanChange);
+  els.clanContent?.addEventListener("submit", handleClanSubmit);
+  els.syncConfigForm?.addEventListener("submit", handleSyncConfigSubmit);
+  els.clearSyncConfigBtn?.addEventListener("click", clearSyncConfiguration);
+  els.openSyncSetupBtn?.addEventListener("click", openSyncSetupDialog);
+  els.openSyncConfigBtn?.addEventListener("click", openSyncConfigDialog);
+  document.querySelectorAll("[data-sync-dialog-action]").forEach((button) => {
+    button.addEventListener("click", handleSyncDialogAction);
+  });
 }
 
 function buildStaticSelects() {
@@ -1402,6 +1444,8 @@ function renderCurrentTab() {
   if (currentTab === "skins") renderSkins();
   if (currentTab === "upstats") renderUpstats();
   if (currentTab === "map") renderMap();
+  if (currentTab === "clans") renderClans();
+  if (currentTab === "settings") renderBackup();
 }
 
 function renderDatalists() {
@@ -1709,6 +1753,9 @@ function renderAccountCard(account) {
 
 function renderDragonCard(dragon) {
   const parents = dragonParentLabel(dragon);
+  const shareAction = canShareWithActiveClan()
+    ? `<button class="tool-button" type="button" data-dragon-action="share" data-id="${escapeAttr(dragon.id)}">Share to Clan</button>`
+    : "";
 
   const tags = dragon.tags.length
     ? `<div class="skin-meta">${dragon.tags.map((tag) => `<span class="small-pill">${escapeHtml(tag)}</span>`).join("")}</div>`
@@ -1752,6 +1799,7 @@ function renderDragonCard(dragon) {
         <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
         <button class="tool-button" type="button" data-dragon-action="clone" data-id="${escapeAttr(dragon.id)}">Clone</button>
         <button class="tool-button" type="button" data-dragon-action="toggleStatus" data-id="${escapeAttr(dragon.id)}">Advance</button>
+        ${shareAction}
         <button class="danger-button" type="button" data-dragon-action="delete" data-id="${escapeAttr(dragon.id)}">Delete</button>
       </div>
     </article>
@@ -2649,6 +2697,511 @@ function renderMap() {
   renderMapPins();
 }
 
+function clanMembershipClan(membership) {
+  const relation = membership?.clans;
+  return Array.isArray(relation) ? relation[0] : relation;
+}
+
+function activeClanMembership() {
+  return clanUi.memberships.find((membership) => membership.clan_id === clanUi.activeClanId) || null;
+}
+
+function activeClan() {
+  return clanMembershipClan(activeClanMembership());
+}
+
+function canShareWithActiveClan() {
+  return Boolean(clanSync?.isConfigured() && clanUi.user && activeClanMembership());
+}
+
+function clanMemberName(userId) {
+  const member = clanUi.members.find((item) => item.user_id === userId);
+  return member?.display_name || "Clan member";
+}
+
+function clanDisplayName(user) {
+  return text(user?.user_metadata?.global_name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.user_metadata?.preferred_username || "Tracker Member") || "Tracker Member";
+}
+
+function clanRoleOptions(selectedRole) {
+  return ["admin", "member", "viewer"].map((role) => (
+    `<option value="${role}"${role === selectedRole ? " selected" : ""}>${role}</option>`
+  )).join("");
+}
+
+function clanFriendlyError(error) {
+  const message = text(error?.message || error, 240);
+  if (/authentication|required|token|jwt|sign-in/i.test(message)) return "Your sign-in has expired. Connect Discord again.";
+  if (/permission|row-level|policy|not an active member/i.test(message)) return "You do not have permission for that clan action.";
+  if (/network|fetch|offline|failed to fetch/i.test(message)) return "Dragon Tracker could not reach clan sync. Check your connection and sync address.";
+  return message || "That clan action could not be completed.";
+}
+
+function reconcileActiveClan() {
+  const hasActive = clanUi.memberships.some((membership) => membership.clan_id === clanUi.activeClanId);
+  if (!hasActive) clanUi.activeClanId = clanUi.memberships[0]?.clan_id || "";
+  if (clanUi.activeClanId) localStorage.setItem(ACTIVE_CLAN_STORAGE_KEY, clanUi.activeClanId);
+  else localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
+}
+
+async function refreshClanSync(options = {}) {
+  if (!clanSync || !clanSync.isConfigured()) {
+    clanUi.user = null;
+    clanUi.identityLinks = [];
+    clanUi.memberships = [];
+    clanUi.members = [];
+    clanUi.sharedDragons = [];
+    clanUi.sharedPins = [];
+    clanUi.activeClanId = "";
+    if (currentTab === "clans") renderClans();
+    return;
+  }
+
+  try {
+    const user = await clanSync.getCurrentUser();
+    clanUi.user = user;
+    clanUi.error = "";
+
+    if (!user) {
+      clanUi.identityLinks = [];
+      clanUi.memberships = [];
+      clanUi.members = [];
+      clanUi.sharedDragons = [];
+      clanUi.sharedPins = [];
+      clanUi.activeClanId = "";
+      if (currentTab === "clans") renderClans();
+      return;
+    }
+
+    if (clanUi.profileUserId !== user.id) {
+      await clanSync.upsertProfile(clanDisplayName(user));
+      clanUi.profileUserId = user.id;
+    }
+
+    const [identityLinks, memberships] = await Promise.all([
+      clanSync.getIdentityLinks(),
+      clanSync.getMemberships()
+    ]);
+    clanUi.identityLinks = Array.isArray(identityLinks) ? identityLinks : [];
+    clanUi.memberships = Array.isArray(memberships) ? memberships : [];
+    reconcileActiveClan();
+
+    if (clanUi.activeClanId) {
+      const [members, sharedDragons, sharedPins] = await Promise.all([
+        clanSync.getClanMembers(clanUi.activeClanId),
+        clanSync.getSharedDragons(clanUi.activeClanId),
+        clanSync.getClanMapPins(clanUi.activeClanId)
+      ]);
+      clanUi.members = Array.isArray(members) ? members : [];
+      clanUi.sharedDragons = Array.isArray(sharedDragons) ? sharedDragons : [];
+      clanUi.sharedPins = Array.isArray(sharedPins) ? sharedPins : [];
+    } else {
+      clanUi.members = [];
+      clanUi.sharedDragons = [];
+      clanUi.sharedPins = [];
+    }
+
+    const signature = JSON.stringify({
+      activeClanId: clanUi.activeClanId,
+      identityLinks: clanUi.identityLinks,
+      memberships: clanUi.memberships,
+      members: clanUi.members,
+      sharedDragons: clanUi.sharedDragons,
+      sharedPins: clanUi.sharedPins
+    });
+    const changed = signature !== clanUi.lastSignature;
+    clanUi.lastSignature = signature;
+    if (currentTab === "clans" || (!options.quiet && changed)) renderClans();
+    if (changed && currentTab === "map") renderMapPins();
+  } catch (error) {
+    clanUi.error = clanFriendlyError(error);
+    if (currentTab === "clans" || !options.quiet) renderClans();
+  }
+}
+
+function renderClans() {
+  if (!els.clanContent) return;
+  if (!clanSync) {
+    els.clanContent.innerHTML = `<section class="clan-panel empty-state"><h2>Secure sync is unavailable</h2><p>This build is missing the clan sync client.</p></section>`;
+    return;
+  }
+
+  const config = clanSync.getConfig();
+  if (!clanSync.isConfigured()) {
+    els.clanContent.innerHTML = `
+      <section class="clan-panel clan-identity-panel">
+        <div class="card-head">
+          <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Private by default</p></div>
+          <span class="pill">Local Only</span>
+        </div>
+        <p class="clan-copy">Your dragons, accounts, backups, and map pins remain only on this device until you explicitly share an item with a clan.</p>
+        <div class="card-actions"><button class="primary-button" type="button" data-clan-action="configure">Connect Sync</button></div>
+      </section>
+      <section class="clan-panel">
+        <h2>What connects</h2>
+        <dl class="line-list">
+          <div><dt>Discord</dt><dd>Identity only, using the identify scope.</dd></div>
+          <div><dt>Steam</dt><dd>Optional SteamID64 verification through Steam OpenID.</dd></div>
+          <div><dt>Sharing</dt><dd>Only dragons and map pins you choose to share.</dd></div>
+        </dl>
+      </section>
+    `;
+    return;
+  }
+
+  if (!clanUi.user) {
+    els.clanContent.innerHTML = `
+      <section class="clan-panel clan-identity-panel">
+        <div class="card-head">
+          <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Secure sync configured</p></div>
+          <span class="pill">Sign-in Required</span>
+        </div>
+        <p class="clan-copy">Discord verifies the tracker identity used for clan permissions. Dragon Tracker requests no email, guild list, messages, or Discord password.</p>
+        ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
+        <div class="card-actions">
+          <button class="primary-button" type="button" data-clan-action="connect-discord">Connect Discord</button>
+          <button class="tool-button" type="button" data-clan-action="configure">Sync Connection</button>
+        </div>
+      </section>
+    `;
+    return;
+  }
+
+  const currentClan = activeClan();
+  const membership = activeClanMembership();
+  const steamLinked = clanUi.identityLinks.some((link) => link.provider === "steam");
+  const clanOptions = clanUi.memberships.map((item) => {
+    const clan = clanMembershipClan(item);
+    if (!clan) return "";
+    return `<option value="${escapeAttr(item.clan_id)}"${item.clan_id === clanUi.activeClanId ? " selected" : ""}>${escapeHtml(clan.name)} (${escapeHtml(item.role)})</option>`;
+  }).join("");
+  const memberRows = clanUi.members.length
+    ? clanUi.members.map((member) => {
+      const ownerControls = membership?.role === "owner" && member.role !== "owner"
+        ? `
+          <div class="clan-member-controls">
+            <select aria-label="Role for ${escapeAttr(member.display_name || "Tracker Member")}" data-clan-role-for="${escapeAttr(member.user_id)}">${clanRoleOptions(member.role)}</select>
+            <button class="tool-button" type="button" data-clan-action="save-member-role" data-user-id="${escapeAttr(member.user_id)}">Save</button>
+            <button class="danger-button" type="button" data-clan-action="transfer-owner" data-user-id="${escapeAttr(member.user_id)}">Make Owner</button>
+          </div>
+        `
+        : `<span class="small-pill">${escapeHtml(member.role)}</span>`;
+      return `
+      <div class="clan-member-row">
+        <strong>${escapeHtml(member.display_name || "Tracker Member")}</strong>
+        ${ownerControls}
+      </div>
+    `;
+    }).join("")
+    : `<p class="account-empty">Choose or join a clan to see its roster.</p>`;
+  const sharedRows = clanUi.sharedDragons.length
+    ? clanUi.sharedDragons.slice(0, 12).map((record) => {
+      const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
+      return `
+        <article class="clan-share-row">
+          <strong>${escapeHtml(summary.displayName || "Shared Dragon")}</strong>
+          <span>${escapeHtml(compactJoin([summary.species, summary.skin, summary.status]))}</span>
+          <small>Shared by ${escapeHtml(clanMemberName(record.source_user_id))}</small>
+        </article>
+      `;
+    }).join("")
+    : `<p class="account-empty">No dragons have been shared with this clan yet.</p>`;
+
+  els.clanContent.innerHTML = `
+    <section class="clan-panel clan-identity-panel">
+      <div class="card-head">
+        <div class="card-title"><h2>${escapeHtml(clanDisplayName(clanUi.user))}</h2><p class="card-subtitle">Discord identity connected</p></div>
+        <span class="pill">Connected</span>
+      </div>
+      <dl class="line-list">
+        <div><dt>Steam</dt><dd>${steamLinked ? "SteamID verified" : "Not linked"}</dd></div>
+        <div><dt>Data default</dt><dd>Local only</dd></div>
+      </dl>
+      ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
+      <div class="card-actions">
+        <button class="tool-button" type="button" data-clan-action="refresh">Refresh</button>
+        ${steamLinked ? "" : `<button class="tool-button" type="button" data-clan-action="link-steam">Link Steam</button>`}
+        <button class="tool-button" type="button" data-clan-action="configure">Sync Settings</button>
+        <button class="danger-button" type="button" data-clan-action="sign-out">Sign Out</button>
+      </div>
+    </section>
+
+    <section class="clan-panel">
+      <div class="card-head"><div class="card-title"><h2>Clan</h2><p class="card-subtitle">Membership and invitations</p></div>${currentClan ? `<span class="pill">${escapeHtml(membership?.role || "member")}</span>` : ""}</div>
+      ${clanOptions ? `<div class="field"><label for="activeClanSelect">Active clan</label><select id="activeClanSelect">${clanOptions}</select></div>` : ""}
+      ${currentClan ? `
+        <div class="clan-member-list">${memberRows}</div>
+        <div class="card-actions">
+          ${["owner", "admin"].includes(membership?.role) ? `<button class="primary-button" type="button" data-clan-action="create-invite">Create One-use Invite</button>` : ""}
+          ${membership?.role === "owner" ? "" : `<button class="danger-button" type="button" data-clan-action="leave">Leave Clan</button>`}
+        </div>
+        ${clanUi.inviteCode ? `<p class="clan-invite-code"><span>Invite code</span><strong>${escapeHtml(clanUi.inviteCode)}</strong><button class="tool-button" type="button" data-clan-action="copy-invite">Copy</button></p>` : ""}
+      ` : ""}
+      <div class="clan-form-grid">
+        <form class="clan-inline-form" data-clan-form="create">
+          <label for="newClanName">Create clan</label>
+          <div><input id="newClanName" name="name" maxlength="60" placeholder="Clan name" required><button class="primary-button" type="submit">Create</button></div>
+        </form>
+        <form class="clan-inline-form" data-clan-form="join">
+          <label for="clanInviteCode">Join with invite</label>
+          <div><input id="clanInviteCode" name="inviteCode" maxlength="100" placeholder="Invite code" required><button class="tool-button" type="submit">Join</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="clan-panel clan-shared-panel">
+      <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members</p></div><span class="pill">${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
+      <div class="clan-share-list">${sharedRows}</div>
+    </section>
+  `;
+}
+
+function openSyncConfigDialog() {
+  if (!els.syncConfigDialog || !clanSync) return;
+  const config = clanSync.getConfig();
+  if (els.syncProjectUrl) els.syncProjectUrl.value = config.url;
+  if (els.syncAnonKey) els.syncAnonKey.value = config.anonKey;
+  showModal(els.syncConfigDialog);
+}
+
+function openSyncSetupDialog() {
+  if (!els.syncSetupDialog) return;
+  showModal(els.syncSetupDialog);
+}
+
+function handleSyncDialogAction(event) {
+  const action = event.currentTarget.dataset.syncDialogAction;
+  if (action === "instructions") {
+    closeModal("syncConfigDialog");
+    openSyncSetupDialog();
+  }
+  if (action === "configure") {
+    closeModal("syncSetupDialog");
+    openSyncConfigDialog();
+  }
+}
+
+async function handleSyncConfigSubmit(event) {
+  event.preventDefault();
+  if (!clanSync || !els.syncConfigForm) return;
+  const form = new FormData(els.syncConfigForm);
+  const previous = clanSync.getConfig();
+  try {
+    const next = { url: form.get("projectUrl"), anonKey: form.get("anonKey") };
+    if (previous.url && previous.url !== text(next.url).replace(/\/$/, "")) await clanSync.signOut();
+    clanSync.saveConfig(next);
+    clanUi.error = "";
+    clanUi.lastSignature = "";
+    clanUi.user = null;
+    clanUi.profileUserId = "";
+    closeModal("syncConfigDialog");
+    await refreshClanSync();
+    renderBackup();
+    showToast("Secure sync configured");
+  } catch (error) {
+    showToast(clanFriendlyError(error));
+  }
+}
+
+async function clearSyncConfiguration() {
+  if (!clanSync || !confirm("Clear this device's secure sync configuration and sign out? Local tracker data will stay here.")) return;
+  try {
+    await clanSync.signOut();
+  } catch (_) {
+    // Local sign-out should continue even when the old project is offline.
+  }
+  clanSync.clearConfig();
+  Object.assign(clanUi, { activeClanId: "", error: "", identityLinks: [], inviteCode: "", members: [], memberships: [], profileUserId: "", sharedDragons: [], sharedPins: [], user: null, lastSignature: "" });
+  localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
+  closeModal("syncConfigDialog");
+  renderClans();
+  renderBackup();
+  renderDragons();
+  renderMapPins();
+  showToast("Secure sync cleared from this device");
+}
+
+async function handleClanAction(event) {
+  const button = event.target.closest("[data-clan-action]");
+  if (!button || clanUi.busy) return;
+  const action = button.dataset.clanAction;
+  try {
+    clanUi.busy = true;
+    if (action === "configure") openSyncConfigDialog();
+    if (action === "connect-discord") await clanSync.startDiscordSignIn();
+    if (action === "link-steam") await clanSync.startSteamLink();
+    if (action === "refresh") await refreshClanSync();
+    if (action === "sign-out") {
+      if (!confirm("Sign out of clan sync on this device? Your local tracker data will stay here.")) return;
+      await clanSync.signOut();
+      Object.assign(clanUi, { activeClanId: "", identityLinks: [], inviteCode: "", members: [], memberships: [], profileUserId: "", sharedDragons: [], sharedPins: [], user: null, lastSignature: "" });
+      localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
+      renderAll();
+      showToast("Signed out of clan sync");
+    }
+    if (action === "create-invite") {
+      const clan = activeClan();
+      if (!clan) throw new Error("Choose a clan before creating an invite.");
+      clanUi.inviteCode = await clanSync.createInvite(clan.id, 1);
+      renderClans();
+      showToast("One-use invite created");
+    }
+    if (action === "copy-invite") {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(clanUi.inviteCode);
+      else prompt("Invite code:", clanUi.inviteCode);
+      showToast("Invite code copied");
+    }
+    if (action === "leave") {
+      const clan = activeClan();
+      if (!clan || !confirm(`Leave ${clan.name}?`)) return;
+      await clanSync.leaveClan(clan.id);
+      clanUi.inviteCode = "";
+      await refreshClanSync();
+      showToast("Left clan");
+    }
+    if (action === "save-member-role") {
+      const clan = activeClan();
+      const userId = button.dataset.userId;
+      const roleSelect = [...els.clanContent.querySelectorAll("[data-clan-role-for]")]
+        .find((control) => control.dataset.clanRoleFor === userId);
+      if (!clan || !userId || !roleSelect) throw new Error("Choose a valid member role.");
+      await clanSync.setClanMemberRole(clan.id, userId, roleSelect.value);
+      await refreshClanSync();
+      showToast("Member role updated");
+    }
+    if (action === "transfer-owner") {
+      const clan = activeClan();
+      const member = clanUi.members.find((item) => item.user_id === button.dataset.userId);
+      if (!clan || !member || !confirm(`Transfer ownership of ${clan.name} to ${member.display_name}? You will become an admin.`)) return;
+      await clanSync.transferClanOwnership(clan.id, member.user_id);
+      await refreshClanSync();
+      showToast("Clan ownership transferred");
+    }
+  } catch (error) {
+    clanUi.error = clanFriendlyError(error);
+    renderClans();
+    showToast(clanUi.error);
+  } finally {
+    clanUi.busy = false;
+  }
+}
+
+async function handleClanChange(event) {
+  if (event.target?.id !== "activeClanSelect") return;
+  clanUi.activeClanId = event.target.value;
+  clanUi.inviteCode = "";
+  reconcileActiveClan();
+  await refreshClanSync();
+  renderDragons();
+  renderMapPins();
+}
+
+async function handleClanSubmit(event) {
+  const form = event.target.closest("[data-clan-form]");
+  if (!form || clanUi.busy) return;
+  event.preventDefault();
+  const values = new FormData(form);
+  try {
+    clanUi.busy = true;
+    if (form.dataset.clanForm === "create") {
+      const clan = await clanSync.createClan(values.get("name"));
+      clanUi.activeClanId = Array.isArray(clan) ? clan[0]?.id : clan?.id;
+      clanUi.inviteCode = "";
+      await refreshClanSync();
+      showToast("Clan created");
+    }
+    if (form.dataset.clanForm === "join") {
+      const clan = await clanSync.joinClan(values.get("inviteCode"));
+      clanUi.activeClanId = Array.isArray(clan) ? clan[0]?.id : clan?.id;
+      clanUi.inviteCode = "";
+      await refreshClanSync();
+      showToast("Joined clan");
+    }
+  } catch (error) {
+    clanUi.error = clanFriendlyError(error);
+    renderClans();
+    showToast(clanUi.error);
+  } finally {
+    clanUi.busy = false;
+  }
+}
+
+function bindDesktopAuthCallbacks() {
+  if (!window.dragonTrackerDesktop?.onAuthCallback) return;
+  window.dragonTrackerDesktop.onAuthCallback((callbackUrl) => {
+    void handleAuthCallback(callbackUrl);
+  });
+}
+
+function bindBrowserAuthCallback() {
+  if (window.dragonTrackerDesktop?.isDesktop) return;
+  const callback = new URL(window.location.href);
+  if (!callback.searchParams.has("code") && !callback.searchParams.has("error")) return;
+
+  const callbackUrl = callback.toString();
+  history.replaceState(null, "", `${callback.pathname}${callback.hash || "#clans"}`);
+  void handleAuthCallback(callbackUrl);
+}
+
+async function handleAuthCallback(callbackUrl) {
+  try {
+    const url = new URL(callbackUrl);
+    const provider = url.searchParams.get("provider") || ((url.searchParams.has("code") || url.searchParams.has("error")) ? "discord" : "");
+    if (provider === "discord") {
+      await clanSync.finishDiscordSignIn(callbackUrl);
+      const user = await clanSync.getCurrentUser();
+      if (user) await clanSync.upsertProfile(clanDisplayName(user));
+      clanUi.profileUserId = user?.id || "";
+      showToast("Discord connected for clan sync");
+    }
+    if (provider === "steam") {
+      const status = url.searchParams.get("status");
+      if (status !== "linked") throw new Error(url.searchParams.get("message") || "Steam linking was not completed.");
+      showToast("Steam identity linked");
+    }
+    setTab("clans", { updateHash: true });
+    await refreshClanSync();
+  } catch (error) {
+    clanUi.error = clanFriendlyError(error);
+    setTab("clans", { updateHash: true });
+    renderClans();
+    showToast(clanUi.error);
+  }
+}
+
+async function shareDragonWithClan(dragon) {
+  const clan = activeClan();
+  if (!clan || !canShareWithActiveClan()) {
+    showToast("Connect Discord and choose a clan before sharing.");
+    setTab("clans", { updateHash: true });
+    return;
+  }
+  const displayName = dragon.accountName || dragon.name || "Dragon";
+  if (!confirm(`Share ${displayName} with ${clan.name}? This shares its selected tracker details, not account credentials or local backups.`)) return;
+  try {
+    await clanSync.shareDragon(clan.id, dragon.id, clanDragonSummary(dragon));
+    await refreshClanSync({ quiet: true });
+    showToast(`${displayName} shared with ${clan.name}`);
+  } catch (error) {
+    showToast(clanFriendlyError(error));
+  }
+}
+
+function clanDragonSummary(dragon) {
+  return {
+    displayName: text(dragon.accountName || dragon.name || "Dragon", 80),
+    species: text(dragon.species, 80),
+    sex: text(dragon.sex, 20),
+    status: text(dragon.status, 30),
+    skin: text(dragon.skin, 100),
+    recessiveSkin: text(dragon.recessiveSkin, 100),
+    nestRole: text(dragon.nestRole, 30),
+    bloodline: text(dragon.bloodline, 20),
+    stats: Object.fromEntries(STAT_FIELDS.map((field) => [field.key, text(dragon.stats?.[field.key], 10)])),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function renderMapAreaSelect() {
   if (!els.mapAreaSelect) return;
   const current = els.mapAreaSelect.value || MAP_REFERENCE_AREAS[0]?.id || "";
@@ -2814,29 +3367,53 @@ function renderMapLayers() {
 
 function renderMapPins() {
   if (!els.mapPinLayer || !els.mapPinList) return;
-  const pins = [...state.mapPins].sort((a, b) => sortText(a.label, b.label));
+  const localPins = [...state.mapPins].map((pin) => ({ ...pin, remote: false }));
+  const remotePins = visibleClanMapPins().map((pin) => ({
+    id: pin.id,
+    label: pin.label,
+    type: pin.pin_type,
+    x: Number(pin.x),
+    y: Number(pin.y),
+    notes: pin.notes,
+    sharedBy: clanMemberName(pin.source_user_id),
+    remote: true,
+    sourceUserId: pin.source_user_id
+  }));
+  const pins = [...localPins, ...remotePins].sort((a, b) => sortText(a.label, b.label));
   els.mapPinCount.textContent = `${pins.length} pin${pins.length === 1 ? "" : "s"}`;
   els.mapPinLayer.innerHTML = pins.map((pin) => `
-    <button class="map-pin" type="button" data-map-pin-id="${escapeAttr(pin.id)}" style="left:${pin.x}%; top:${pin.y}%;" title="${escapeAttr(compactJoin([pin.label, pin.type]))}">
+    <button class="map-pin${pin.remote ? " is-clan-pin" : ""}" type="button" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-map-pin-id="${escapeAttr(pin.id)}"`} style="left:${pin.x}%; top:${pin.y}%;" title="${escapeAttr(compactJoin([pin.label, pin.type, pin.remote ? "Clan" : "Local"]))}">
       <span>${escapeHtml(pin.label.slice(0, 2).toUpperCase())}</span>
     </button>
   `).join("");
 
   els.mapPinList.innerHTML = pins.length
     ? pins.map((pin) => `
-      <article class="map-pin-card" data-id="${escapeAttr(pin.id)}">
+      <article class="map-pin-card${pin.remote ? " is-clan-pin" : ""}" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-id="${escapeAttr(pin.id)}"`}>
         <div>
           <strong>${escapeHtml(pin.label)}</strong>
-          <span>${escapeHtml(compactJoin([pin.type, pin.sharedBy]))}</span>
+          <span>${escapeHtml(compactJoin([pin.type, pin.remote ? `Clan: ${pin.sharedBy}` : pin.sharedBy]))}</span>
         </div>
         ${pin.notes ? `<p>${escapeHtml(pin.notes)}</p>` : ""}
         <div class="card-actions">
-          <button class="tool-button" type="button" data-map-pin-action="copy" data-id="${escapeAttr(pin.id)}">Copy Code</button>
-          <button class="danger-button" type="button" data-map-pin-action="delete" data-id="${escapeAttr(pin.id)}">Delete</button>
+          <button class="tool-button" type="button" data-map-pin-action="copy" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-id="${escapeAttr(pin.id)}"`}>Copy Code</button>
+          ${pin.remote
+            ? (pin.sourceUserId === clanUi.user?.id ? `<button class="danger-button" type="button" data-map-pin-action="unshare" data-clan-map-pin-id="${escapeAttr(pin.id)}">Unshare</button>` : "")
+            : `${canShareWithActiveClan() ? `<button class="tool-button" type="button" data-map-pin-action="share" data-id="${escapeAttr(pin.id)}">Share to Clan</button>` : ""}<button class="danger-button" type="button" data-map-pin-action="delete" data-id="${escapeAttr(pin.id)}">Delete</button>`}
         </div>
       </article>
     `).join("")
     : `<div class="empty-state map-empty"><h2>No shared pins</h2><p>Add a pin or import a location code.</p></div>`;
+}
+
+function visibleClanMapPins() {
+  if (!canShareWithActiveClan()) return [];
+  const localIds = new Set(state.mapPins.map((pin) => pin.id));
+  return clanUi.sharedPins.filter((pin) => !(pin.source_user_id === clanUi.user?.id && localIds.has(pin.source_local_id)));
+}
+
+function clanMapPinById(id) {
+  return clanUi.sharedPins.find((pin) => pin.id === id) || null;
 }
 
 function startMapPinPlacement() {
@@ -2848,6 +3425,18 @@ function startMapPinPlacement() {
 function handleMapStageClick(event) {
   const pinButton = event.target.closest(".map-pin");
   if (pinButton) {
+    const clanPin = clanMapPinById(pinButton.dataset.clanMapPinId);
+    if (clanPin) {
+      copyMapLocationCode({
+        label: clanPin.label,
+        type: clanPin.pin_type,
+        x: clanPin.x,
+        y: clanPin.y,
+        notes: clanPin.notes,
+        sharedBy: clanMemberName(clanPin.source_user_id)
+      });
+      return;
+    }
     const pin = mapPinById(pinButton.dataset.mapPinId);
     if (pin) copyMapLocationCode(pin);
     return;
@@ -2891,12 +3480,29 @@ function handleMapStageClick(event) {
 function handleMapPinAction(event) {
   const button = event.target.closest("[data-map-pin-action]");
   if (!button) return;
+  const clanPin = clanMapPinById(button.dataset.clanMapPinId);
+  if (clanPin) {
+    if (button.dataset.mapPinAction === "copy") {
+      copyMapLocationCode({
+        label: clanPin.label,
+        type: clanPin.pin_type,
+        x: clanPin.x,
+        y: clanPin.y,
+        notes: clanPin.notes,
+        sharedBy: clanMemberName(clanPin.source_user_id)
+      });
+    }
+    if (button.dataset.mapPinAction === "unshare") void unshareClanMapPin(clanPin);
+    return;
+  }
   const pin = mapPinById(button.dataset.id);
   if (!pin) return;
 
   if (button.dataset.mapPinAction === "copy") {
     copyMapLocationCode(pin);
   }
+
+  if (button.dataset.mapPinAction === "share") void shareMapPinWithClan(pin);
 
   if (button.dataset.mapPinAction === "delete") {
     if (!confirm(`Delete ${pin.label}?`)) return;
@@ -2971,6 +3577,33 @@ function renderBackup() {
     <dt>Saved</dt><dd>${formatDateTime(state.updatedAt)}</dd>
     <dt>Backup size</dt><dd>${formatBytes(bytes)}</dd>
   `;
+  renderSyncSettings();
+}
+
+function renderSyncSettings() {
+  if (!els.syncSettingsState || !els.syncSettingsDescription) return;
+  if (!clanSync) {
+    els.syncSettingsState.textContent = "Unavailable";
+    els.syncSettingsDescription.textContent = "This build does not include clan sync. Your tracker data remains on this device.";
+    els.openSyncConfigBtn?.setAttribute("disabled", "");
+    return;
+  }
+
+  els.openSyncConfigBtn?.removeAttribute("disabled");
+  if (!clanSync.isConfigured()) {
+    els.syncSettingsState.textContent = "Local Only";
+    els.syncSettingsDescription.textContent = "Your tracker stays on this device. Set up or join a shared sync space only when you want to share selected dragons and pins.";
+    return;
+  }
+
+  if (clanUi.user) {
+    els.syncSettingsState.textContent = "Connected";
+    els.syncSettingsDescription.textContent = `Connected as ${clanDisplayName(clanUi.user)}. Dragons and map pins stay local until you choose Share to Clan.`;
+    return;
+  }
+
+  els.syncSettingsState.textContent = "Ready to Sign In";
+  els.syncSettingsDescription.textContent = "This device knows the shared sync space. Open Clans to connect Discord and join or create a clan.";
 }
 
 function renderAppVersion() {
@@ -3423,7 +4056,38 @@ function handleDragonAction(event) {
   if (action === "edit") openDragonDialog(id);
   if (action === "clone") cloneDragon(dragon);
   if (action === "toggleStatus") toggleDragonStatus(dragon);
+  if (action === "share") void shareDragonWithClan(dragon);
   if (action === "delete") deleteDragon(dragon);
+}
+
+async function shareMapPinWithClan(pin) {
+  const clan = activeClan();
+  if (!clan || !canShareWithActiveClan()) {
+    showToast("Connect Discord and choose a clan before sharing.");
+    setTab("clans", { updateHash: true });
+    return;
+  }
+  if (!confirm(`Share ${pin.label} with ${clan.name}? This pin becomes visible to active clan members.`)) return;
+  try {
+    await clanSync.shareMapPin(clan.id, pin);
+    await refreshClanSync({ quiet: true });
+    renderMapPins();
+    showToast(`${pin.label} shared with ${clan.name}`);
+  } catch (error) {
+    showToast(clanFriendlyError(error));
+  }
+}
+
+async function unshareClanMapPin(pin) {
+  if (!confirm(`Remove ${pin.label} from clan sharing? Your local pin will remain.`)) return;
+  try {
+    await clanSync.unshareMapPin(pin.id);
+    await refreshClanSync({ quiet: true });
+    renderMapPins();
+    showToast(`${pin.label} removed from clan sharing`);
+  } catch (error) {
+    showToast(clanFriendlyError(error));
+  }
 }
 
 function handleAccountAction(event) {
@@ -4644,6 +5308,7 @@ function downloadBlob(filename, content, type) {
 function startupTab() {
   const hash = window.location.hash.replace("#", "").trim();
   if (hash === "accounts") return "players";
+  if (hash === "backup") return "settings";
   return TAB_NAMES.includes(hash) ? hash : DEFAULT_TAB;
 }
 
@@ -4658,7 +5323,8 @@ function setTab(tabName, options = {}) {
   els.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === nextTab));
   els.panels.forEach((panel) => panel.classList.toggle("is-active", panel.dataset.panel === nextTab));
   renderCurrentTab();
-  if (nextTab === "backup") renderBackup();
+  if (nextTab === "clans") void refreshClanSync({ quiet: true });
+  if (nextTab === "settings") renderBackup();
 }
 
 function fillSelect(select, values) {

@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, safeStorage } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const fs = require("fs");
 const path = require("path");
 
 const packageJson = require("../package.json");
@@ -8,6 +9,110 @@ let mainWindow = null;
 let manualUpdateCheck = false;
 let updateDownloadPromptOpen = false;
 let updateInstallPromptOpen = false;
+let pendingAuthCallbacks = [];
+
+const AUTH_PROTOCOL = "dragontracker";
+const SECURE_STORE_FILE = "dragon-tracker-secure.json";
+const SECURE_KEYS = new Set(["clan-sync-session", "clan-sync-discord-pkce"]);
+
+function secureStorePath() {
+  return path.join(app.getPath("userData"), SECURE_STORE_FILE);
+}
+
+function readSecureStore() {
+  try {
+    const raw = fs.readFileSync(secureStorePath(), "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeSecureStore(store) {
+  fs.writeFileSync(secureStorePath(), JSON.stringify(store), { encoding: "utf8", mode: 0o600 });
+}
+
+function ensureSecureStorage() {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Secure storage is unavailable on this device. Clan sign-in cannot be saved safely.");
+  }
+}
+
+function isAllowedSecureKey(key) {
+  return typeof key === "string" && SECURE_KEYS.has(key);
+}
+
+function isSafeExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    const localHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    return url.protocol === "https:" || (url.protocol === "http:" && localHost);
+  } catch (_) {
+    return false;
+  }
+}
+
+function isAuthCallback(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === `${AUTH_PROTOCOL}:` && url.hostname === "auth" && url.pathname === "/callback";
+  } catch (_) {
+    return false;
+  }
+}
+
+function forwardAuthCallback(value) {
+  if (!isAuthCallback(value)) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingAuthCallbacks.push(value);
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send("dragon-tracker:auth-callback", value);
+}
+
+function registerProtocolHandler() {
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(AUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    return;
+  }
+  app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
+}
+
+function setupSecureIpc() {
+  ipcMain.handle("dragon-tracker:secure-get", (_event, key) => {
+    if (!isAllowedSecureKey(key)) throw new Error("Unsupported secure storage key.");
+    ensureSecureStorage();
+    const encrypted = readSecureStore()[key];
+    if (!encrypted || typeof encrypted !== "string") return "";
+    return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+  });
+
+  ipcMain.handle("dragon-tracker:secure-set", (_event, key, value) => {
+    if (!isAllowedSecureKey(key) || typeof value !== "string" || value.length > 65536) {
+      throw new Error("Unsupported secure storage value.");
+    }
+    ensureSecureStorage();
+    const store = readSecureStore();
+    store[key] = safeStorage.encryptString(value).toString("base64");
+    writeSecureStore(store);
+  });
+
+  ipcMain.handle("dragon-tracker:secure-delete", (_event, key) => {
+    if (!isAllowedSecureKey(key)) throw new Error("Unsupported secure storage key.");
+    const store = readSecureStore();
+    delete store[key];
+    writeSecureStore(store);
+  });
+
+  ipcMain.handle("dragon-tracker:open-external", (_event, url) => {
+    if (!isSafeExternalUrl(url)) throw new Error("Only secure web links can be opened from Dragon Tracker.");
+    return shell.openExternal(url);
+  });
+}
 
 function releaseUrl() {
   const publish = Array.isArray(packageJson.build?.publish)
@@ -31,7 +136,8 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      preload: path.join(__dirname, "preload.cjs")
     }
   });
 
@@ -43,6 +149,11 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  mainWindow.webContents.once("did-finish-load", () => {
+    pendingAuthCallbacks.forEach((callback) => mainWindow?.webContents.send("dragon-tracker:auth-callback", callback));
+    pendingAuthCallbacks = [];
   });
 
   mainWindow.on("closed", () => {
@@ -215,8 +326,29 @@ function checkForUpdates(manual = false) {
   });
 }
 
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, commandLine) => {
+    const callback = commandLine.find(isAuthCallback);
+    if (callback) forwardAuthCallback(callback);
+    else if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    forwardAuthCallback(url);
+  });
+}
+
 app.whenReady().then(() => {
   app.setAppUserModelId("com.dragontracker.app");
+  registerProtocolHandler();
+  setupSecureIpc();
   buildMenu();
   configureAutoUpdater();
   createWindow();
