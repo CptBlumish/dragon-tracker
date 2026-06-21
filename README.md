@@ -10,7 +10,7 @@ Download the newest version from [GitHub Releases](https://github.com/CptBlumish
 - macOS users should download the `.dmg` or `.zip`.
 - Linux users should download the `.AppImage` or `.deb`.
 
-The desktop app can check for updates from the Help menu. The current app version is shown on the Backup tab.
+The desktop app can check for updates from the Help menu. The current app version is shown on the Settings tab.
 
 ## What It Tracks
 
