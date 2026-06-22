@@ -1,6 +1,6 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.8";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.9";
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -384,6 +384,9 @@ const els = {
   accountDialog: document.querySelector("#accountDialog"),
   accountForm: document.querySelector("#accountForm"),
   accountDialogTitle: document.querySelector("#accountDialogTitle"),
+  accountDetailDialog: document.querySelector("#accountDetailDialog"),
+  accountDetailTitle: document.querySelector("#accountDetailTitle"),
+  accountDetailContent: document.querySelector("#accountDetailContent"),
   dragonDialog: document.querySelector("#dragonDialog"),
   dragonForm: document.querySelector("#dragonForm"),
   dragonDialogTitle: document.querySelector("#dragonDialogTitle"),
@@ -584,7 +587,8 @@ function normalizeAccount(account) {
     accountName: accountName || "Unnamed Account",
     discord: text(account.discord || account.discordName || account.discordId),
     steam: text(account.steam || account.steamId || account.steamProfile),
-    dlc: normalizeDlc(account.dlc)
+    dlc: normalizeDlc(account.dlc),
+    clanImported: Boolean(account.clanImported)
   };
 }
 
@@ -720,7 +724,8 @@ function mergeAccountRecord(existing, incoming) {
     accountName: chooseImportText(existing.accountName, incoming.accountName, preferIncoming, ["Unnamed Account"]),
     discord: chooseImportText(existing.discord, incoming.discord, preferIncoming),
     steam: chooseImportText(existing.steam, incoming.steam, preferIncoming),
-    dlc: mergeDlcValues(existing.dlc, incoming.dlc)
+    dlc: mergeDlcValues(existing.dlc, incoming.dlc),
+    clanImported: Boolean(existing.clanImported && incoming.clanImported)
   };
 }
 
@@ -811,7 +816,23 @@ function mergeDragonRecord(existing, incoming) {
     remainingMutationPoints: chooseImportNumber(existing.remainingMutationPoints, incoming.remainingMutationPoints, preferIncoming),
     birthDate: chooseImportText(existing.birthDate, incoming.birthDate, preferIncoming),
     tags: mergeUniqueStrings(existing.tags, incoming.tags),
-    notes: mergeTextBlocks(existing.notes, incoming.notes)
+    notes: mergeTextBlocks(existing.notes, incoming.notes),
+    clanImported: Boolean(existing.clanImported && incoming.clanImported),
+    clanShareKey: existing.clanImported && incoming.clanImported
+      ? chooseImportText(existing.clanShareKey, incoming.clanShareKey, preferIncoming)
+      : "",
+    clanShareKeys: existing.clanImported && incoming.clanImported
+      ? mergeUniqueStrings(
+        [...(Array.isArray(existing.clanShareKeys) ? existing.clanShareKeys : []), existing.clanShareKey],
+        [...(Array.isArray(incoming.clanShareKeys) ? incoming.clanShareKeys : []), incoming.clanShareKey]
+      )
+      : [],
+    clanShareClanId: existing.clanImported && incoming.clanImported
+      ? chooseImportText(existing.clanShareClanId, incoming.clanShareClanId, preferIncoming)
+      : "",
+    clanShareUpdatedAt: existing.clanImported && incoming.clanImported
+      ? chooseImportText(existing.clanShareUpdatedAt, incoming.clanShareUpdatedAt, preferIncoming)
+      : ""
   };
 }
 
@@ -1100,6 +1121,10 @@ function normalizeDragon(dragon) {
     survivorMutation: dragon.survivorMutation
   });
   const stats = {};
+  const clanShareKeys = [...new Set([
+    ...(Array.isArray(dragon.clanShareKeys) ? dragon.clanShareKeys : []),
+    text(dragon.clanShareKey)
+  ].map(text).filter(Boolean))];
   STAT_FIELDS.forEach((field) => {
     stats[field.key] = normalizeGrade(dragon.stats?.[field.key]);
   });
@@ -1138,7 +1163,12 @@ function normalizeDragon(dragon) {
     remainingMutationPoints: allocation.remainingMutationPoints,
     birthDate: text(dragon.birthDate),
     tags: Array.isArray(dragon.tags) ? dragon.tags.map(text).filter(Boolean) : splitTags(dragon.tags),
-    notes: text(dragon.notes)
+    notes: text(dragon.notes),
+    clanImported: Boolean(dragon.clanImported),
+    clanShareKey: clanShareKeys[0] || "",
+    clanShareKeys,
+    clanShareClanId: text(dragon.clanShareClanId),
+    clanShareUpdatedAt: text(dragon.clanShareUpdatedAt)
   };
 }
 
@@ -1385,6 +1415,8 @@ function bindEvents() {
   els.dragonList.addEventListener("click", handleDragonAction);
   els.accountList.addEventListener("click", handleAccountAction);
   els.accountList.addEventListener("click", handleDragonAction);
+  els.accountList.addEventListener("click", handleAccountCardOpen);
+  els.accountList.addEventListener("keydown", handleAccountCardKeydown);
   els.skinList.addEventListener("click", handleSkinAction);
   els.skinList.addEventListener("pointerover", handleSkinTurntableStart);
   els.skinList.addEventListener("pointerout", handleSkinTurntableStop);
@@ -1685,14 +1717,17 @@ function renderAccounts() {
 
   els.accountList.innerHTML = [...byUser.entries()].map(([username, userAccounts]) => {
     const dragonCount = userAccounts.reduce((sum, account) => sum + dragonsForAccount(account.id).length, 0);
+    const clanOnlyPlayer = userAccounts.every((account) => account.clanImported);
     return `
       <section class="account-user-section">
         <div class="account-user-head">
           <h2>${escapeHtml(username)}</h2>
           <div class="account-user-actions">
             <span class="pill">${userAccounts.length} account${userAccounts.length === 1 ? "" : "s"} / ${dragonCount} dragon${dragonCount === 1 ? "" : "s"}</span>
-            <button class="tool-button" type="button" data-account-action="add-account" data-username="${escapeAttr(username)}">Add Account</button>
-            <button class="danger-button" type="button" data-account-action="delete-player" data-username="${escapeAttr(username)}">Delete Player</button>
+            ${clanOnlyPlayer ? `<span class="small-pill">Clan shared</span>` : `
+              <button class="tool-button" type="button" data-account-action="add-account" data-username="${escapeAttr(username)}">Add Account</button>
+              <button class="danger-button" type="button" data-account-action="delete-player" data-username="${escapeAttr(username)}">Delete Player</button>
+            `}
           </div>
         </div>
         <div class="account-grid">
@@ -1728,7 +1763,7 @@ function getFilteredAccounts() {
 
 function renderAccountCard(account) {
   const accountDragons = dragonsForAccount(account.id).sort((a, b) => sortText(a.species || "zz", b.species || "zz"));
-  const unsharedDragons = accountDragons.filter((dragon) => !isDragonSharedWithActiveClan(dragon));
+  const unsharedDragons = accountDragons.filter((dragon) => !dragon.clanImported && !isDragonSharedWithActiveClan(dragon));
   const ownedSpecies = new Set(accountDragons.map((dragon) => dragon.species).filter(Boolean));
   const openSpecies = collectSpeciesNames().filter((species) => !ownedSpecies.has(species));
   const dragonRows = accountDragons.length
@@ -1736,18 +1771,20 @@ function renderAccountCard(account) {
       <div class="account-dragon-row">
         <span>${escapeHtml(dragon.species || "Unknown species")}</span>
         <strong>${escapeHtml(compactJoin([dragon.status, dragon.skin || "Unknown skin"]))}</strong>
-        <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
+        ${dragon.clanImported
+          ? `<span class="small-pill">Clan shared</span>`
+          : `<button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>`}
       </div>
     `).join("")
     : `<p class="account-empty">No dragons on this account yet.</p>`;
 
   return `
-    <article class="account-card" data-id="${escapeAttr(account.id)}">
+    <article class="account-card" data-id="${escapeAttr(account.id)}" tabindex="0" aria-label="Open details for ${escapeAttr(account.accountName)}">
       <div class="card-head">
         <div class="card-title">
           <h3>${escapeHtml(account.accountName)}</h3>
         </div>
-        <span class="pill">${accountDragons.length}/7</span>
+        <div class="account-card-badges"><span class="pill">${accountDragons.length}/7</span>${account.clanImported ? `<span class="small-pill">Clan shared</span>` : ""}</div>
       </div>
       <dl class="line-list">
         <div><dt>Open slots</dt><dd>${escapeHtml(openSpecies.length ? openSpecies.join(", ") : "Full roster")}</dd></div>
@@ -1758,25 +1795,112 @@ function renderAccountCard(account) {
       <div class="account-dragon-list">
         ${dragonRows}
       </div>
-      <div class="card-actions">
-        <button class="primary-button" type="button" data-account-action="add-dragon" data-id="${escapeAttr(account.id)}">Add Dragon</button>
-        ${canShareWithActiveClan() && unsharedDragons.length ? `<button class="tool-button" type="button" data-account-action="share-account" data-id="${escapeAttr(account.id)}">Share Account</button>` : ""}
-        <button class="tool-button" type="button" data-account-action="edit" data-id="${escapeAttr(account.id)}">Edit Account</button>
-        <button class="danger-button" type="button" data-account-action="delete-account" data-id="${escapeAttr(account.id)}">Delete Account</button>
+      ${account.clanImported ? "" : `
+        <div class="card-actions">
+          <button class="primary-button" type="button" data-account-action="add-dragon" data-id="${escapeAttr(account.id)}">Add Dragon</button>
+          ${canShareWithActiveClan() && unsharedDragons.length ? `<button class="tool-button" type="button" data-account-action="share-account" data-id="${escapeAttr(account.id)}">Share Account</button>` : ""}
+          <button class="tool-button" type="button" data-account-action="edit" data-id="${escapeAttr(account.id)}">Edit Account</button>
+          <button class="danger-button" type="button" data-account-action="delete-account" data-id="${escapeAttr(account.id)}">Delete Account</button>
+        </div>
+      `}
+    </article>
+  `;
+}
+
+function handleAccountCardOpen(event) {
+  if (event.target.closest("button, input, select, textarea, a, label")) return;
+  const card = event.target.closest(".account-card[data-id]");
+  if (card) openAccountDetailDialog(card.dataset.id);
+}
+
+function handleAccountCardKeydown(event) {
+  if (!['Enter', ' '].includes(event.key) || event.target.closest("button, input, select, textarea, a, label")) return;
+  const card = event.target.closest(".account-card[data-id]");
+  if (!card) return;
+  event.preventDefault();
+  openAccountDetailDialog(card.dataset.id);
+}
+
+function openAccountDetailDialog(id) {
+  const account = accountById(id);
+  if (!account || !els.accountDetailDialog || !els.accountDetailContent) return;
+  const dragons = dragonsForAccount(account.id).sort((a, b) => sortText(a.species, b.species));
+  const openSpecies = collectSpeciesNames().filter((species) => !dragons.some((dragon) => dragon.species === species));
+
+  els.accountDetailTitle.textContent = account.accountName;
+  els.accountDetailContent.innerHTML = `
+    <div class="account-detail-overview">
+      <section class="account-detail-section">
+        <h3>Account</h3>
+        <dl class="account-detail-list">
+          <div><dt>Player</dt><dd>${escapeHtml(account.username)}</dd></div>
+          <div><dt>Account</dt><dd>${escapeHtml(account.accountName)}</dd></div>
+          <div><dt>DLC</dt><dd>${escapeHtml(formatDlcList(account.dlc))}</dd></div>
+          <div><dt>Discord</dt><dd>${escapeHtml(account.discord || "Not recorded")}</dd></div>
+          <div><dt>Steam</dt><dd>${escapeHtml(account.steam || "Not recorded")}</dd></div>
+          <div><dt>Source</dt><dd>${account.clanImported ? "Clan shared" : "Local record"}</dd></div>
+        </dl>
+      </section>
+      <section class="account-detail-section">
+        <h3>Roster</h3>
+        <dl class="account-detail-list">
+          <div><dt>Dragons</dt><dd>${dragons.length}/7</dd></div>
+          <div><dt>Open species</dt><dd>${escapeHtml(openSpecies.length ? openSpecies.join(", ") : "Full roster")}</dd></div>
+          <div><dt>Created</dt><dd>${escapeHtml(formatDateTime(account.createdAt))}</dd></div>
+          <div><dt>Updated</dt><dd>${escapeHtml(formatDateTime(account.updatedAt))}</dd></div>
+        </dl>
+      </section>
+    </div>
+    <section class="account-detail-roster">
+      <div class="account-detail-roster-head"><h3>Dragon Details</h3><span class="pill">${dragons.length} recorded</span></div>
+      ${dragons.length ? dragons.map(renderAccountDetailDragon).join("") : `<p class="account-empty">No dragons are recorded for this account.</p>`}
+    </section>
+  `;
+  showModal(els.accountDetailDialog);
+}
+
+function renderAccountDetailDragon(dragon) {
+  const statRows = STAT_FIELDS.map((field) => `
+    <div><dt>${escapeHtml(field.label)}</dt><dd>${escapeHtml(dragon.stats[field.key] || "Unknown")}</dd></div>
+  `).join("");
+  const parentLabel = dragonParentLabel(dragon);
+  return `
+    <article class="account-detail-dragon">
+      <div class="account-detail-dragon-head">
+        <div>
+          <h4>${escapeHtml(dragon.species || "Unknown species")}</h4>
+          <p>${escapeHtml(compactJoin([dragon.sex, dragon.status, dragon.clanImported ? "Clan shared" : "Local record"]))}</p>
+        </div>
+        <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
       </div>
+      <dl class="account-detail-list account-detail-dragon-fields">
+        <div><dt>Skin</dt><dd>${escapeHtml(dragon.skin || "Unknown")}</dd></div>
+        <div><dt>Recessive</dt><dd>${escapeHtml(dragon.recessiveSkin || "Unknown")}</dd></div>
+        <div><dt>Nest role</dt><dd>${escapeHtml(dragon.nestRole || "Unknown")}</dd></div>
+        <div><dt>Bloodline</dt><dd>${escapeHtml(dragon.bloodline || "Unknown")}</dd></div>
+        <div><dt>Parents</dt><dd>${escapeHtml(parentLabel)}</dd></div>
+        <div><dt>Mutation points</dt><dd>${escapeHtml(String(dragon.mutationPoints ?? 0))}</dd></div>
+        <div><dt>Social</dt><dd>${escapeHtml(formatSocialPoints(dragon.socialPoints))}</dd></div>
+        <div><dt>Agile</dt><dd>${escapeHtml(formatTrackPoints(dragon.agilePoints, "Fast", dragon.fastMutation))}</dd></div>
+        <div><dt>Scavenger</dt><dd>${escapeHtml(formatTrackPoints(dragon.scavengerPoints, "Survivor", dragon.survivorMutation))}</dd></div>
+        <div><dt>Free points</dt><dd>${escapeHtml(String(dragon.remainingMutationPoints ?? 0))}</dd></div>
+      </dl>
+      <dl class="account-detail-stats">${statRows}</dl>
     </article>
   `;
 }
 
 function renderDragonCard(dragon) {
   const parents = dragonParentLabel(dragon);
-  const shareAction = canShareWithActiveClan() && !isDragonSharedWithActiveClan(dragon)
+  const shareAction = !dragon.clanImported && canShareWithActiveClan() && !isDragonSharedWithActiveClan(dragon)
     ? `<button class="tool-button" type="button" data-dragon-action="share" data-id="${escapeAttr(dragon.id)}">Share to Clan</button>`
     : "";
 
-  const tags = dragon.tags.length
-    ? `<div class="skin-meta">${dragon.tags.map((tag) => `<span class="small-pill">${escapeHtml(tag)}</span>`).join("")}</div>`
-    : "";
+  const tags = [
+    dragon.clanImported ? `<span class="small-pill">Clan shared</span>` : "",
+    ...dragon.tags.map((tag) => `<span class="small-pill">${escapeHtml(tag)}</span>`)
+  ].filter(Boolean);
+  const tagMarkup = tags.length ? `<div class="skin-meta">${tags.join("")}</div>` : "";
 
   return `
     <article class="dragon-card" data-id="${escapeAttr(dragon.id)}">
@@ -1810,15 +1934,17 @@ function renderDragonCard(dragon) {
         `).join("")}
       </div>
 
-      ${tags}
+      ${tagMarkup}
 
-      <div class="card-actions">
-        <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
-        <button class="tool-button" type="button" data-dragon-action="clone" data-id="${escapeAttr(dragon.id)}">Clone</button>
-        <button class="tool-button" type="button" data-dragon-action="toggleStatus" data-id="${escapeAttr(dragon.id)}">Advance</button>
-        ${shareAction}
-        <button class="danger-button" type="button" data-dragon-action="delete" data-id="${escapeAttr(dragon.id)}">Delete</button>
-      </div>
+      ${dragon.clanImported ? "" : `
+        <div class="card-actions">
+          <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
+          <button class="tool-button" type="button" data-dragon-action="clone" data-id="${escapeAttr(dragon.id)}">Clone</button>
+          <button class="tool-button" type="button" data-dragon-action="toggleStatus" data-id="${escapeAttr(dragon.id)}">Advance</button>
+          ${shareAction}
+          <button class="danger-button" type="button" data-dragon-action="delete" data-id="${escapeAttr(dragon.id)}">Delete</button>
+        </div>
+      `}
     </article>
   `;
 }
@@ -2812,6 +2938,8 @@ async function refreshClanSync(options = {}) {
       clanUi.members = Array.isArray(members) ? members : [];
       clanUi.sharedDragons = Array.isArray(sharedDragons) ? sharedDragons : [];
       clanUi.sharedPins = Array.isArray(sharedPins) ? sharedPins : [];
+      const localClanChanges = materializeClanSharedDragons(clanUi.activeClanId, clanUi.sharedDragons);
+      if (localClanChanges && !document.querySelector("dialog[open]")) renderAll();
     } else {
       clanUi.members = [];
       clanUi.sharedDragons = [];
@@ -2836,6 +2964,182 @@ async function refreshClanSync(options = {}) {
     clanUi.error = clanFriendlyError(error);
     if (currentTab === "clans" || !options.quiet) renderClans();
   }
+}
+
+function materializeClanSharedDragons(clanId, records) {
+  const remoteKeys = new Set();
+  let changed = false;
+  const remoteRecords = Array.isArray(records)
+    ? records.filter((record) => record?.source_user_id && record.source_user_id !== clanUi.user?.id)
+    : [];
+
+  remoteRecords.forEach((record) => {
+    const shareKey = clanSharedDragonKey(clanId, record);
+    remoteKeys.add(shareKey);
+    const incoming = clanSharedDragonFromRecord(record, clanId, shareKey);
+    if (!incoming) return;
+
+    const account = ensureClanSharedAccount(incoming.username, incoming.accountName);
+    if (account.created) changed = true;
+    incoming.accountId = account.record.id;
+
+    const existing = state.dragons.find((dragon) => (
+      dragon.clanImported && clanShareKeysForDragon(dragon).includes(shareKey)
+    )) || state.dragons.find((dragon) => (
+      dragonIdentityKey(dragon) === dragonIdentityKey(incoming)
+      && (!dragon.clanImported || dragon.clanShareClanId === clanId)
+    ));
+
+    if (!existing) {
+      state.dragons.push(incoming);
+      changed = true;
+      return;
+    }
+
+    if (mergeClanSharedDragon(existing, incoming, record.summary)) changed = true;
+  });
+
+  if (removeMissingClanSharedDragons(clanId, remoteKeys)) changed = true;
+  if (!changed) return false;
+
+  state.accounts.sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+  state.dragons.sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName) || sortText(a.species, b.species));
+  refreshAllDerivedRecords();
+  saveState();
+  return true;
+}
+
+function clanSharedDragonKey(clanId, record) {
+  return `${text(clanId)}::${text(record?.source_user_id)}::${text(record?.source_local_id)}`;
+}
+
+function clanShareKeysForDragon(dragon) {
+  return [...new Set([
+    ...(Array.isArray(dragon?.clanShareKeys) ? dragon.clanShareKeys : []),
+    text(dragon?.clanShareKey)
+  ].map(text).filter(Boolean))];
+}
+
+function clanSharedDragonFromRecord(record, clanId, shareKey) {
+  const summary = record?.summary && typeof record.summary === "object" ? record.summary : {};
+  const username = text(summary.playerName || summary.username || clanMemberName(record.source_user_id)) || "Clan member";
+  const accountName = text(summary.accountName || summary.displayName);
+  const species = canonicalSpeciesName(summary.species);
+  if (!accountName || !species) return null;
+
+  const timestamp = text(record.updated_at || summary.updatedAt) || new Date().toISOString();
+  return normalizeDragon({
+    id: uid("clan-dragon"),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    username,
+    accountName,
+    name: accountName,
+    species,
+    sex: summary.sex,
+    status: summary.status,
+    nestRole: summary.nestRole,
+    server: summary.server,
+    skin: summary.skin,
+    skinType: summary.skinType,
+    recessiveSkin: summary.recessiveSkin,
+    motherName: summary.motherName,
+    fatherName: summary.fatherName,
+    bloodline: summary.bloodline,
+    stats: summary.stats,
+    dominantMutation: summary.dominantMutation,
+    elderProgress: summary.elderProgress,
+    socialPoints: summary.socialPoints,
+    agilePoints: summary.agilePoints,
+    fastMutation: summary.fastMutation,
+    scavengerPoints: summary.scavengerPoints,
+    survivorMutation: summary.survivorMutation,
+    birthDate: summary.birthDate,
+    tags: Array.isArray(summary.tags) ? summary.tags : [],
+    clanImported: true,
+    clanShareKey: shareKey,
+    clanShareKeys: [shareKey],
+    clanShareClanId: clanId,
+    clanShareUpdatedAt: timestamp
+  });
+}
+
+function ensureClanSharedAccount(username, accountName) {
+  const existing = state.accounts.find((account) => (
+    accountIdentityKey(account.username, account.accountName) === accountIdentityKey(username, accountName)
+  ));
+  if (existing) return { record: existing, created: false };
+  const record = normalizeAccount({
+    id: uid("clan-account"),
+    username,
+    accountName,
+    clanImported: true
+  });
+  state.accounts.push(record);
+  return { record, created: true };
+}
+
+function mergeClanSharedDragon(existing, incoming, rawSummary) {
+  const summary = rawSummary && typeof rawSummary === "object" ? rawSummary : {};
+  const has = (key) => Object.prototype.hasOwnProperty.call(summary, key);
+  const shareKeys = existing.clanImported
+    ? [...new Set([...clanShareKeysForDragon(existing), incoming.clanShareKey].filter(Boolean))]
+    : clanShareKeysForDragon(existing);
+  const useIncomingDetails = !existing.clanImported
+    || new Date(incoming.clanShareUpdatedAt || 0).getTime() >= new Date(existing.clanShareUpdatedAt || 0).getTime();
+  const next = {
+    ...existing,
+    accountId: useIncomingDetails ? incoming.accountId : existing.accountId,
+    username: useIncomingDetails ? incoming.username : existing.username,
+    accountName: useIncomingDetails ? incoming.accountName : existing.accountName,
+    name: useIncomingDetails ? incoming.accountName : existing.name,
+    updatedAt: useIncomingDetails ? incoming.updatedAt : existing.updatedAt,
+    clanImported: Boolean(existing.clanImported),
+    clanShareKey: existing.clanImported ? shareKeys[0] || "" : existing.clanShareKey,
+    clanShareKeys: shareKeys,
+    clanShareClanId: existing.clanImported ? incoming.clanShareClanId : existing.clanShareClanId,
+    clanShareUpdatedAt: existing.clanImported && useIncomingDetails ? incoming.clanShareUpdatedAt : existing.clanShareUpdatedAt
+  };
+  [
+    "species", "sex", "status", "nestRole", "server", "skin", "skinType", "recessiveSkin",
+    "motherName", "fatherName", "bloodline", "birthDate", "dominantMutation", "elderProgress",
+    "socialPoints", "agilePoints", "fastMutation", "scavengerPoints", "survivorMutation"
+  ].forEach((key) => {
+    if (useIncomingDetails && has(key)) next[key] = incoming[key];
+  });
+  if (useIncomingDetails && has("stats") && summary.stats && typeof summary.stats === "object") {
+    next.stats = { ...existing.stats, ...incoming.stats };
+  }
+  if (useIncomingDetails && has("tags") && Array.isArray(summary.tags)) next.tags = incoming.tags;
+
+  const normalized = normalizeDragon(next);
+  if (JSON.stringify(existing) === JSON.stringify(normalized)) return false;
+  Object.assign(existing, normalized);
+  return true;
+}
+
+function removeMissingClanSharedDragons(clanId, activeShareKeys) {
+  let changed = false;
+  const removed = state.dragons.filter((dragon) => {
+    if (!dragon.clanImported || dragon.clanShareClanId !== clanId) return false;
+    const currentKeys = clanShareKeysForDragon(dragon);
+    const remainingKeys = currentKeys.filter((key) => activeShareKeys.has(key));
+    if (!remainingKeys.length) return true;
+    if (remainingKeys.length !== currentKeys.length) {
+      dragon.clanShareKeys = remainingKeys;
+      dragon.clanShareKey = remainingKeys[0] || "";
+      changed = true;
+    }
+    return false;
+  });
+  if (!removed.length) return changed;
+
+  const removedIds = new Set(removed.map((dragon) => dragon.id));
+  state.dragons = state.dragons.filter((dragon) => !removedIds.has(dragon.id));
+  clearDragonParentReferences(removedIds);
+  const accountIdsInUse = new Set(state.dragons.map((dragon) => dragon.accountId));
+  state.accounts = state.accounts.filter((account) => !account.clanImported || accountIdsInUse.has(account.id));
+  return true;
 }
 
 function renderClans() {
@@ -2962,17 +3266,18 @@ function renderClans() {
           ${membership?.role === "owner" ? "" : `<button class="danger-button" type="button" data-clan-action="leave">Leave Clan</button>`}
         </div>
         ${clanUi.inviteCode ? `<p class="clan-invite-code"><span>Invite code</span><strong>${escapeHtml(clanUi.inviteCode)}</strong><button class="tool-button" type="button" data-clan-action="copy-invite">Copy</button></p>` : ""}
-      ` : ""}
-      <div class="clan-form-grid">
-        <form class="clan-inline-form" data-clan-form="create">
-          <label for="newClanName">Create clan</label>
-          <div><input id="newClanName" name="name" maxlength="60" placeholder="Clan name" required><button class="primary-button" type="submit">Create</button></div>
-        </form>
-        <form class="clan-inline-form" data-clan-form="join">
-          <label for="clanInviteCode">Join with invite</label>
-          <div><input id="clanInviteCode" name="inviteCode" maxlength="100" placeholder="Invite code" required><button class="tool-button" type="submit">Join</button></div>
-        </form>
-      </div>
+      ` : `
+        <div class="clan-form-grid">
+          <form class="clan-inline-form" data-clan-form="create">
+            <label for="newClanName">Create clan</label>
+            <div><input id="newClanName" name="name" maxlength="60" placeholder="Clan name" required><button class="primary-button" type="submit">Create</button></div>
+          </form>
+          <form class="clan-inline-form" data-clan-form="join">
+            <label for="clanInviteCode">Join with invite</label>
+            <div><input id="clanInviteCode" name="inviteCode" maxlength="100" placeholder="Invite code" required><button class="tool-button" type="submit">Join</button></div>
+          </form>
+        </div>
+      `}
     </section>
 
     <section class="clan-panel clan-shared-panel">
@@ -3122,6 +3427,11 @@ async function handleClanAction(event) {
       const clan = activeClan();
       if (!clan || !confirm(`Leave ${clan.name}?`)) return;
       await clanSync.leaveClan(clan.id);
+      if (removeMissingClanSharedDragons(clan.id, new Set())) {
+        refreshAllDerivedRecords();
+        saveState();
+        renderAll();
+      }
       clanUi.inviteCode = "";
       await refreshClanSync();
       showToast("Left clan");
@@ -3160,6 +3470,7 @@ async function handleClanChange(event) {
   reconcileActiveClan();
   await refreshClanSync();
   renderDragons();
+  renderAccounts();
   renderMapPins();
 }
 
@@ -3317,14 +3628,29 @@ async function shareAccountWithClan(account) {
 function clanDragonSummary(dragon) {
   return {
     displayName: text(dragon.accountName || dragon.name || "Dragon", 80),
+    playerName: text(dragon.username, 80),
+    accountName: text(dragon.accountName || dragon.name || "Dragon", 80),
     species: text(dragon.species, 80),
     sex: text(dragon.sex, 20),
     status: text(dragon.status, 30),
+    server: text(dragon.server, 80),
     skin: text(dragon.skin, 100),
+    skinType: text(dragon.skinType, 30),
     recessiveSkin: text(dragon.recessiveSkin, 100),
     nestRole: text(dragon.nestRole, 30),
     bloodline: text(dragon.bloodline, 20),
+    motherName: text(dragon.motherName, 80),
+    fatherName: text(dragon.fatherName, 80),
     stats: Object.fromEntries(STAT_FIELDS.map((field) => [field.key, text(dragon.stats?.[field.key], 10)])),
+    dominantMutation: Boolean(dragon.dominantMutation),
+    elderProgress: Number(dragon.elderProgress) || 0,
+    socialPoints: Number(dragon.socialPoints) || 0,
+    agilePoints: Number(dragon.agilePoints) || 0,
+    fastMutation: Boolean(dragon.fastMutation),
+    scavengerPoints: Number(dragon.scavengerPoints) || 0,
+    survivorMutation: Boolean(dragon.survivorMutation),
+    birthDate: text(dragon.birthDate, 30),
+    tags: Array.isArray(dragon.tags) ? dragon.tags.map((tag) => text(tag, 60)).filter(Boolean).slice(0, 24) : [],
     updatedAt: new Date().toISOString()
   };
 }
@@ -4179,6 +4505,10 @@ function handleDragonAction(event) {
   const action = button.dataset.dragonAction;
   const dragon = dragonById(id);
   if (!dragon) return;
+  if (dragon.clanImported) {
+    showToast("Clan-shared dragons are read-only on this device.");
+    return;
+  }
 
   if (action === "edit") openDragonDialog(id);
   if (action === "clone") cloneDragon(dragon);
@@ -5499,6 +5829,7 @@ function upsertAccountRecord(values) {
     existing.discord = incoming.discord || existing.discord || "";
     existing.steam = incoming.steam || existing.steam || "";
     existing.dlc = hasDlcData ? normalizeDlc(incoming.dlc) : normalizeDlc(existing.dlc);
+    existing.clanImported = Boolean(existing.clanImported && incoming.clanImported);
     existing.updatedAt = now;
     updateDragonsForAccount(existing, previous);
     return existing;

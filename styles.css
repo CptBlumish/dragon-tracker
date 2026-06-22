@@ -420,6 +420,24 @@ input[type="checkbox"] {
   display: grid;
   gap: 12px;
   padding: 14px;
+  cursor: pointer;
+}
+
+.account-card:hover {
+  border-color: var(--line-strong);
+}
+
+.account-card:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.account-card-badges {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .account-dragon-list {
@@ -1831,6 +1849,114 @@ input[type="checkbox"] {
   width: min(700px, calc(100% - 28px));
 }
 
+.account-detail-modal {
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
+  max-height: none;
+}
+
+.account-detail-modal[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.account-detail-content {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.account-detail-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.account-detail-section {
+  min-width: 0;
+}
+
+.account-detail-section h3,
+.account-detail-roster-head h3,
+.account-detail-dragon h4 {
+  margin: 0;
+  color: var(--gold);
+}
+
+.account-detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin: 12px 0 0;
+}
+
+.account-detail-list div,
+.account-detail-stats div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-detail-list dt,
+.account-detail-stats dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.account-detail-list dd,
+.account-detail-stats dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-detail-roster {
+  display: grid;
+  gap: 0;
+}
+
+.account-detail-roster-head,
+.account-detail-dragon-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.account-detail-dragon {
+  display: grid;
+  gap: 16px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+
+.account-detail-dragon-head {
+  align-items: center;
+}
+
+.account-detail-dragon-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.account-detail-dragon-fields {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.account-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
 .modal::backdrop {
   background: rgba(0, 0, 0, 0.72);
 }
@@ -2084,6 +2210,14 @@ legend {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .account-detail-dragon-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .account-detail-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .stats-bar,
   .backup-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2191,8 +2325,15 @@ legend {
   }
 
   .account-grid,
-  .account-dragon-row {
+  .account-dragon-row,
+  .account-detail-overview,
+  .account-detail-list,
+  .account-detail-dragon-fields {
     grid-template-columns: 1fr;
+  }
+
+  .account-detail-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .clan-inline-form > div {
