@@ -1,6 +1,6 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.7";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.8";
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -2915,6 +2915,10 @@ function renderClans() {
     : `<p class="account-empty">Choose or join a clan to see its roster.</p>`;
   const filteredSharedDragons = getFilteredClanSharedDragons();
   const filters = clanUi.libraryFilters;
+  const dragonOptions = clanLibraryFilterOptions("displayName", filters.dragon, "All dragons");
+  const skinOptions = clanLibraryFilterOptions("skin", filters.skin, "All skins");
+  const recessiveOptions = clanLibraryFilterOptions("recessiveSkin", filters.recessive, "All recessives");
+  const sexOptions = clanLibraryFilterOptions("sex", filters.sex, "Any sex");
   const sharedRows = filteredSharedDragons.length
     ? filteredSharedDragons.map((record) => {
       const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
@@ -2974,15 +2978,25 @@ function renderClans() {
     <section class="clan-panel clan-shared-panel">
       <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members</p></div><span class="pill">${filteredSharedDragons.length} of ${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
       <form class="clan-library-search" data-clan-form="library-search">
-        <div class="field"><label for="clanLibraryDragon">Dragon</label><input id="clanLibraryDragon" name="dragon" value="${escapeAttr(filters.dragon)}" placeholder="Dragon name"></div>
-        <div class="field"><label for="clanLibrarySkin">Skin</label><input id="clanLibrarySkin" name="skin" value="${escapeAttr(filters.skin)}" placeholder="Primary skin"></div>
-        <div class="field"><label for="clanLibraryRecessive">Recessive</label><input id="clanLibraryRecessive" name="recessive" value="${escapeAttr(filters.recessive)}" placeholder="Recessive skin"></div>
-        <div class="field"><label for="clanLibrarySex">Sex</label><select id="clanLibrarySex" name="sex"><option value="">Any sex</option><option value="Male"${filters.sex === "Male" ? " selected" : ""}>Male</option><option value="Female"${filters.sex === "Female" ? " selected" : ""}>Female</option><option value="Unknown"${filters.sex === "Unknown" ? " selected" : ""}>Unknown</option></select></div>
-        <div class="clan-library-search-actions"><button class="primary-button" type="submit">Search</button><button class="tool-button" type="button" data-clan-action="clear-library-search">Clear</button></div>
+        <div class="field"><label for="clanLibraryDragon">Dragon</label><select id="clanLibraryDragon" name="dragon">${dragonOptions}</select></div>
+        <div class="field"><label for="clanLibrarySkin">Skin</label><select id="clanLibrarySkin" name="skin">${skinOptions}</select></div>
+        <div class="field"><label for="clanLibraryRecessive">Recessive</label><select id="clanLibraryRecessive" name="recessive">${recessiveOptions}</select></div>
+        <div class="field"><label for="clanLibrarySex">Sex</label><select id="clanLibrarySex" name="sex">${sexOptions}</select></div>
+        <div class="clan-library-search-actions"><button class="primary-button" type="submit">Apply</button><button class="tool-button" type="button" data-clan-action="clear-library-search">Clear</button></div>
       </form>
       <div class="clan-share-list">${sharedRows}</div>
     </section>
   `;
+}
+
+function clanLibraryFilterOptions(summaryKey, selectedValue, emptyLabel) {
+  const values = [...new Set(clanUi.sharedDragons
+    .map((record) => text(record.summary?.[summaryKey], 100))
+    .filter(Boolean))]
+    .sort(sortText);
+  return [`<option value="">${escapeHtml(emptyLabel)}</option>`, ...values.map((value) => (
+    `<option value="${escapeAttr(value)}"${value === selectedValue ? " selected" : ""}>${escapeHtml(value)}</option>`
+  ))].join("");
 }
 
 function getFilteredClanSharedDragons() {
