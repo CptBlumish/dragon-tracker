@@ -100,6 +100,10 @@ function finishUrl(returnUrl: string, status: "linked" | "error", message = "") 
   return url.toString();
 }
 
+function callbackFunctionUrl() {
+  return new URL("/functions/v1/steam-openid", SUPABASE_URL);
+}
+
 Deno.serve(async (request) => {
   let returnUrl = DEEP_LINK || DEFAULT_RETURN_URL;
   try {
@@ -124,8 +128,7 @@ Deno.serve(async (request) => {
       });
       if (error) throw error;
 
-      const callbackUrl = new URL(requestUrl.toString());
-      callbackUrl.search = "";
+      const callbackUrl = callbackFunctionUrl();
       callbackUrl.searchParams.set("action", "callback");
       callbackUrl.searchParams.set("state", state);
       callbackUrl.searchParams.set("return_to", returnUrl);
