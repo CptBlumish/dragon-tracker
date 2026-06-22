@@ -1,6 +1,6 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.6";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.7";
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -350,6 +350,7 @@ let toastTimer = null;
 let autoSyncTimer = null;
 let lastKnownStateText = "";
 let mapPinPlacementActive = false;
+let clanShareConfirmationResolve = null;
 const clanSync = window.DragonTrackerSyncClient ? new window.DragonTrackerSyncClient() : null;
 const clanUi = {
   activeClanId: localStorage.getItem(ACTIVE_CLAN_STORAGE_KEY) || "",
@@ -358,6 +359,7 @@ const clanUi = {
   inviteCode: "",
   identityLinks: [],
   lastSignature: "",
+  libraryFilters: { dragon: "", skin: "", recessive: "", sex: "" },
   members: [],
   memberships: [],
   sharedDragons: [],
@@ -408,6 +410,9 @@ const els = {
   upstatForm: document.querySelector("#upstatForm"),
   upstatDialogTitle: document.querySelector("#upstatDialogTitle"),
   upstatList: document.querySelector("#upstatList"),
+  clanShareDialog: document.querySelector("#clanShareDialog"),
+  clanShareDialogTitle: document.querySelector("#clanShareDialogTitle"),
+  clanShareDialogDescription: document.querySelector("#clanShareDialogDescription"),
   mapLayerLocations: document.querySelector("#mapLayerLocations"),
   mapLayerCrystals: document.querySelector("#mapLayerCrystals"),
   mapLayerFood: document.querySelector("#mapLayerFood"),
@@ -528,7 +533,8 @@ function createDefaultState() {
     })),
     settings: {
       species: DEFAULT_SPECIES,
-      statFields: STAT_FIELDS
+      statFields: STAT_FIELDS,
+      skipClanShareConfirmation: false
     }
   };
 }
@@ -560,7 +566,8 @@ function normalizeState(input = {}) {
     skins,
     settings: {
       species: mergeSpecies(input.settings?.species || []),
-      statFields: STAT_FIELDS
+      statFields: STAT_FIELDS,
+      skipClanShareConfirmation: Boolean(input.settings?.skipClanShareConfirmation)
     }
   };
 }
@@ -1345,6 +1352,14 @@ function bindEvents() {
   document.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", () => closeModal(button.dataset.closeModal));
   });
+  els.clanShareDialog?.addEventListener("click", handleClanShareConfirmation);
+  els.clanShareDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    settleClanShareConfirmation(false);
+  });
+  els.clanShareDialog?.addEventListener("close", () => {
+    if (clanShareConfirmationResolve) settleClanShareConfirmation(false, false, false);
+  });
 
   document.querySelectorAll("[data-action='export-json']").forEach((button) => {
     button.addEventListener("click", exportJson);
@@ -1713,6 +1728,7 @@ function getFilteredAccounts() {
 
 function renderAccountCard(account) {
   const accountDragons = dragonsForAccount(account.id).sort((a, b) => sortText(a.species || "zz", b.species || "zz"));
+  const unsharedDragons = accountDragons.filter((dragon) => !isDragonSharedWithActiveClan(dragon));
   const ownedSpecies = new Set(accountDragons.map((dragon) => dragon.species).filter(Boolean));
   const openSpecies = collectSpeciesNames().filter((species) => !ownedSpecies.has(species));
   const dragonRows = accountDragons.length
@@ -1744,6 +1760,7 @@ function renderAccountCard(account) {
       </div>
       <div class="card-actions">
         <button class="primary-button" type="button" data-account-action="add-dragon" data-id="${escapeAttr(account.id)}">Add Dragon</button>
+        ${canShareWithActiveClan() && unsharedDragons.length ? `<button class="tool-button" type="button" data-account-action="share-account" data-id="${escapeAttr(account.id)}">Share Account</button>` : ""}
         <button class="tool-button" type="button" data-account-action="edit" data-id="${escapeAttr(account.id)}">Edit Account</button>
         <button class="danger-button" type="button" data-account-action="delete-account" data-id="${escapeAttr(account.id)}">Delete Account</button>
       </div>
@@ -1753,7 +1770,7 @@ function renderAccountCard(account) {
 
 function renderDragonCard(dragon) {
   const parents = dragonParentLabel(dragon);
-  const shareAction = canShareWithActiveClan()
+  const shareAction = canShareWithActiveClan() && !isDragonSharedWithActiveClan(dragon)
     ? `<button class="tool-button" type="button" data-dragon-action="share" data-id="${escapeAttr(dragon.id)}">Share to Clan</button>`
     : "";
 
@@ -2813,6 +2830,8 @@ async function refreshClanSync(options = {}) {
     clanUi.lastSignature = signature;
     if (currentTab === "clans" || (!options.quiet && changed)) renderClans();
     if (changed && currentTab === "map") renderMapPins();
+    if (changed && currentTab === "dragons") renderDragons();
+    if (changed && currentTab === "players") renderAccounts();
   } catch (error) {
     clanUi.error = clanFriendlyError(error);
     if (currentTab === "clans" || !options.quiet) renderClans();
@@ -2894,18 +2913,20 @@ function renderClans() {
     `;
     }).join("")
     : `<p class="account-empty">Choose or join a clan to see its roster.</p>`;
-  const sharedRows = clanUi.sharedDragons.length
-    ? clanUi.sharedDragons.slice(0, 12).map((record) => {
+  const filteredSharedDragons = getFilteredClanSharedDragons();
+  const filters = clanUi.libraryFilters;
+  const sharedRows = filteredSharedDragons.length
+    ? filteredSharedDragons.map((record) => {
       const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
       return `
         <article class="clan-share-row">
           <strong>${escapeHtml(summary.displayName || "Shared Dragon")}</strong>
-          <span>${escapeHtml(compactJoin([summary.species, summary.skin, summary.status]))}</span>
+          <span>${escapeHtml(compactJoin([summary.species, summary.sex, summary.skin, summary.recessiveSkin ? `Res: ${summary.recessiveSkin}` : "", summary.status]))}</span>
           <small>Shared by ${escapeHtml(clanMemberName(record.source_user_id))}</small>
         </article>
       `;
     }).join("")
-    : `<p class="account-empty">No dragons have been shared with this clan yet.</p>`;
+    : `<p class="account-empty">${clanUi.sharedDragons.length ? "No shared dragons match these filters." : "No dragons have been shared with this clan yet."}</p>`;
 
   els.clanContent.innerHTML = `
     <section class="clan-panel clan-identity-panel">
@@ -2922,6 +2943,7 @@ function renderClans() {
         <button class="tool-button" type="button" data-clan-action="refresh">Refresh</button>
         ${steamLinked ? "" : `<button class="tool-button" type="button" data-clan-action="link-steam">Link Steam</button>`}
         <button class="tool-button" type="button" data-clan-action="configure">Sync Settings</button>
+        ${state.settings.skipClanShareConfirmation ? `<button class="tool-button" type="button" data-clan-action="enable-share-prompts">Ask Before Sharing</button>` : ""}
         <button class="danger-button" type="button" data-clan-action="sign-out">Sign Out</button>
       </div>
     </section>
@@ -2950,10 +2972,29 @@ function renderClans() {
     </section>
 
     <section class="clan-panel clan-shared-panel">
-      <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members</p></div><span class="pill">${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
+      <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members</p></div><span class="pill">${filteredSharedDragons.length} of ${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
+      <form class="clan-library-search" data-clan-form="library-search">
+        <div class="field"><label for="clanLibraryDragon">Dragon</label><input id="clanLibraryDragon" name="dragon" value="${escapeAttr(filters.dragon)}" placeholder="Dragon name"></div>
+        <div class="field"><label for="clanLibrarySkin">Skin</label><input id="clanLibrarySkin" name="skin" value="${escapeAttr(filters.skin)}" placeholder="Primary skin"></div>
+        <div class="field"><label for="clanLibraryRecessive">Recessive</label><input id="clanLibraryRecessive" name="recessive" value="${escapeAttr(filters.recessive)}" placeholder="Recessive skin"></div>
+        <div class="field"><label for="clanLibrarySex">Sex</label><select id="clanLibrarySex" name="sex"><option value="">Any sex</option><option value="Male"${filters.sex === "Male" ? " selected" : ""}>Male</option><option value="Female"${filters.sex === "Female" ? " selected" : ""}>Female</option><option value="Unknown"${filters.sex === "Unknown" ? " selected" : ""}>Unknown</option></select></div>
+        <div class="clan-library-search-actions"><button class="primary-button" type="submit">Search</button><button class="tool-button" type="button" data-clan-action="clear-library-search">Clear</button></div>
+      </form>
       <div class="clan-share-list">${sharedRows}</div>
     </section>
   `;
+}
+
+function getFilteredClanSharedDragons() {
+  const filters = clanUi.libraryFilters;
+  const includes = (value, query) => !query || text(value).toLowerCase().includes(query.toLowerCase());
+  return clanUi.sharedDragons.filter((record) => {
+    const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
+    return includes(summary.displayName, filters.dragon)
+      && includes(summary.skin, filters.skin)
+      && includes(summary.recessiveSkin, filters.recessive)
+      && (!filters.sex || text(summary.sex).toLowerCase() === filters.sex.toLowerCase());
+  });
 }
 
 function openSyncConfigDialog() {
@@ -3031,6 +3072,18 @@ async function handleClanAction(event) {
     if (action === "connect-discord") await clanSync.startDiscordSignIn();
     if (action === "link-steam") await clanSync.startSteamLink();
     if (action === "refresh") await refreshClanSync();
+    if (action === "clear-library-search") {
+      clanUi.libraryFilters = { dragon: "", skin: "", recessive: "", sex: "" };
+      renderClans();
+      return;
+    }
+    if (action === "enable-share-prompts") {
+      state.settings.skipClanShareConfirmation = false;
+      saveState();
+      renderClans();
+      showToast("Share confirmations restored");
+      return;
+    }
     if (action === "sign-out") {
       if (!confirm("Sign out of clan sync on this device? Your local tracker data will stay here.")) return;
       await clanSync.signOut();
@@ -3101,6 +3154,16 @@ async function handleClanSubmit(event) {
   if (!form || clanUi.busy) return;
   event.preventDefault();
   const values = new FormData(form);
+  if (form.dataset.clanForm === "library-search") {
+    clanUi.libraryFilters = {
+      dragon: text(values.get("dragon"), 100),
+      skin: text(values.get("skin"), 100),
+      recessive: text(values.get("recessive"), 100),
+      sex: text(values.get("sex"), 20)
+    };
+    renderClans();
+    return;
+  }
   try {
     clanUi.busy = true;
     if (form.dataset.clanForm === "create") {
@@ -3177,12 +3240,61 @@ async function shareDragonWithClan(dragon) {
     setTab("clans", { updateHash: true });
     return;
   }
+  if (isDragonSharedWithActiveClan(dragon)) {
+    showToast("This dragon is already shared with the active clan.");
+    return;
+  }
   const displayName = dragon.accountName || dragon.name || "Dragon";
-  if (!confirm(`Share ${displayName} with ${clan.name}? This shares its selected tracker details, not account credentials or local backups.`)) return;
+  const approved = await confirmClanShare({
+    title: "Share Dragon",
+    description: `Share ${displayName} with ${clan.name}? Clan members will see this dragon's selected tracker details.`
+  });
+  if (!approved) return;
   try {
     await clanSync.shareDragon(clan.id, dragon.id, clanDragonSummary(dragon));
     await refreshClanSync({ quiet: true });
+    renderDragons();
+    renderAccounts();
     showToast(`${displayName} shared with ${clan.name}`);
+  } catch (error) {
+    showToast(clanFriendlyError(error));
+  }
+}
+
+function isDragonSharedWithActiveClan(dragon) {
+  if (!dragon || !canShareWithActiveClan()) return false;
+  return clanUi.sharedDragons.some((record) => record.source_user_id === clanUi.user?.id && record.source_local_id === dragon.id);
+}
+
+async function shareAccountWithClan(account) {
+  const clan = activeClan();
+  if (!clan || !canShareWithActiveClan()) {
+    showToast("Connect Discord and choose a clan before sharing.");
+    setTab("clans", { updateHash: true });
+    return;
+  }
+  const dragons = dragonsForAccount(account.id).filter((dragon) => !isDragonSharedWithActiveClan(dragon));
+  if (!dragons.length) {
+    showToast("Every dragon on this account is already shared with the active clan.");
+    return;
+  }
+  const approved = await confirmClanShare({
+    title: "Share Account",
+    description: `Share ${dragons.length} unshared dragon${dragons.length === 1 ? "" : "s"} from ${account.accountName} with ${clan.name}?`
+  });
+  if (!approved) return;
+
+  try {
+    const results = await Promise.allSettled(dragons.map((dragon) => clanSync.shareDragon(clan.id, dragon.id, clanDragonSummary(dragon))));
+    const sharedCount = results.filter((result) => result.status === "fulfilled").length;
+    await refreshClanSync({ quiet: true });
+    renderDragons();
+    renderAccounts();
+    if (!sharedCount) {
+      const failed = results.find((result) => result.status === "rejected");
+      throw failed?.reason || new Error("The account could not be shared.");
+    }
+    showToast(`${sharedCount} dragon${sharedCount === 1 ? "" : "s"} shared from ${account.accountName}${sharedCount === dragons.length ? "" : "; some could not be shared"}`);
   } catch (error) {
     showToast(clanFriendlyError(error));
   }
@@ -3400,7 +3512,7 @@ function renderMapPins() {
           <button class="tool-button" type="button" data-map-pin-action="copy" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-id="${escapeAttr(pin.id)}"`}>Copy Code</button>
           ${pin.remote
             ? (pin.sourceUserId === clanUi.user?.id ? `<button class="danger-button" type="button" data-map-pin-action="unshare" data-clan-map-pin-id="${escapeAttr(pin.id)}">Unshare</button>` : "")
-            : `${canShareWithActiveClan() ? `<button class="tool-button" type="button" data-map-pin-action="share" data-id="${escapeAttr(pin.id)}">Share to Clan</button>` : ""}<button class="danger-button" type="button" data-map-pin-action="delete" data-id="${escapeAttr(pin.id)}">Delete</button>`}
+            : `${canShareWithActiveClan() && !isMapPinSharedWithActiveClan(pin) ? `<button class="tool-button" type="button" data-map-pin-action="share" data-id="${escapeAttr(pin.id)}">Share to Clan</button>` : ""}<button class="danger-button" type="button" data-map-pin-action="delete" data-id="${escapeAttr(pin.id)}">Delete</button>`}
         </div>
       </article>
     `).join("")
@@ -4068,7 +4180,15 @@ async function shareMapPinWithClan(pin) {
     setTab("clans", { updateHash: true });
     return;
   }
-  if (!confirm(`Share ${pin.label} with ${clan.name}? This pin becomes visible to active clan members.`)) return;
+  if (isMapPinSharedWithActiveClan(pin)) {
+    showToast("This map pin is already shared with the active clan.");
+    return;
+  }
+  const approved = await confirmClanShare({
+    title: "Share Map Pin",
+    description: `Share ${pin.label} with ${clan.name}? This pin becomes visible to active clan members.`
+  });
+  if (!approved) return;
   try {
     await clanSync.shareMapPin(clan.id, pin);
     await refreshClanSync({ quiet: true });
@@ -4077,6 +4197,11 @@ async function shareMapPinWithClan(pin) {
   } catch (error) {
     showToast(clanFriendlyError(error));
   }
+}
+
+function isMapPinSharedWithActiveClan(pin) {
+  if (!pin || !canShareWithActiveClan()) return false;
+  return clanUi.sharedPins.some((record) => record.source_user_id === clanUi.user?.id && record.source_local_id === pin.id);
 }
 
 async function unshareClanMapPin(pin) {
@@ -4111,6 +4236,7 @@ function handleAccountAction(event) {
 
   if (action === "edit") openAccountDialog(account.id);
   if (action === "add-dragon") openDragonDialog("", { accountId: account.id });
+  if (action === "share-account") void shareAccountWithClan(account);
   if (action === "delete-account") deleteAccount(account);
 }
 
@@ -5735,6 +5861,35 @@ function closeModal(id) {
   if (!dialog) return;
   if (dialog.close) dialog.close();
   else dialog.removeAttribute("open");
+}
+
+function confirmClanShare({ title, description }) {
+  if (state.settings.skipClanShareConfirmation) return Promise.resolve(true);
+  if (!els.clanShareDialog) return Promise.resolve(confirm(description));
+  els.clanShareDialogTitle.textContent = title;
+  els.clanShareDialogDescription.textContent = description;
+  return new Promise((resolve) => {
+    clanShareConfirmationResolve = resolve;
+    showModal(els.clanShareDialog);
+  });
+}
+
+function handleClanShareConfirmation(event) {
+  const button = event.target.closest("[data-clan-share-confirm]");
+  if (!button) return;
+  const action = button.dataset.clanShareConfirm;
+  settleClanShareConfirmation(action !== "cancel", action === "share-skip");
+}
+
+function settleClanShareConfirmation(approved, skipFuture = false, closeDialog = true) {
+  const resolve = clanShareConfirmationResolve;
+  clanShareConfirmationResolve = null;
+  if (skipFuture) {
+    state.settings.skipClanShareConfirmation = true;
+    saveState();
+  }
+  if (closeDialog) closeModal("clanShareDialog");
+  resolve?.(approved);
 }
 
 function showToast(message) {

@@ -298,7 +298,7 @@
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.0.6</div>
+        <div class="backup-version" id="appVersionLabel">Version 1.0.7</div>
       </section>
     </main>
   </div>
@@ -630,6 +630,25 @@
         <button class="primary-button" type="submit">Save Upstat</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="clanShareDialog">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Clan Share</p>
+        <h2 id="clanShareDialogTitle">Share with Clan</h2>
+      </div>
+      <button class="icon-only" type="button" data-clan-share-confirm="cancel" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <p id="clanShareDialogDescription" class="clan-share-dialog-copy"></p>
+    <p class="form-note">Account passwords, Steam Guard codes, login details, backups, and private notes are never included.</p>
+    <div class="modal-actions">
+      <button class="tool-button" type="button" data-clan-share-confirm="cancel">Cancel</button>
+      <button class="tool-button" type="button" data-clan-share-confirm="share-skip">Share and Stop Asking</button>
+      <button class="primary-button" type="button" data-clan-share-confirm="share">Share to Clan</button>
+    </div>
   </dialog>
 
   <dialog class="modal compact-modal" id="syncConfigDialog">

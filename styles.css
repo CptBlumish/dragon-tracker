@@ -1543,6 +1543,35 @@ input[type="checkbox"] {
   text-align: left;
 }
 
+.clan-library-search {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: #050505;
+}
+
+.clan-library-search-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.clan-library-search-actions .primary-button,
+.clan-library-search-actions .tool-button {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.clan-share-dialog-copy {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .clan-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2046,7 +2075,8 @@ legend {
   .map-toolbar,
   .accounts-toolbar,
   .clan-layout,
-  .clan-form-grid {
+  .clan-form-grid,
+  .clan-library-search {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2163,6 +2193,14 @@ legend {
 
   .clan-inline-form > div {
     grid-template-columns: 1fr;
+  }
+
+  .clan-library-search {
+    grid-template-columns: 1fr;
+  }
+
+  .clan-library-search-actions {
+    align-items: stretch;
   }
 
   .clan-member-row {
