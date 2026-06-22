@@ -84,6 +84,14 @@ function allowedReturnUrl(value: string | null) {
   }
 }
 
+function requestedReturnUrl(request: Request, requestUrl: URL) {
+  const explicitReturnUrl = requestUrl.searchParams.get("return_to");
+  if (explicitReturnUrl) return allowedReturnUrl(explicitReturnUrl);
+
+  const origin = request.headers.get("origin");
+  return origin ? allowedReturnUrl(`${origin.replace(/\/$/, "")}/index.html`) : allowedReturnUrl(null);
+}
+
 function finishUrl(returnUrl: string, status: "linked" | "error", message = "") {
   const url = new URL(returnUrl);
   url.searchParams.set("provider", "steam");
@@ -102,7 +110,7 @@ Deno.serve(async (request) => {
     if (action === "start") {
       const user = await currentUser(request);
       if (!user) return json({ error: "Authentication required" }, 401);
-      returnUrl = allowedReturnUrl(requestUrl.searchParams.get("return_to"));
+      returnUrl = requestedReturnUrl(request, requestUrl);
 
       const random = crypto.getRandomValues(new Uint8Array(32));
       const state = b64url(random);
