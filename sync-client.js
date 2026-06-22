@@ -67,6 +67,10 @@
     return `${current.origin}${current.pathname}`;
   }
 
+  function steamRedirectUrl() {
+    return discordRedirectUrl();
+  }
+
   class DragonTrackerSyncClient {
     getConfig() {
       try {
@@ -216,7 +220,8 @@
     }
 
     async startSteamLink() {
-      const result = await this.request("/functions/v1/steam-openid?action=start", { method: "POST" }, true);
+      const returnTo = steamRedirectUrl();
+      const result = await this.request(`/functions/v1/steam-openid?action=start&return_to=${encodeURIComponent(returnTo)}`, { method: "POST" }, true);
       if (!result?.url) throw new Error("Steam linking did not return a sign-in address.");
       await openExternal(result.url);
     }

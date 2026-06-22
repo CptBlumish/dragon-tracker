@@ -52,7 +52,7 @@ The app uses Discord only to create a sign-in identity for clan permissions. It 
 
 ## 3. Deploy Steam OpenID Linking
 
-Steam linking verifies a SteamID64 through Steam OpenID. It does not use Steam passwords, cookies, local Steam files, or a Steam Web API key.
+Steam linking verifies a SteamID64 through Steam OpenID. It does not use Steam passwords, cookies, local Steam files, or a Steam Web API key. The callback returns to the installed app or, for the included local server, to the exact `localhost` or `127.0.0.1` tracker page that began the link.
 
 Set the callback target, then deploy the function:
 

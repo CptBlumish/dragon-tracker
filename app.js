@@ -3136,7 +3136,8 @@ function bindDesktopAuthCallbacks() {
 function bindBrowserAuthCallback() {
   if (window.dragonTrackerDesktop?.isDesktop) return;
   const callback = new URL(window.location.href);
-  if (!callback.searchParams.has("code") && !callback.searchParams.has("error")) return;
+  const isSteamCallback = callback.searchParams.get("provider") === "steam" && callback.searchParams.has("status");
+  if (!callback.searchParams.has("code") && !callback.searchParams.has("error") && !isSteamCallback) return;
 
   const callbackUrl = callback.toString();
   history.replaceState(null, "", `${callback.pathname}${callback.hash || "#clans"}`);
