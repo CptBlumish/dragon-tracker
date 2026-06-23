@@ -1768,6 +1768,19 @@ input[type="checkbox"] {
   background: linear-gradient(180deg, rgba(47, 143, 137, 0.12), rgba(8, 8, 8, 0.96));
 }
 
+.elder-tick-panel {
+  background: linear-gradient(180deg, rgba(246, 217, 86, 0.12), rgba(8, 8, 8, 0.96));
+}
+
+.elder-tick-time {
+  margin: 18px 0 8px;
+  color: var(--gold);
+  font-size: 1.9rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
 .sync-setup-modal {
   width: min(980px, calc(100% - 32px));
 }

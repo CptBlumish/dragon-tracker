@@ -1,6 +1,7 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.10";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.11";
+const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -348,6 +349,7 @@ let state = loadState();
 let currentTab = DEFAULT_TAB;
 let toastTimer = null;
 let autoSyncTimer = null;
+let elderTickTimer = null;
 let lastKnownStateText = "";
 let mapPinPlacementActive = false;
 let clanShareConfirmationResolve = null;
@@ -449,6 +451,10 @@ const els = {
   openSyncConfigBtn: document.querySelector("#openSyncConfigBtn"),
   syncSettingsState: document.querySelector("#syncSettingsState"),
   syncSettingsDescription: document.querySelector("#syncSettingsDescription"),
+  elderTickState: document.querySelector("#elderTickState"),
+  elderTickCountdown: document.querySelector("#elderTickCountdown"),
+  elderTickDescription: document.querySelector("#elderTickDescription"),
+  elderTickResetBtn: document.querySelector("#elderTickResetBtn"),
   backupStats: document.querySelector("#backupStats"),
   appVersionLabel: document.querySelector("#appVersionLabel"),
   importFile: document.querySelector("#importFile"),
@@ -473,6 +479,7 @@ function init() {
   bindEvents();
   startAutoSync();
   renderAll();
+  startElderTickCountdown();
   setTab(startupTab(), { replaceHash: true });
   bindDesktopAuthCallbacks();
   bindBrowserAuthCallback();
@@ -547,7 +554,8 @@ function createDefaultState() {
     settings: {
       species: DEFAULT_SPECIES,
       statFields: STAT_FIELDS,
-      skipClanShareConfirmation: false
+      skipClanShareConfirmation: false,
+      elderTickStartedAt: ""
     }
   };
 }
@@ -585,9 +593,15 @@ function normalizeState(input = {}) {
     settings: {
       species: mergeSpecies(input.settings?.species || []),
       statFields: STAT_FIELDS,
-      skipClanShareConfirmation: Boolean(input.settings?.skipClanShareConfirmation)
+      skipClanShareConfirmation: Boolean(input.settings?.skipClanShareConfirmation),
+      elderTickStartedAt: normalizeElderTickStartedAt(input.settings?.elderTickStartedAt)
     }
   };
+}
+
+function normalizeElderTickStartedAt(value) {
+  const timestamp = Date.parse(text(value));
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
 }
 
 function normalizeAccount(account) {
@@ -694,7 +708,9 @@ function mergeImportedState(currentInput, incomingInput) {
     broodPouch,
     settings: {
       species: mergeSpecies([...(current.settings?.species || []), ...(incoming.settings?.species || [])]),
-      statFields: STAT_FIELDS
+      statFields: STAT_FIELDS,
+      skipClanShareConfirmation: Boolean(current.settings?.skipClanShareConfirmation || incoming.settings?.skipClanShareConfirmation),
+      elderTickStartedAt: current.settings?.elderTickStartedAt || incoming.settings?.elderTickStartedAt || ""
     }
   });
 }
@@ -1313,8 +1329,16 @@ function startAutoSync() {
     if (event.key === STORAGE_KEY) syncStateFromStorage();
   });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) syncStateFromStorage();
+    if (!document.hidden) {
+      syncStateFromStorage();
+      renderElderTick();
+    }
   });
+}
+
+function startElderTickCountdown() {
+  if (elderTickTimer) clearInterval(elderTickTimer);
+  elderTickTimer = setInterval(renderElderTick, 1000);
 }
 
 function syncStateFromStorage() {
@@ -1455,6 +1479,7 @@ function bindEvents() {
   els.geneticsImageFile?.addEventListener("change", importGeneticsPng);
   els.clearDragonsBtn.addEventListener("click", clearDragons);
   els.factoryResetBtn.addEventListener("click", factoryReset);
+  els.elderTickResetBtn?.addEventListener("click", handleElderTickReset);
 
   els.dragonList.addEventListener("click", handleDragonAction);
   els.accountList.addEventListener("click", handleAccountAction);
@@ -3091,6 +3116,11 @@ async function refreshClanSync(options = {}) {
     ]);
     clanUi.identityLinks = Array.isArray(identityLinks) ? identityLinks : [];
     clanUi.memberships = Array.isArray(memberships) ? memberships : [];
+    const elderTickStarted = startElderTickIfNeeded();
+    if (elderTickStarted) {
+      renderElderTick();
+      if (!options.quiet) showToast("Steam identity linked. Elder tick timer started.");
+    }
     reconcileActiveClan();
 
     if (clanUi.activeClanId) {
@@ -4256,6 +4286,84 @@ function renderBackup() {
     <dt>Backup size</dt><dd>${formatBytes(bytes)}</dd>
   `;
   renderSyncSettings();
+  renderElderTick();
+}
+
+function hasLinkedSteamIdentity() {
+  return clanUi.identityLinks.some((link) => link.provider === "steam");
+}
+
+function elderTickStartTime() {
+  const timestamp = Date.parse(state.settings?.elderTickStartedAt || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function elderTickRemainingMs(now = Date.now()) {
+  const startedAt = elderTickStartTime();
+  if (!startedAt) return 0;
+  return Math.max(0, startedAt + ELDER_TICK_INTERVAL_MS - now);
+}
+
+function formatElderTickCountdown(milliseconds) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function startElderTickIfNeeded() {
+  if (!hasLinkedSteamIdentity() || elderTickStartTime()) return false;
+  state.settings.elderTickStartedAt = new Date().toISOString();
+  saveState();
+  return true;
+}
+
+function handleElderTickReset() {
+  if (!hasLinkedSteamIdentity() && !elderTickStartTime()) {
+    showToast("Link Steam in Clans before starting the elder tick timer.");
+    setTab("clans", { updateHash: true });
+    return;
+  }
+  if (elderTickRemainingMs() > 0) return;
+  state.settings.elderTickStartedAt = new Date().toISOString();
+  saveState();
+  renderElderTick();
+  showToast("Elder tick recorded. Your next reminder is in six hours.");
+}
+
+function renderElderTick() {
+  if (!els.elderTickState || !els.elderTickCountdown || !els.elderTickDescription || !els.elderTickResetBtn) return;
+  const startedAt = elderTickStartTime();
+  const steamLinked = hasLinkedSteamIdentity();
+
+  if (!startedAt) {
+    els.elderTickState.textContent = steamLinked ? "Ready to Start" : "Steam Required";
+    els.elderTickCountdown.textContent = steamLinked ? "Timer will start shortly" : "Link Steam to begin";
+    els.elderTickDescription.textContent = steamLinked
+      ? "Steam is linked. The six-hour reminder will start as soon as the connection refreshes."
+      : "Link Steam in Clans to start this local six-hour reminder. It does not read or control the game.";
+    els.elderTickResetBtn.textContent = "Start 6-Hour Timer";
+    els.elderTickResetBtn.disabled = !steamLinked;
+    return;
+  }
+
+  const remaining = elderTickRemainingMs();
+  if (remaining > 0) {
+    const dueAt = new Date(startedAt + ELDER_TICK_INTERVAL_MS);
+    els.elderTickState.textContent = "Counting Down";
+    els.elderTickCountdown.textContent = formatElderTickCountdown(remaining);
+    els.elderTickDescription.textContent = `Next elder tick reminder: ${formatDateTime(dueAt.toISOString())}.`;
+    els.elderTickResetBtn.textContent = "Mark Tick Taken";
+    els.elderTickResetBtn.disabled = true;
+    return;
+  }
+
+  els.elderTickState.textContent = "Tick Ready";
+  els.elderTickCountdown.textContent = "Ready now";
+  els.elderTickDescription.textContent = "Take the elder tick in-game, then mark it taken here to begin the next six-hour reminder.";
+  els.elderTickResetBtn.textContent = "Mark Tick Taken";
+  els.elderTickResetBtn.disabled = false;
 }
 
 function renderSyncSettings() {

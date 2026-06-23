@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260623-brood-pouch-map">
+  <link rel="stylesheet" href="./styles.css?v=20260623-elder-tick">
 </head>
 <body>
   <div class="app-shell">
@@ -287,6 +287,17 @@
               <button class="tool-button" type="button" id="openSyncConfigBtn">Connect Sync</button>
             </div>
           </div>
+          <div class="backup-panel elder-tick-panel">
+            <div class="card-head">
+              <div class="card-title"><h2>Elder Tick</h2><p class="card-subtitle">Six-hour Steam reminder</p></div>
+              <span class="pill" id="elderTickState">Steam Required</span>
+            </div>
+            <p class="elder-tick-time" id="elderTickCountdown">Link Steam to begin</p>
+            <p class="form-note" id="elderTickDescription">The timer starts automatically after a Steam identity is linked. It does not read or control the game.</p>
+            <div class="button-row">
+              <button class="primary-button" type="button" id="elderTickResetBtn" disabled>Mark Tick Taken</button>
+            </div>
+          </div>
           <div class="backup-panel danger-zone">
             <h2>Reset</h2>
             <div class="button-row">
@@ -295,7 +306,7 @@
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.0.10</div>
+        <div class="backup-version" id="appVersionLabel">Version 1.0.11</div>
       </section>
     </main>
   </div>
@@ -860,6 +871,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="./sync-client.js?v=20260621-clan-join-local"></script>
-  <script src="./app.js?v=20260623-brood-pouch-map"></script>
+  <script src="./app.js?v=20260623-elder-tick"></script>
 </body>
 </html>
