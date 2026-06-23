@@ -4,13 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260621-clan-join-local">
+  <link rel="stylesheet" href="./styles.css?v=20260623-brood-pouch-map">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="title-block">
-        <p class="eyebrow">Local Ledger</p>
         <h1>Dragon Tracker</h1>
       </div>
       <div class="top-actions" aria-label="Backup actions">
@@ -45,6 +44,7 @@
       <button class="tab" type="button" data-tab="dragons">Dragons</button>
       <button class="tab" type="button" data-tab="players">Players</button>
       <button class="tab" type="button" data-tab="nesting">Nesting Planner</button>
+      <button class="tab" type="button" data-tab="brood-pouch">Brood Pouch</button>
       <button class="tab is-active" type="button" data-tab="skins">Skins</button>
       <button class="tab" type="button" data-tab="upstats">Upstats</button>
       <button class="tab" type="button" data-tab="map">Map</button>
@@ -87,12 +87,6 @@
             </span>
             Add Dragon
           </button>
-          <button class="tool-button" type="button" data-action="add-random-dragon" title="Add a random test dragon">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M21 21l-7-7M3 8V3h5M3 3l7 7"/></svg>
-            </span>
-            Add Random
-          </button>
         </div>
 
         <div class="stats-bar" id="statsBar"></div>
@@ -110,12 +104,6 @@
               <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             </span>
             Add Player
-          </button>
-          <button class="tool-button" type="button" data-action="add-random-dragon" title="Add a random test dragon">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M21 21l-7-7M3 8V3h5M3 3l7 7"/></svg>
-            </span>
-            Add Random
           </button>
         </div>
 
@@ -142,14 +130,23 @@
             <input id="broodWatcherBrooding" type="checkbox">
             BW brooding
           </label>
-          <button class="tool-button" type="button" data-action="add-random-dragon" title="Add a random test dragon">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M21 21l-7-7M3 8V3h5M3 3l7 7"/></svg>
-            </span>
-            Add Random
-          </button>
+          <label class="toggle-field" title="After creating the egg, record which brood it is currently on in the Brood Pouch.">
+            <input id="addEggToBroodPouch" type="checkbox">
+            Add egg to brood pouch
+          </label>
         </div>
         <div id="nestingOutput" class="nesting-output"></div>
+      </section>
+
+      <section class="tab-panel" id="brood-pouch-panel" data-panel="brood-pouch">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Egg Tracking</p>
+            <h2>Brood Pouch</h2>
+          </div>
+          <p>Eggs added from the nesting planner stay here until you remove them.</p>
+        </div>
+        <div class="brood-pouch-list" id="broodPouchList"></div>
       </section>
 
       <section class="tab-panel is-active" id="skins-panel" data-panel="skins">
@@ -298,7 +295,7 @@
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.0.9</div>
+        <div class="backup-version" id="appVersionLabel">Version 1.0.10</div>
       </section>
     </main>
   </div>
@@ -664,6 +661,90 @@
     </div>
   </dialog>
 
+  <dialog class="modal compact-modal" id="mapPinDialog">
+    <form id="mapPinForm" method="dialog">
+      <input type="hidden" name="x" id="mapPinX">
+      <input type="hidden" name="y" id="mapPinY">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Map Pin</p>
+          <h2>Add Location</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="mapPinDialog" aria-label="Close map pin form">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="form-grid single">
+        <div class="field">
+          <label for="mapPinLabel">Location name</label>
+          <input id="mapPinLabel" name="label" maxlength="80" placeholder="Dragon sighting" required autofocus>
+        </div>
+        <div class="field">
+          <label for="mapPinType">Location type</label>
+          <input id="mapPinType" name="type" maxlength="50" value="Dragon">
+        </div>
+        <div class="field">
+          <label for="mapPinNotes">Notes</label>
+          <textarea id="mapPinNotes" name="notes" rows="3" maxlength="600" placeholder="Optional details"></textarea>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="mapPinDialog">Cancel</button>
+        <button class="primary-button" type="submit">Add Pin</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="mapImportDialog">
+    <form id="mapImportForm" method="dialog">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Map Pin</p>
+          <h2>Import Location Code</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="mapImportDialog" aria-label="Close location import">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="form-grid single">
+        <div class="field">
+          <label for="mapImportCode">Location code</label>
+          <textarea id="mapImportCode" name="code" rows="5" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="DTLOC:..." required autofocus></textarea>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="mapImportDialog">Cancel</button>
+        <button class="primary-button" type="submit">Import Pin</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="broodPouchDialog">
+    <form id="broodPouchForm" method="dialog">
+      <input type="hidden" name="id" id="broodPouchId">
+      <input type="hidden" name="dragonId" id="broodPouchDragonId">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Brood Pouch</p>
+          <h2 id="broodPouchDialogTitle">Add Egg to Brood Pouch</h2>
+        </div>
+        <button class="icon-only" type="button" data-close-modal="broodPouchDialog" aria-label="Close brood pouch form">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="form-grid single">
+        <div class="field">
+          <label for="broodPouchBrood">Current brood</label>
+          <input id="broodPouchBrood" name="brood" maxlength="80" placeholder="Brood 1" required autofocus>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="tool-button" type="button" data-close-modal="broodPouchDialog">Cancel</button>
+        <button class="primary-button" type="submit">Save to Pouch</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog class="modal compact-modal" id="syncConfigDialog">
     <form id="syncConfigForm" method="dialog">
       <div class="modal-header">
@@ -779,6 +860,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="./sync-client.js?v=20260621-clan-join-local"></script>
-  <script src="./app.js?v=20260621-clan-join-local"></script>
+  <script src="./app.js?v=20260623-brood-pouch-map"></script>
 </body>
 </html>

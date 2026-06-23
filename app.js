@@ -1,6 +1,6 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.9";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.10";
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -120,7 +120,7 @@ const MAP_REFERENCE_AREAS = [
   { id: "far-pond", region: "Corners", name: "Far Pond", files: ["farpnd.png"], button: [3.2, 5.1, 9, 4.5] }
 ];
 const DEFAULT_TAB = "skins";
-const TAB_NAMES = ["dragons", "players", "nesting", "skins", "upstats", "map", "clans", "settings"];
+const TAB_NAMES = ["dragons", "players", "nesting", "brood-pouch", "skins", "upstats", "map", "clans", "settings"];
 const ACTIVE_CLAN_STORAGE_KEY = "dragon-tracker.active-clan.v1";
 const STAT_FIELDS = [
   { key: "lifeExpectancy", label: "Life Expectancy" },
@@ -395,7 +395,12 @@ const els = {
   parentTwo: document.querySelector("#parentTwo"),
   createEggBtn: document.querySelector("#createEggBtn"),
   broodWatcherBrooding: document.querySelector("#broodWatcherBrooding"),
+  addEggToBroodPouch: document.querySelector("#addEggToBroodPouch"),
   nestingOutput: document.querySelector("#nestingOutput"),
+  broodPouchList: document.querySelector("#broodPouchList"),
+  broodPouchDialog: document.querySelector("#broodPouchDialog"),
+  broodPouchForm: document.querySelector("#broodPouchForm"),
+  broodPouchDialogTitle: document.querySelector("#broodPouchDialogTitle"),
   skinSearch: document.querySelector("#skinSearch"),
   skinSpeciesFilter: document.querySelector("#skinSpeciesFilter"),
   skinTypeFilter: document.querySelector("#skinTypeFilter"),
@@ -421,6 +426,10 @@ const els = {
   mapLayerFood: document.querySelector("#mapLayerFood"),
   addMapPinBtn: document.querySelector("#addMapPinBtn"),
   mapStage: document.querySelector("#mapStage"),
+  mapPinDialog: document.querySelector("#mapPinDialog"),
+  mapPinForm: document.querySelector("#mapPinForm"),
+  mapImportDialog: document.querySelector("#mapImportDialog"),
+  mapImportForm: document.querySelector("#mapImportForm"),
   mapAreaLayer: document.querySelector("#mapAreaLayer"),
   mapPinLayer: document.querySelector("#mapPinLayer"),
   mapPinList: document.querySelector("#mapPinList"),
@@ -528,6 +537,7 @@ function createDefaultState() {
     upstats: [],
     lineageRecords: [],
     mapPins: [],
+    broodPouch: [],
     skins: STARTER_SKINS.map((skin) => ({
       id: uid("skin"),
       createdAt: now,
@@ -556,6 +566,10 @@ function normalizeState(input = {}) {
   const upstats = Array.isArray(input.upstats) ? input.upstats.map(normalizeUpstat) : [];
   const lineageRecords = Array.isArray(input.lineageRecords) ? input.lineageRecords.map(normalizeLineageRecord) : [];
   const mapPins = Array.isArray(input.mapPins) ? input.mapPins.map(normalizeMapPin) : [];
+  const dragonIds = new Set(dragons.map((dragon) => dragon.id));
+  const broodPouch = Array.isArray(input.broodPouch)
+    ? input.broodPouch.map(normalizeBroodPouchEntry).filter((entry) => dragonIds.has(entry.dragonId))
+    : [];
 
   return {
     version: 1,
@@ -566,6 +580,7 @@ function normalizeState(input = {}) {
     upstats,
     lineageRecords,
     mapPins,
+    broodPouch,
     skins,
     settings: {
       species: mergeSpecies(input.settings?.species || []),
@@ -661,6 +676,7 @@ function mergeImportedState(currentInput, incomingInput) {
   const dragonIdMap = new Map(current.dragons.map((dragon) => [dragon.id, dragon.id]));
   const accounts = mergeAccountDatasets(current.accounts, incoming.accounts, accountIdMap);
   const dragons = mergeDragonDatasets(current.dragons, incoming.dragons, accounts, accountIdMap, dragonIdMap);
+  const broodPouch = mergeBroodPouchDatasets(current.broodPouch, incoming.broodPouch, dragonIdMap, dragons);
 
   remapDragonParentIds(dragons, dragonIdMap);
   attachAccountsToDragons(dragons, accounts);
@@ -675,6 +691,7 @@ function mergeImportedState(currentInput, incomingInput) {
     upstats: mergeUpstatDatasets(current.upstats, incoming.upstats, accountIdMap),
     lineageRecords: mergeRecordDatasets(current.lineageRecords, incoming.lineageRecords, lineageRecordIdentityKey, mergeLineageRecord, normalizeLineageRecord),
     mapPins: mergeRecordDatasets(current.mapPins, incoming.mapPins, mapPinIdentityKey, mergeMapPin, normalizeMapPin),
+    broodPouch,
     settings: {
       species: mergeSpecies([...(current.settings?.species || []), ...(incoming.settings?.species || [])]),
       statFields: STAT_FIELDS
@@ -833,6 +850,33 @@ function mergeDragonRecord(existing, incoming) {
     clanShareUpdatedAt: existing.clanImported && incoming.clanImported
       ? chooseImportText(existing.clanShareUpdatedAt, incoming.clanShareUpdatedAt, preferIncoming)
       : ""
+  };
+}
+
+function mergeBroodPouchDatasets(currentEntries, incomingEntries, dragonIdMap, dragons) {
+  const remapEntry = (entry) => normalizeBroodPouchEntry({
+    ...entry,
+    dragonId: dragonIdMap.get(text(entry?.dragonId || entry?.eggId)) || text(entry?.dragonId || entry?.eggId)
+  });
+  const merged = mergeRecordDatasets(
+    (currentEntries || []).map(remapEntry),
+    (incomingEntries || []).map(remapEntry),
+    broodPouchIdentityKey,
+    mergeBroodPouchEntry,
+    normalizeBroodPouchEntry
+  );
+  const dragonIds = new Set(dragons.map((dragon) => dragon.id));
+  return merged.filter((entry) => dragonIds.has(entry.dragonId));
+}
+
+function mergeBroodPouchEntry(existing, incoming) {
+  const preferIncoming = isNewerRecord(incoming, existing);
+  return {
+    ...existing,
+    createdAt: olderTimestamp(existing.createdAt, incoming.createdAt),
+    updatedAt: newerTimestamp(existing.updatedAt, incoming.updatedAt),
+    dragonId: chooseImportText(existing.dragonId, incoming.dragonId, preferIncoming),
+    brood: chooseImportText(existing.brood, incoming.brood, preferIncoming, ["Unassigned brood"])
   };
 }
 
@@ -1371,13 +1415,16 @@ function bindEvents() {
   els.addMapPinBtn?.addEventListener("click", startMapPinPlacement);
   els.mapStage?.addEventListener("click", handleMapStageClick);
   document.querySelectorAll("[data-map-action='import-code']").forEach((button) => {
-    button.addEventListener("click", importMapLocationCode);
+    button.addEventListener("click", openMapImportDialog);
   });
 
   els.dragonForm.addEventListener("submit", handleDragonSubmit);
   els.accountForm.addEventListener("submit", handleAccountSubmit);
   els.skinForm.addEventListener("submit", handleSkinSubmit);
   els.upstatForm?.addEventListener("submit", handleUpstatSubmit);
+  els.mapPinForm?.addEventListener("submit", handleMapPinSubmit);
+  els.mapImportForm?.addEventListener("submit", handleMapImportSubmit);
+  els.broodPouchForm?.addEventListener("submit", handleBroodPouchSubmit);
 
   document.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", () => closeModal(button.dataset.closeModal));
@@ -1397,9 +1444,6 @@ function bindEvents() {
   document.querySelectorAll("[data-action='export-csv']").forEach((button) => {
     button.addEventListener("click", exportCsv);
   });
-  document.querySelectorAll("[data-action='add-random-dragon']").forEach((button) => {
-    button.addEventListener("click", addRandomDragon);
-  });
   document.querySelectorAll("[data-action='import-json']").forEach((button) => {
     button.addEventListener("click", () => els.importFile.click());
   });
@@ -1417,6 +1461,7 @@ function bindEvents() {
   els.accountList.addEventListener("click", handleDragonAction);
   els.accountList.addEventListener("click", handleAccountCardOpen);
   els.accountList.addEventListener("keydown", handleAccountCardKeydown);
+  els.broodPouchList?.addEventListener("click", handleBroodPouchAction);
   els.skinList.addEventListener("click", handleSkinAction);
   els.skinList.addEventListener("pointerover", handleSkinTurntableStart);
   els.skinList.addEventListener("pointerout", handleSkinTurntableStop);
@@ -1488,6 +1533,7 @@ function renderCurrentTab() {
     renderNestingOptions();
     renderNesting();
   }
+  if (currentTab === "brood-pouch") renderBroodPouch();
   if (currentTab === "skins") renderSkins();
   if (currentTab === "upstats") renderUpstats();
   if (currentTab === "map") renderMap();
@@ -1768,12 +1814,15 @@ function renderAccountCard(account) {
   const openSpecies = collectSpeciesNames().filter((species) => !ownedSpecies.has(species));
   const dragonRows = accountDragons.length
     ? accountDragons.map((dragon) => `
-      <div class="account-dragon-row">
+      <div class="account-dragon-row${dragon.clanImported ? " is-clan-shared" : ""}">
         <span>${escapeHtml(dragon.species || "Unknown species")}</span>
-        <strong>${escapeHtml(compactJoin([dragon.status, dragon.skin || "Unknown skin"]))}</strong>
+        <strong class="account-dragon-status">${escapeHtml(dragon.status || "Unknown")}</strong>
         ${dragon.clanImported
           ? `<span class="small-pill">Clan shared</span>`
-          : `<button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>`}
+          : `<div class="account-dragon-actions">
+              <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
+              <button class="danger-button" type="button" data-dragon-action="delete" data-id="${escapeAttr(dragon.id)}">Delete</button>
+            </div>`}
       </div>
     `).join("")
     : `<p class="account-empty">No dragons on this account yet.</p>`;
@@ -2058,6 +2107,109 @@ function renderNesting() {
       <p class="planner-note">Social points: partial Social points do not change stat odds. A parent with 3/3 Social shifts the dominant stat letter to 75/25 in that parent's favor when the mate does not have 3/3. If both parents have 3/3 Social, the higher saved letter is treated as guaranteed. Matching passed letters at or below the egg's Bloodline Quality upstat automatically. Supercrits are separate: matching-letter stats can upcrit by two stages, and A++ requires that supercrit path. Supercrits require both parents at 3/3 Social for the 5% per-stat roll, or a Brood Watcher brooding the egg; BW brood chance changes per attempt, so check the in-game brooding tooltip.</p>
     </div>
   `;
+}
+
+function renderBroodPouch() {
+  if (!els.broodPouchList) return;
+  const entries = [...(state.broodPouch || [])]
+    .map((entry) => ({ entry, dragon: dragonById(entry.dragonId) }))
+    .filter(({ dragon }) => Boolean(dragon))
+    .sort((a, b) => sortText(a.entry.brood, b.entry.brood) || new Date(b.entry.updatedAt).getTime() - new Date(a.entry.updatedAt).getTime());
+
+  if (!entries.length) {
+    els.broodPouchList.innerHTML = `
+      <div class="empty-state">
+        <h2>No eggs in the brood pouch</h2>
+        <p>In the Nesting Planner, check Add egg to brood pouch before creating an egg.</p>
+      </div>
+    `;
+    return;
+  }
+
+  els.broodPouchList.innerHTML = entries.map(({ entry, dragon }) => `
+    <article class="brood-pouch-card" data-id="${escapeAttr(entry.id)}">
+      <div class="card-head">
+        <div class="card-title">
+          <h3>${escapeHtml(entry.brood)}</h3>
+          <p class="card-subtitle">${escapeHtml(compactJoin([dragon.username, dragon.accountName]))}</p>
+        </div>
+        <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
+      </div>
+      <dl class="line-list">
+        <div><dt>Egg</dt><dd>${escapeHtml(dragon.species || "Unknown species")}</dd></div>
+        <div><dt>Skin</dt><dd>${escapeHtml(dragon.skin || "Unknown")}</dd></div>
+        <div><dt>Recessive</dt><dd>${escapeHtml(dragon.recessiveSkin || "Unknown")}</dd></div>
+        <div><dt>Line</dt><dd>${escapeHtml(dragon.bloodline || "Unknown")}</dd></div>
+        <div><dt>Added</dt><dd>${escapeHtml(formatDateTime(entry.createdAt))}</dd></div>
+      </dl>
+      <div class="card-actions">
+        <button class="tool-button" type="button" data-brood-pouch-action="edit" data-id="${escapeAttr(entry.id)}">Edit Brood</button>
+        <button class="tool-button" type="button" data-brood-pouch-action="edit-dragon" data-dragon-id="${escapeAttr(dragon.id)}">Edit Egg</button>
+        <button class="danger-button" type="button" data-brood-pouch-action="remove" data-id="${escapeAttr(entry.id)}">Remove</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function openBroodPouchDialog(dragonId, entryId = "") {
+  const dragon = dragonById(dragonId);
+  if (!dragon || !els.broodPouchDialog || !els.broodPouchForm) return;
+  const entry = entryId ? broodPouchEntryById(entryId) : (state.broodPouch || []).find((item) => item.dragonId === dragonId);
+  els.broodPouchForm.reset();
+  els.broodPouchDialogTitle.textContent = entry ? "Edit Brood Pouch" : "Add Egg to Brood Pouch";
+  setFormValue("broodPouchId", entry?.id || "");
+  setFormValue("broodPouchDragonId", dragon.id);
+  setFormValue("broodPouchBrood", entry?.brood === "Unassigned brood" ? "" : entry?.brood || "");
+  showModal(els.broodPouchDialog);
+}
+
+function handleBroodPouchSubmit(event) {
+  event.preventDefault();
+  const values = new FormData(els.broodPouchForm);
+  const entryId = text(values.get("id"));
+  const dragonId = text(values.get("dragonId"));
+  const dragon = dragonById(dragonId);
+  const brood = text(values.get("brood"));
+  if (!dragon || !brood) {
+    showToast("Choose an egg and enter its current brood.");
+    return;
+  }
+
+  const existing = entryId ? broodPouchEntryById(entryId) : (state.broodPouch || []).find((item) => item.dragonId === dragonId);
+  const entry = normalizeBroodPouchEntry({
+    id: existing?.id || uid("brood-pouch"),
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    dragonId,
+    brood
+  });
+  const index = (state.broodPouch || []).findIndex((item) => item.id === entry.id);
+  if (index >= 0) state.broodPouch[index] = entry;
+  else state.broodPouch.push(entry);
+  saveState();
+  closeModal("broodPouchDialog");
+  renderAll();
+  showToast(`${dragonAccountLabel(dragon)} is on ${entry.brood}`);
+}
+
+function handleBroodPouchAction(event) {
+  const button = event.target.closest("[data-brood-pouch-action]");
+  if (!button) return;
+  const action = button.dataset.broodPouchAction;
+  const entry = broodPouchEntryById(button.dataset.id);
+  if (action === "edit" && entry) openBroodPouchDialog(entry.dragonId, entry.id);
+  if (action === "edit-dragon") openDragonDialog(button.dataset.dragonId);
+  if (action === "remove" && entry) {
+    if (!confirm(`Remove ${entry.brood} from the brood pouch? The egg record will remain in Dragons.`)) return;
+    state.broodPouch = state.broodPouch.filter((item) => item.id !== entry.id);
+    saveState();
+    renderAll();
+    showToast("Removed from brood pouch");
+  }
+}
+
+function broodPouchEntryById(id) {
+  return (state.broodPouch || []).find((entry) => entry.id === id) || null;
 }
 
 function calculateSkinOdds(parentA, parentB) {
@@ -2374,7 +2526,19 @@ function lineageNodeHtml(role, node) {
 function refreshAllDerivedRecords() {
   const roleChanged = refreshNestRoles();
   const derivedChanged = refreshDragonDerivedFields();
-  return roleChanged || derivedChanged;
+  const broodPouchChanged = pruneBroodPouch();
+  return roleChanged || derivedChanged || broodPouchChanged;
+}
+
+function pruneBroodPouch() {
+  const existing = Array.isArray(state.broodPouch) ? state.broodPouch : [];
+  const dragonIds = new Set(state.dragons.map((dragon) => dragon.id));
+  const next = existing
+    .map(normalizeBroodPouchEntry)
+    .filter((entry) => dragonIds.has(entry.dragonId));
+  if (JSON.stringify(existing) === JSON.stringify(next)) return false;
+  state.broodPouch = next;
+  return true;
 }
 
 function refreshNestRoles() {
@@ -3263,8 +3427,9 @@ function renderClans() {
         <div class="clan-member-list">${memberRows}</div>
         <div class="card-actions">
           ${["owner", "admin"].includes(membership?.role) ? `<button class="primary-button" type="button" data-clan-action="create-invite">Create One-use Invite</button>` : ""}
-          ${membership?.role === "owner" ? "" : `<button class="danger-button" type="button" data-clan-action="leave">Leave Clan</button>`}
+          <button class="danger-button" type="button" data-clan-action="leave">Leave Clan</button>
         </div>
+        ${membership?.role === "owner" ? `<p class="form-note">Owners must transfer ownership to another active member before leaving. Use Make Owner beside that member, then choose Leave Clan.</p>` : ""}
         ${clanUi.inviteCode ? `<p class="clan-invite-code"><span>Invite code</span><strong>${escapeHtml(clanUi.inviteCode)}</strong><button class="tool-button" type="button" data-clan-action="copy-invite">Copy</button></p>` : ""}
       ` : `
         <div class="clan-form-grid">
@@ -3425,7 +3590,16 @@ async function handleClanAction(event) {
     }
     if (action === "leave") {
       const clan = activeClan();
-      if (!clan || !confirm(`Leave ${clan.name}?`)) return;
+      if (!clan) throw new Error("Choose a clan before leaving.");
+      const membership = activeClanMembership();
+      if (membership?.role === "owner") {
+        const otherMembers = clanUi.members.filter((member) => member.user_id !== clanUi.user?.id);
+        showToast(otherMembers.length
+          ? "Choose Make Owner beside a member before leaving this clan."
+          : "Invite a member and transfer ownership before leaving this clan.");
+        return;
+      }
+      if (!confirm(`Leave ${clan.name}?`)) return;
       await clanSync.leaveClan(clan.id);
       if (removeMissingClanSharedDragons(clan.id, new Set())) {
         refreshAllDerivedRecords();
@@ -3655,6 +3829,21 @@ function clanDragonSummary(dragon) {
   };
 }
 
+function normalizeBroodPouchEntry(entry) {
+  const now = new Date().toISOString();
+  return {
+    id: text(entry?.id) || uid("brood-pouch"),
+    createdAt: text(entry?.createdAt) || now,
+    updatedAt: text(entry?.updatedAt) || now,
+    dragonId: text(entry?.dragonId || entry?.eggId),
+    brood: text(entry?.brood || entry?.broodName) || "Unassigned brood"
+  };
+}
+
+function broodPouchIdentityKey(entry) {
+  return text(entry?.dragonId);
+}
+
 function renderMapAreaSelect() {
   if (!els.mapAreaSelect) return;
   const current = els.mapAreaSelect.value || MAP_REFERENCE_AREAS[0]?.id || "";
@@ -3870,14 +4059,28 @@ function clanMapPinById(id) {
 }
 
 function startMapPinPlacement() {
+  if (mapPinPlacementActive) {
+    cancelMapPinPlacement();
+    showToast("Map pin placement cancelled");
+    return;
+  }
   mapPinPlacementActive = true;
   els.addMapPinBtn?.classList.add("is-placing");
+  els.addMapPinBtn?.setAttribute("aria-pressed", "true");
+  els.mapStage?.classList.add("is-placing");
   showToast("Click the map to place a location pin");
+}
+
+function cancelMapPinPlacement() {
+  mapPinPlacementActive = false;
+  els.addMapPinBtn?.classList.remove("is-placing");
+  els.addMapPinBtn?.setAttribute("aria-pressed", "false");
+  els.mapStage?.classList.remove("is-placing");
 }
 
 function handleMapStageClick(event) {
   const pinButton = event.target.closest(".map-pin");
-  if (pinButton) {
+  if (pinButton && !mapPinPlacementActive) {
     const clanPin = clanMapPinById(pinButton.dataset.clanMapPinId);
     if (clanPin) {
       copyMapLocationCode({
@@ -3903,29 +4106,42 @@ function handleMapStageClick(event) {
 
   if (!mapPinPlacementActive || !els.mapStage) return;
   const rect = els.mapStage.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
   const x = clampPercent(((event.clientX - rect.left) / rect.width) * 100);
   const y = clampPercent(((event.clientY - rect.top) / rect.height) * 100);
-  const label = text(prompt("Location name:", "Dragon sighting"));
+  openMapPinDialog(x, y);
+}
+
+function openMapPinDialog(x, y) {
+  if (!els.mapPinDialog || !els.mapPinForm) return;
+  cancelMapPinPlacement();
+  els.mapPinForm.reset();
+  setFormValue("mapPinX", String(x));
+  setFormValue("mapPinY", String(y));
+  setFormValue("mapPinType", "Dragon");
+  showModal(els.mapPinDialog);
+}
+
+function handleMapPinSubmit(event) {
+  event.preventDefault();
+  const values = new FormData(els.mapPinForm);
+  const label = text(values.get("label"));
   if (!label) {
-    mapPinPlacementActive = false;
-    els.addMapPinBtn?.classList.remove("is-placing");
+    showToast("Enter a location name before adding the pin.");
     return;
   }
-  const type = text(prompt("Location type:", "Dragon")) || "Dragon";
-  const notes = text(prompt("Notes:", ""));
   const pin = normalizeMapPin({
     id: uid("pin"),
     label,
-    type,
-    x,
-    y,
-    notes,
+    type: text(values.get("type")) || "Dragon",
+    x: values.get("x"),
+    y: values.get("y"),
+    notes: text(values.get("notes")),
     sharedBy: collectPlayerNames()[0] || ""
   });
   state.mapPins.push(pin);
-  mapPinPlacementActive = false;
-  els.addMapPinBtn?.classList.remove("is-placing");
   saveState();
+  closeModal("mapPinDialog");
   renderAll();
   showToast(`${pin.label} pinned`);
 }
@@ -3977,9 +4193,16 @@ function copyMapLocationCode(pin) {
   }
 }
 
-function importMapLocationCode() {
-  const code = prompt("Paste location code:");
-  if (code === null) return;
+function openMapImportDialog() {
+  if (!els.mapImportDialog || !els.mapImportForm) return;
+  cancelMapPinPlacement();
+  els.mapImportForm.reset();
+  showModal(els.mapImportDialog);
+}
+
+function handleMapImportSubmit(event) {
+  event.preventDefault();
+  const code = new FormData(els.mapImportForm).get("code");
   try {
     const pin = normalizeMapPin({
       ...decodeLocationCode(code),
@@ -3988,10 +4211,11 @@ function importMapLocationCode() {
     });
     state.mapPins.push(pin);
     saveState();
+    closeModal("mapImportDialog");
     renderAll();
     showToast(`${pin.label} imported`);
   } catch (error) {
-    alert(`Could not import location code: ${error.message}`);
+    showToast(`Could not import location code: ${error.message}`);
   }
 }
 
@@ -4026,6 +4250,7 @@ function renderBackup() {
     <dt>Upstats</dt><dd>${state.upstats.length}</dd>
     <dt>Lineage names</dt><dd>${state.lineageRecords.length}</dd>
     <dt>Map pins</dt><dd>${state.mapPins.length}</dd>
+    <dt>Brood pouch eggs</dt><dd>${state.broodPouch.length}</dd>
     <dt>Species</dt><dd>${collectSpeciesNames().length}</dd>
     <dt>Saved</dt><dd>${formatDateTime(state.updatedAt)}</dd>
     <dt>Backup size</dt><dd>${formatBytes(bytes)}</dd>
@@ -4645,6 +4870,7 @@ function toggleDragonStatus(dragon) {
 function deleteDragon(dragon) {
   if (!confirm(`Delete ${dragon.name}?`)) return;
   state.dragons = state.dragons.filter((item) => item.id !== dragon.id);
+  state.broodPouch = (state.broodPouch || []).filter((entry) => entry.dragonId !== dragon.id);
   clearDragonParentReferences(new Set([dragon.id]));
   refreshAllDerivedRecords();
   saveState();
@@ -4681,6 +4907,7 @@ function deleteAccountsByIds(accountIds) {
 
   state.accounts = state.accounts.filter((account) => !accountIdSet.has(account.id));
   state.dragons = state.dragons.filter((dragon) => !removedDragonIds.has(dragon.id));
+  state.broodPouch = (state.broodPouch || []).filter((entry) => !removedDragonIds.has(entry.dragonId));
   clearDragonParentReferences(removedDragonIds);
   refreshAllDerivedRecords();
   saveState();
@@ -4785,6 +5012,9 @@ function createEggFromPlanner() {
   refreshAllDerivedRecords();
   saveState();
   renderAll();
+  if (els.addEggToBroodPouch?.checked) {
+    openBroodPouchDialog(egg.id);
+  }
   showToast(`${egg.name} created`);
 }
 
@@ -5751,6 +5981,7 @@ function clearGeneticsImportStatus() {
 function clearDragons() {
   if (!confirm("Clear all dragon records? Skin records will stay.")) return;
   state.dragons = [];
+  state.broodPouch = [];
   saveState();
   renderAll();
   showToast("Dragon records cleared");
@@ -5785,6 +6016,7 @@ function startupTab() {
 
 function setTab(tabName, options = {}) {
   const nextTab = TAB_NAMES.includes(tabName) ? tabName : DEFAULT_TAB;
+  if (currentTab === "map" && nextTab !== "map") cancelMapPinPlacement();
   currentTab = nextTab;
   if (options.updateHash && window.location.hash !== `#${nextTab}`) {
     window.location.hash = nextTab;
@@ -6204,6 +6436,7 @@ function showModal(dialog) {
 function closeModal(id) {
   const dialog = document.querySelector(`#${id}`);
   if (!dialog) return;
+  if (id === "mapPinDialog" || id === "mapImportDialog") cancelMapPinPlacement();
   if (dialog.close) dialog.close();
   else dialog.removeAttribute("open");
 }
