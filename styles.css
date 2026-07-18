@@ -321,6 +321,18 @@ svg {
   grid-template-columns: minmax(260px, 1fr) auto auto;
 }
 
+.home-toolbar-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.home-player-field {
+  min-width: min(260px, 100%);
+}
+
 .account-species-matrix {
   display: grid;
   gap: 8px;

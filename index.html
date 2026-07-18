@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260718-personal-home">
+  <link rel="stylesheet" href="./styles.css?v=20260718-home-player-visible">
 </head>
 <body>
   <div class="app-shell">
@@ -69,12 +69,18 @@
             <h2>Your Accounts</h2>
             <p class="card-subtitle" id="homePlayerSummary">Showing all players</p>
           </div>
-          <button class="primary-button" type="button" id="homeAddAccountBtn">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            </span>
-            Add Player
-          </button>
+          <div class="home-toolbar-actions">
+            <div class="field home-player-field">
+              <label for="homePersonalPlayerSelect">Home player</label>
+              <select id="homePersonalPlayerSelect"></select>
+            </div>
+            <button class="primary-button" type="button" id="homeAddAccountBtn">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              </span>
+              Add Account
+            </button>
+          </div>
         </div>
         <div class="account-list home-account-list" id="homeAccountList"></div>
       </section>
@@ -388,7 +394,7 @@
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.2.2</div>
+        <div class="backup-version" id="appVersionLabel">Version 1.2.3</div>
       </section>
     </main>
   </div>
@@ -1012,7 +1018,7 @@
   <datalist id="lineageNameOptions"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="./sync-client.js?v=20260718-personal-home"></script>
-  <script src="./app.js?v=20260718-personal-home"></script>
+  <script src="./sync-client.js?v=20260718-home-player-visible"></script>
+  <script src="./app.js?v=20260718-home-player-visible"></script>
 </body>
 </html>

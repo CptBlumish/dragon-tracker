@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.2";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.3";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -136,6 +136,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "elder", label: "Elders" }
 ];
 const CHANGELOG_ITEMS = [
+  "Moved the personal Home player selector onto the Home screen.",
   "Added a personal Home player setting so Home can focus on one player's accounts.",
   "Fixed startup panel styling and account-row hover controls.",
   "Added a Home page for account-first startup and improved account-detail editing.",
@@ -411,6 +412,7 @@ const els = {
   homeAccountList: document.querySelector("#homeAccountList"),
   homeAddAccountBtn: document.querySelector("#homeAddAccountBtn"),
   homePlayerSummary: document.querySelector("#homePlayerSummary"),
+  homePersonalPlayerSelect: document.querySelector("#homePersonalPlayerSelect"),
   accountSearch: document.querySelector("#accountSearch"),
   accountList: document.querySelector("#accountList"),
   accountSpeciesMatrix: document.querySelector("#accountSpeciesMatrix"),
@@ -1645,6 +1647,7 @@ function bindEvents() {
   els.elderTickResetBtn?.addEventListener("click", handleElderTickReset);
   els.elderTickForceResetBtn?.addEventListener("click", handleElderTickForceReset);
   els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
+  els.homePersonalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
   els.personalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
 
   els.dragonList.addEventListener("click", handleDragonAction);
@@ -2080,6 +2083,7 @@ function renderAccounts() {
 
 function renderHome() {
   if (!els.homeAccountList) return;
+  renderPersonalPlayerSelect(els.homePersonalPlayerSelect);
   if (!state.accounts.length) {
     if (els.homePlayerSummary) els.homePlayerSummary.textContent = "Add a player to choose a personal home view.";
     els.homeAccountList.innerHTML = `
@@ -2106,6 +2110,7 @@ function renderHome() {
       ? `Showing ${personalPlayer}'s accounts`
       : "Showing all players. Set a personal player in Settings.";
   }
+  renderPersonalPlayerSelect(els.homePersonalPlayerSelect, personalPlayer);
 
   if (!accounts.length) {
     els.homeAccountList.innerHTML = `
@@ -5058,12 +5063,9 @@ function renderBackupHealth() {
 }
 
 function renderPersonalPlayerSetting() {
-  if (!els.personalPlayerSelect) return;
-  const players = collectPlayerNames();
   const selected = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
-  fillSelect(els.personalPlayerSelect, ["", ...players]);
-  if (els.personalPlayerSelect.options[0]) els.personalPlayerSelect.options[0].textContent = "Show all players";
-  els.personalPlayerSelect.value = selected;
+  renderPersonalPlayerSelect(els.personalPlayerSelect, selected);
+  renderPersonalPlayerSelect(els.homePersonalPlayerSelect, selected);
   if (els.personalPlayerDescription) {
     els.personalPlayerDescription.textContent = selected
       ? `Home is focused on ${selected}'s accounts. Players still shows every player.`
@@ -5071,8 +5073,17 @@ function renderPersonalPlayerSetting() {
   }
 }
 
-function handlePersonalPlayerChange() {
-  const nextPlayer = normalizePersonalPlayer(els.personalPlayerSelect?.value, state.accounts);
+function renderPersonalPlayerSelect(select, selected = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts)) {
+  if (!select) return;
+  const players = collectPlayerNames();
+  fillSelect(select, ["", ...players]);
+  if (select.options[0]) select.options[0].textContent = "Show all players";
+  select.value = selected;
+}
+
+function handlePersonalPlayerChange(event) {
+  const source = event?.currentTarget || els.personalPlayerSelect || els.homePersonalPlayerSelect;
+  const nextPlayer = normalizePersonalPlayer(source?.value, state.accounts);
   state.settings.personalPlayer = nextPlayer;
   saveState({ reason: "Home player changed" });
   renderHome();
