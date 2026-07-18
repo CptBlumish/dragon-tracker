@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.1";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.2";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -136,6 +136,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "elder", label: "Elders" }
 ];
 const CHANGELOG_ITEMS = [
+  "Added a personal Home player setting so Home can focus on one player's accounts.",
+  "Fixed startup panel styling and account-row hover controls.",
   "Added a Home page for account-first startup and improved account-detail editing.",
   "Fixed status downgrades from 4th Pointed, upstat species/skin dropdowns, and several button hit targets.",
   "Added Discord bot inbox support so clan members can import bot-submitted dragons and map pins.",
@@ -408,6 +410,7 @@ const els = {
   addDragonBtn: document.querySelector("#addDragonBtn"),
   homeAccountList: document.querySelector("#homeAccountList"),
   homeAddAccountBtn: document.querySelector("#homeAddAccountBtn"),
+  homePlayerSummary: document.querySelector("#homePlayerSummary"),
   accountSearch: document.querySelector("#accountSearch"),
   accountList: document.querySelector("#accountList"),
   accountSpeciesMatrix: document.querySelector("#accountSpeciesMatrix"),
@@ -496,6 +499,8 @@ const els = {
   elderTickAccountList: document.querySelector("#elderTickAccountList"),
   backupStats: document.querySelector("#backupStats"),
   backupHealthStatus: document.querySelector("#backupHealthStatus"),
+  personalPlayerSelect: document.querySelector("#personalPlayerSelect"),
+  personalPlayerDescription: document.querySelector("#personalPlayerDescription"),
   setupChecklist: document.querySelector("#setupChecklist"),
   dataQualityList: document.querySelector("#dataQualityList"),
   recentlyChangedList: document.querySelector("#recentlyChangedList"),
@@ -611,6 +616,7 @@ function createDefaultState() {
       elderTickStartedAt: "",
       elderTickAccounts: {},
       favoriteMapAreas: [],
+      personalPlayer: "",
       lastBackupAt: ""
     }
   };
@@ -653,6 +659,7 @@ function normalizeState(input = {}) {
       elderTickStartedAt: normalizeElderTickStartedAt(input.settings?.elderTickStartedAt),
       elderTickAccounts: normalizeElderTickAccounts(input.settings?.elderTickAccounts, accounts),
       favoriteMapAreas: normalizeFavoriteMapAreas(input.settings?.favoriteMapAreas),
+      personalPlayer: normalizePersonalPlayer(input.settings?.personalPlayer, accounts),
       lastBackupAt: normalizeOptionalIso(input.settings?.lastBackupAt)
     }
   };
@@ -666,6 +673,12 @@ function normalizeElderTickStartedAt(value) {
 function normalizeOptionalIso(value) {
   const timestamp = Date.parse(text(value));
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
+}
+
+function normalizePersonalPlayer(value, accounts = state?.accounts || []) {
+  const selected = text(value);
+  if (!selected) return "";
+  return accounts.some((account) => account.username === selected) ? selected : "";
 }
 
 function normalizeElderTickAccounts(value, accounts = []) {
@@ -792,6 +805,7 @@ function mergeImportedState(currentInput, incomingInput) {
       elderTickAccounts: mergeElderTickAccounts(current.settings?.elderTickAccounts, incoming.settings?.elderTickAccounts),
       favoriteMapAreas: mergeUniqueStrings(current.settings?.favoriteMapAreas, incoming.settings?.favoriteMapAreas)
         .filter((areaId) => MAP_REFERENCE_AREAS.some((area) => area.id === areaId)),
+      personalPlayer: normalizePersonalPlayer(current.settings?.personalPlayer || incoming.settings?.personalPlayer, accounts),
       lastBackupAt: newerTimestamp(current.settings?.lastBackupAt, incoming.settings?.lastBackupAt) || ""
     }
   });
@@ -1498,7 +1512,7 @@ function bindEvents() {
   els.globalSearchResults?.addEventListener("click", handleGlobalSearchAction);
   document.addEventListener("click", handleDocumentSearchClose);
   els.addDragonBtn.addEventListener("click", () => openDragonDialog());
-  els.homeAddAccountBtn?.addEventListener("click", () => openAccountDialog());
+  els.homeAddAccountBtn?.addEventListener("click", () => openAccountDialog("", { username: normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts) }));
   els.addAccountBtn.addEventListener("click", () => openAccountDialog());
   els.addSkinBtn.addEventListener("click", () => openSkinDialog());
   els.addUpstatBtn?.addEventListener("click", () => openUpstatDialog());
@@ -1631,6 +1645,7 @@ function bindEvents() {
   els.elderTickResetBtn?.addEventListener("click", handleElderTickReset);
   els.elderTickForceResetBtn?.addEventListener("click", handleElderTickForceReset);
   els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
+  els.personalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
 
   els.dragonList.addEventListener("click", handleDragonAction);
   els.homeAccountList?.addEventListener("click", handleAccountAction);
@@ -2066,6 +2081,7 @@ function renderAccounts() {
 function renderHome() {
   if (!els.homeAccountList) return;
   if (!state.accounts.length) {
+    if (els.homePlayerSummary) els.homePlayerSummary.textContent = "Add a player to choose a personal home view.";
     els.homeAccountList.innerHTML = `
       <div class="empty-state">
         <h2>No accounts yet</h2>
@@ -2074,7 +2090,33 @@ function renderHome() {
     `;
     return;
   }
-  const accounts = [...state.accounts].sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+
+  const personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
+  if (personalPlayer !== (state.settings?.personalPlayer || "")) {
+    state.settings.personalPlayer = personalPlayer;
+    saveState({ skipHistory: true });
+  }
+
+  const accounts = [...state.accounts]
+    .filter((account) => !personalPlayer || account.username === personalPlayer)
+    .sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+
+  if (els.homePlayerSummary) {
+    els.homePlayerSummary.textContent = personalPlayer
+      ? `Showing ${personalPlayer}'s accounts`
+      : "Showing all players. Set a personal player in Settings.";
+  }
+
+  if (!accounts.length) {
+    els.homeAccountList.innerHTML = `
+      <div class="empty-state">
+        <h2>No accounts for ${escapeHtml(personalPlayer)}</h2>
+        <p>Change the personal player in Settings or add an account for this player.</p>
+      </div>
+    `;
+    return;
+  }
+
   els.homeAccountList.innerHTML = renderAccountSections(accounts);
 }
 
@@ -4991,6 +5033,7 @@ function renderBackup() {
     <dt>Backup size</dt><dd>${formatBytes(bytes)}</dd>
   `;
   renderSyncSettings();
+  renderPersonalPlayerSetting();
   renderElderTick();
   renderElderTickAccountList();
   renderBackupHealth();
@@ -5012,6 +5055,29 @@ function renderBackupHealth() {
   els.backupHealthStatus.textContent = ageDays <= 1
     ? `Last backup was recent: ${formatDateTime(lastBackup)}.`
     : `Last backup was ${ageDays} day${ageDays === 1 ? "" : "s"} ago: ${formatDateTime(lastBackup)}.`;
+}
+
+function renderPersonalPlayerSetting() {
+  if (!els.personalPlayerSelect) return;
+  const players = collectPlayerNames();
+  const selected = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
+  fillSelect(els.personalPlayerSelect, ["", ...players]);
+  if (els.personalPlayerSelect.options[0]) els.personalPlayerSelect.options[0].textContent = "Show all players";
+  els.personalPlayerSelect.value = selected;
+  if (els.personalPlayerDescription) {
+    els.personalPlayerDescription.textContent = selected
+      ? `Home is focused on ${selected}'s accounts. Players still shows every player.`
+      : "Choose which player owns this install. Home will show all players until one is selected.";
+  }
+}
+
+function handlePersonalPlayerChange() {
+  const nextPlayer = normalizePersonalPlayer(els.personalPlayerSelect?.value, state.accounts);
+  state.settings.personalPlayer = nextPlayer;
+  saveState({ reason: "Home player changed" });
+  renderHome();
+  renderPersonalPlayerSetting();
+  showToast(nextPlayer ? `Home now shows ${nextPlayer}'s accounts` : "Home now shows all players");
 }
 
 function renderSetupChecklist() {
@@ -6005,6 +6071,7 @@ function deletePlayer(username) {
   const dragonText = dragonCount === 1 ? "1 dragon" : `${dragonCount} dragons`;
   if (!confirm(`Delete player ${playerName}, ${accountText}, and ${dragonText}?`)) return;
   deleteAccountsByIds(accountIds);
+  if (state.settings?.personalPlayer === playerName) state.settings.personalPlayer = "";
   showToast(`${playerName} deleted`);
 }
 
@@ -6015,6 +6082,9 @@ function deleteAccountsByIds(accountIds) {
     .map((dragon) => dragon.id));
 
   state.accounts = state.accounts.filter((account) => !accountIdSet.has(account.id));
+  if (state.settings?.personalPlayer && !state.accounts.some((account) => account.username === state.settings.personalPlayer)) {
+    state.settings.personalPlayer = "";
+  }
   state.dragons = state.dragons.filter((dragon) => !removedDragonIds.has(dragon.id));
   state.broodPouch = (state.broodPouch || []).filter((entry) => !removedDragonIds.has(entry.dragonId));
   if (state.settings?.elderTickAccounts) {

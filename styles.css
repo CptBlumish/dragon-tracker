@@ -598,7 +598,7 @@ input[type="checkbox"] {
 
 .account-dragon-row {
   display: grid;
-  grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, auto);
   align-items: center;
   gap: 8px;
   border: 1px solid var(--line);
@@ -623,8 +623,9 @@ input[type="checkbox"] {
 .account-dragon-status,
 .account-dragon-actions,
 .account-dragon-row > .small-pill {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1;
+  justify-self: end;
 }
 
 .account-dragon-actions {
@@ -634,6 +635,7 @@ input[type="checkbox"] {
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease;
+  white-space: nowrap;
 }
 
 .account-dragon-row:hover .account-dragon-actions,
@@ -645,10 +647,6 @@ input[type="checkbox"] {
 .account-dragon-row:hover .account-dragon-status,
 .account-dragon-row:focus-within .account-dragon-status {
   opacity: 0;
-}
-
-.account-dragon-row.is-clan-shared .account-dragon-status {
-  grid-column: 2;
 }
 
 @media (hover: none) {
@@ -666,6 +664,10 @@ input[type="checkbox"] {
   min-height: 34px;
   padding: 0 11px;
   font-size: 0.74rem;
+}
+
+.personal-player-panel .field {
+  margin-top: 10px;
 }
 
 .account-detail-dragon-actions {

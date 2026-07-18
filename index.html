@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260718-home-ui-fixes">
+  <link rel="stylesheet" href="./styles.css?v=20260718-personal-home">
 </head>
 <body>
   <div class="app-shell">
@@ -67,6 +67,7 @@
           <div>
             <p class="eyebrow">Roster Home</p>
             <h2>Your Accounts</h2>
+            <p class="card-subtitle" id="homePlayerSummary">Showing all players</p>
           </div>
           <button class="primary-button" type="button" id="homeAddAccountBtn">
             <span class="button-icon" aria-hidden="true">
@@ -183,7 +184,7 @@
         <div class="brood-pouch-list" id="broodPouchList"></div>
       </section>
 
-      <section class="tab-panel is-active" id="skins-panel" data-panel="skins">
+      <section class="tab-panel" id="skins-panel" data-panel="skins">
         <div class="toolbar">
           <div class="field search-field">
             <label for="skinSearch">Search</label>
@@ -332,6 +333,14 @@
             </div>
             <p class="form-note" id="backupHealthStatus">No backup exported this session.</p>
           </div>
+          <div class="backup-panel personal-player-panel">
+            <h2>Home Player</h2>
+            <div class="field">
+              <label for="personalPlayerSelect">Personal player</label>
+              <select id="personalPlayerSelect"></select>
+            </div>
+            <p class="form-note" id="personalPlayerDescription">Choose which player owns this install. Home will only show that player's accounts.</p>
+          </div>
           <div class="backup-panel sync-settings-panel">
             <div class="card-head">
               <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Optional shared dragons and map pins</p></div>
@@ -379,7 +388,7 @@
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.2.1</div>
+        <div class="backup-version" id="appVersionLabel">Version 1.2.2</div>
       </section>
     </main>
   </div>
@@ -1003,7 +1012,7 @@
   <datalist id="lineageNameOptions"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="./sync-client.js?v=20260718-home-ui-fixes"></script>
-  <script src="./app.js?v=20260718-home-ui-fixes"></script>
+  <script src="./sync-client.js?v=20260718-personal-home"></script>
+  <script src="./app.js?v=20260718-personal-home"></script>
 </body>
 </html>
