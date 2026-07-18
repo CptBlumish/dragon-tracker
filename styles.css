@@ -392,6 +392,42 @@ svg {
   font-weight: 800;
 }
 
+.matrix-cell-head {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.matrix-cell-head span {
+  color: var(--gold);
+}
+
+.matrix-sex {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 20px !important;
+  height: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0 5px;
+  color: #fff !important;
+  font-size: 0.64rem !important;
+  line-height: 1;
+}
+
+.matrix-sex.is-female {
+  border-color: rgba(255, 150, 199, 0.7);
+  background: rgba(255, 94, 169, 0.18);
+}
+
+.matrix-sex.is-male {
+  border-color: rgba(117, 190, 255, 0.7);
+  background: rgba(68, 142, 255, 0.18);
+}
+
 .matrix-cell.is-filled {
   border-color: rgba(159, 189, 104, 0.5);
 }

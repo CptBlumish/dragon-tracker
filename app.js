@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.4";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.5";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -136,6 +136,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "elder", label: "Elders" }
 ];
 const CHANGELOG_ITEMS = [
+  "Added compact sex markers to account species grid cells.",
   "Added the Players species grid to Home for the selected Home player.",
   "Moved the personal Home player selector onto the Home screen.",
   "Added a personal Home player setting so Home can focus on one player's accounts.",
@@ -2191,8 +2192,11 @@ function renderAccountSpeciesMatrixCell(account, species, accountDragons) {
   const dragon = accountDragons.find((item) => item.species === species);
   if (dragon) {
     return `
-      <button class="matrix-cell is-filled" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.skin]))}">
-        <strong>${escapeHtml(statusShortLabel(dragon.status))}</strong>
+      <button class="matrix-cell is-filled" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin]))}">
+        <strong class="matrix-cell-head">
+          <span>${escapeHtml(statusShortLabel(dragon.status))}</span>
+          <span class="matrix-sex ${sexClass(dragon.sex)}">${escapeHtml(sexShortLabel(dragon.sex))}</span>
+        </strong>
         <span>${escapeHtml(dragon.skin || "Skin?")}</span>
       </button>
     `;
@@ -2215,6 +2219,20 @@ function statusShortLabel(status) {
     "4th Pointed": "4",
     Elder: "E"
   }[status] || "?";
+}
+
+function sexShortLabel(sex) {
+  return {
+    Female: "F",
+    Male: "M"
+  }[sex] || "?";
+}
+
+function sexClass(sex) {
+  return {
+    Female: "is-female",
+    Male: "is-male"
+  }[sex] || "is-unknown";
 }
 
 function missingDlcForSpecies(account, species) {
