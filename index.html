@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260623-elder-tick">
+  <link rel="stylesheet" href="./styles.css?v=20260718-home-ui-fixes">
 </head>
 <body>
   <div class="app-shell">
@@ -12,7 +12,15 @@
       <div class="title-block">
         <h1>Dragon Tracker</h1>
       </div>
+      <div class="global-search-wrap">
+        <div class="field top-search-field">
+          <label for="globalSearch">Find</label>
+          <input id="globalSearch" type="search" autocomplete="off" placeholder="Dragon, player, skin, map, clan">
+        </div>
+        <div class="global-search-results" id="globalSearchResults" hidden></div>
+      </div>
       <div class="top-actions" aria-label="Backup actions">
+        <span class="sync-status-badge pill" id="syncStatusBadge">Local</span>
         <button class="tool-button" type="button" data-action="import-json" title="Import JSON backup">
           <span class="button-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M12 3v10m0-10 4 4m-4-4-4 4M4 14v4a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-4"/></svg>
@@ -41,11 +49,12 @@
     </header>
 
     <nav class="tabs" aria-label="Tracker sections">
+      <button class="tab is-active" type="button" data-tab="home">Home</button>
       <button class="tab" type="button" data-tab="dragons">Dragons</button>
       <button class="tab" type="button" data-tab="players">Players</button>
       <button class="tab" type="button" data-tab="nesting">Nesting Planner</button>
       <button class="tab" type="button" data-tab="brood-pouch">Brood Pouch</button>
-      <button class="tab is-active" type="button" data-tab="skins">Skins</button>
+      <button class="tab" type="button" data-tab="skins">Skins</button>
       <button class="tab" type="button" data-tab="upstats">Upstats</button>
       <button class="tab" type="button" data-tab="map">Map</button>
       <button class="tab" type="button" data-tab="clans">Clans</button>
@@ -53,6 +62,22 @@
     </nav>
 
     <main>
+      <section class="tab-panel is-active" id="home-panel" data-panel="home">
+        <div class="toolbar accounts-toolbar">
+          <div>
+            <p class="eyebrow">Roster Home</p>
+            <h2>Your Accounts</h2>
+          </div>
+          <button class="primary-button" type="button" id="homeAddAccountBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+            Add Player
+          </button>
+        </div>
+        <div class="account-list home-account-list" id="homeAccountList"></div>
+      </section>
+
       <section class="tab-panel" id="dragons-panel" data-panel="dragons">
         <div class="toolbar">
           <div class="field search-field">
@@ -107,6 +132,7 @@
           </button>
         </div>
 
+        <div class="account-species-matrix" id="accountSpeciesMatrix"></div>
         <div class="account-list" id="accountList"></div>
       </section>
 
@@ -119,6 +145,14 @@
           <div class="field">
             <label for="parentTwo">Parent B</label>
             <select id="parentTwo"></select>
+          </div>
+          <div class="field">
+            <label for="nestTargetSkin">Target skin</label>
+            <select id="nestTargetSkin"></select>
+          </div>
+          <div class="field">
+            <label for="nestTargetGrade">Target stat</label>
+            <select id="nestTargetGrade"></select>
           </div>
           <button class="primary-button" type="button" id="createEggBtn">
             <span class="button-icon" aria-hidden="true">
@@ -174,6 +208,14 @@
             Add Skin
           </button>
         </div>
+        <details class="skin-info-panel">
+          <summary>Mutation and DLC reminders</summary>
+          <div class="skin-info-grid">
+            <p><strong>Albino</strong> uses a 0.05% mutation chance when any two parent skins are nested.</p>
+            <p><strong>Piebald</strong> uses a 0.05% mutation chance when one primary skin is Exotic and the other primary skin is non-Exotic.</p>
+            <p><strong>Wishlist</strong> marks skins you still want without changing ownership or nesting odds.</p>
+          </div>
+        </details>
         <div class="skin-list" id="skinList"></div>
       </section>
 
@@ -215,6 +257,14 @@
             <input id="mapLayerFood" type="checkbox">
             Food
           </label>
+          <label class="toggle-field">
+            <input id="mapPinsPersonal" type="checkbox" checked>
+            My pins
+          </label>
+          <label class="toggle-field">
+            <input id="mapPinsClan" type="checkbox" checked>
+            Clan pins
+          </label>
           <button class="primary-button" type="button" id="addMapPinBtn">
             <span class="button-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11Z"/><path d="M12 10h.01"/></svg>
@@ -242,6 +292,9 @@
               <div class="field">
                 <label for="mapAreaSelect">Area</label>
                 <select id="mapAreaSelect"></select>
+              </div>
+              <div class="button-row compact-actions">
+                <button class="tool-button" type="button" id="toggleMapFavoriteBtn">Favorite Area</button>
               </div>
               <p class="map-reference-summary" id="mapReferenceSummary"></p>
               <div class="map-reference-gallery" id="mapReferenceGallery"></div>
@@ -274,7 +327,10 @@
               <button class="tool-button" type="button" data-action="import-json">Import JSON</button>
               <button class="tool-button" type="button" data-action="import-genetics-png">Import PNG</button>
               <button class="tool-button" type="button" data-action="export-csv">Export CSV</button>
+              <button class="tool-button" type="button" data-action="export-safe-json">Share-Safe Export</button>
+              <button class="tool-button" type="button" id="undoChangeBtn">Undo Last Change</button>
             </div>
+            <p class="form-note" id="backupHealthStatus">No backup exported this session.</p>
           </div>
           <div class="backup-panel sync-settings-panel">
             <div class="card-head">
@@ -296,6 +352,23 @@
             <p class="form-note" id="elderTickDescription">The timer starts automatically after a Steam identity is linked. It does not read or control the game.</p>
             <div class="button-row">
               <button class="primary-button" type="button" id="elderTickResetBtn" disabled>Mark Tick Taken</button>
+              <button class="tool-button" type="button" id="elderTickForceResetBtn" disabled>Reset 6-Hour Timer</button>
+            </div>
+            <div class="elder-account-list" id="elderTickAccountList"></div>
+          </div>
+          <div class="backup-panel">
+            <h2>Setup Checklist</h2>
+            <div class="quality-list" id="setupChecklist"></div>
+          </div>
+          <div class="backup-panel">
+            <h2>Data Quality</h2>
+            <div class="quality-list" id="dataQualityList"></div>
+          </div>
+          <div class="backup-panel">
+            <h2>Recent Changes</h2>
+            <div class="quality-list" id="recentlyChangedList"></div>
+            <div class="button-row compact-actions">
+              <button class="tool-button" type="button" id="openChangelogBtn">View Changelog</button>
             </div>
           </div>
           <div class="backup-panel danger-zone">
@@ -306,7 +379,7 @@
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.0.11</div>
+        <div class="backup-version" id="appVersionLabel">Version 1.2.1</div>
       </section>
     </main>
   </div>
@@ -748,6 +821,18 @@
           <label for="broodPouchBrood">Current brood</label>
           <input id="broodPouchBrood" name="brood" maxlength="80" placeholder="Brood 1" required autofocus>
         </div>
+        <div class="field">
+          <label for="broodPouchDueAt">Reminder time</label>
+          <input id="broodPouchDueAt" name="dueAt" type="datetime-local">
+        </div>
+        <div class="field">
+          <label for="broodPouchOddsSummary">Odds note</label>
+          <input id="broodPouchOddsSummary" name="oddsSummary" maxlength="180" placeholder="Optional skin/stat reminder">
+        </div>
+        <div class="field">
+          <label for="broodPouchNotes">Notes</label>
+          <textarea id="broodPouchNotes" name="notes" rows="3" maxlength="600"></textarea>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="tool-button" type="button" data-close-modal="broodPouchDialog">Cancel</button>
@@ -862,6 +947,54 @@
     </div>
   </dialog>
 
+  <dialog class="modal compact-modal" id="importPreviewDialog">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Backup Import</p>
+        <h2>Review Merge</h2>
+      </div>
+      <button class="icon-only" type="button" data-import-preview-action="cancel" aria-label="Close import preview">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="import-preview-content" id="importPreviewContent"></div>
+    <div class="modal-actions">
+      <button class="tool-button" type="button" data-import-preview-action="cancel">Cancel</button>
+      <button class="primary-button" type="button" data-import-preview-action="confirm">Merge Backup</button>
+    </div>
+  </dialog>
+
+  <dialog class="modal skin-turntable-modal" id="skinTurntableDialog">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Skin Preview</p>
+        <h2 id="skinTurntableTitle">Turntable</h2>
+      </div>
+      <button class="icon-only" type="button" data-close-modal="skinTurntableDialog" aria-label="Close skin preview">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="skin-turntable-viewer">
+      <video id="skinTurntableVideo" muted loop playsinline controls autoplay></video>
+    </div>
+  </dialog>
+
+  <dialog class="modal compact-modal" id="changelogDialog">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Dragon Tracker</p>
+        <h2>What Changed</h2>
+      </div>
+      <button class="icon-only" type="button" data-close-modal="changelogDialog" aria-label="Close changelog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="changelog-content" id="changelogContent"></div>
+    <div class="modal-actions">
+      <button class="primary-button" type="button" data-close-modal="changelogDialog">Got it</button>
+    </div>
+  </dialog>
+
   <input id="importFile" type="file" hidden accept=".json,application/json">
   <input id="geneticsImageFile" type="file" hidden accept="image/png,image/jpeg,image/webp,image/*">
   <datalist id="speciesOptions"></datalist>
@@ -870,7 +1003,7 @@
   <datalist id="lineageNameOptions"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="./sync-client.js?v=20260621-clan-join-local"></script>
-  <script src="./app.js?v=20260623-elder-tick"></script>
+  <script src="./sync-client.js?v=20260718-home-ui-fixes"></script>
+  <script src="./app.js?v=20260718-home-ui-fixes"></script>
 </body>
 </html>

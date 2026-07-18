@@ -36,6 +36,8 @@ Clan Sync is optional and begins with no shared data. Connecting Discord establi
 
 Only dragons and map pins that a member explicitly shares are visible to a clan. Local accounts, full backups, and unshared records remain on the device. Project owners can follow [Clan Sync Setup](docs/CLAN_SYNC_SETUP.md) to deploy the secure backend.
 
+The optional Discord bot can send dragon and map-pin submissions to a clan inbox for review. Project owners can follow [Discord Bot Link](docs/discord-bot.md) to deploy it.
+
 ## Feedback
 
 Use the [bug report](.github/ISSUE_TEMPLATE/bug_report.md) and [feature request](.github/ISSUE_TEMPLATE/feature_request.md) templates in the [Issues tab](https://github.com/CptBlumish/dragon-tracker/issues). Do not attach private backups or screenshots with personal account details to public issues.

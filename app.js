@@ -1,7 +1,10 @@
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
+const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
+const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.0.11";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.1";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const MAX_UNDO_HISTORY = 12;
 
 const DEFAULT_SPECIES = [
   { name: "Flame Stalker", className: "5", element: "Fire", diet: "Carnivore" },
@@ -120,9 +123,27 @@ const MAP_REFERENCE_AREAS = [
   { id: "four-ponds", region: "Corners", name: "Four Ponds", files: ["frpnds.png"], button: [43.9, 85.0, 11, 4.5] },
   { id: "far-pond", region: "Corners", name: "Far Pond", files: ["farpnd.png"], button: [3.2, 5.1, 9, 4.5] }
 ];
-const DEFAULT_TAB = "skins";
-const TAB_NAMES = ["dragons", "players", "nesting", "brood-pouch", "skins", "upstats", "map", "clans", "settings"];
+const DEFAULT_TAB = "home";
+const TAB_NAMES = ["home", "dragons", "players", "nesting", "brood-pouch", "skins", "upstats", "map", "clans", "settings"];
 const ACTIVE_CLAN_STORAGE_KEY = "dragon-tracker.active-clan.v1";
+const CLAN_LIBRARY_SOURCE_FILTERS = [
+  { value: "", label: "All shared dragons" },
+  { value: "mine", label: "Shared by me" },
+  { value: "others", label: "Shared by others" },
+  { value: "missing-local", label: "Not in my tracker" },
+  { value: "breeders", label: "Breeders" },
+  { value: "fourth", label: "4th pointed" },
+  { value: "elder", label: "Elders" }
+];
+const CHANGELOG_ITEMS = [
+  "Added a Home page for account-first startup and improved account-detail editing.",
+  "Fixed status downgrades from 4th Pointed, upstat species/skin dropdowns, and several button hit targets.",
+  "Added Discord bot inbox support so clan members can import bot-submitted dragons and map pins.",
+  "Added global search for dragons, players, accounts, skins, upstats, map areas, and clan records.",
+  "Added safer backup tools: import preview, undo last change, safe export, data health, and recent-change panels.",
+  "Added account roster matrix, per-account elder tick timers, pairing helper targets, skin wishlists, and richer brood pouch fields.",
+  "Added map favorites, pin visibility toggles, clan library source filters, and better shared-record visibility."
+];
 const STAT_FIELDS = [
   { key: "lifeExpectancy", label: "Life Expectancy" },
   { key: "scaleThickness", label: "Scale Thickness" },
@@ -353,15 +374,17 @@ let elderTickTimer = null;
 let lastKnownStateText = "";
 let mapPinPlacementActive = false;
 let clanShareConfirmationResolve = null;
+let pendingImportState = null;
 const clanSync = window.DragonTrackerSyncClient ? new window.DragonTrackerSyncClient() : null;
 const clanUi = {
   activeClanId: localStorage.getItem(ACTIVE_CLAN_STORAGE_KEY) || "",
   busy: false,
   error: "",
   inviteCode: "",
+  discordSubmissions: [],
   identityLinks: [],
   lastSignature: "",
-  libraryFilters: { dragon: "", skin: "", recessive: "", sex: "" },
+  libraryFilters: { dragon: "", skin: "", recessive: "", sex: "", source: "" },
   members: [],
   memberships: [],
   sharedDragons: [],
@@ -372,6 +395,9 @@ const clanUi = {
 const els = {
   tabs: document.querySelectorAll(".tab"),
   panels: document.querySelectorAll(".tab-panel"),
+  globalSearch: document.querySelector("#globalSearch"),
+  globalSearchResults: document.querySelector("#globalSearchResults"),
+  syncStatusBadge: document.querySelector("#syncStatusBadge"),
   dragonSearch: document.querySelector("#dragonSearch"),
   speciesFilter: document.querySelector("#speciesFilter"),
   statusFilter: document.querySelector("#statusFilter"),
@@ -380,8 +406,11 @@ const els = {
   statsBar: document.querySelector("#statsBar"),
   dragonList: document.querySelector("#dragonList"),
   addDragonBtn: document.querySelector("#addDragonBtn"),
+  homeAccountList: document.querySelector("#homeAccountList"),
+  homeAddAccountBtn: document.querySelector("#homeAddAccountBtn"),
   accountSearch: document.querySelector("#accountSearch"),
   accountList: document.querySelector("#accountList"),
+  accountSpeciesMatrix: document.querySelector("#accountSpeciesMatrix"),
   addAccountBtn: document.querySelector("#addAccountBtn"),
   accountDialog: document.querySelector("#accountDialog"),
   accountForm: document.querySelector("#accountForm"),
@@ -395,6 +424,8 @@ const els = {
   statEditor: document.querySelector("#statEditor"),
   parentOne: document.querySelector("#parentOne"),
   parentTwo: document.querySelector("#parentTwo"),
+  nestTargetSkin: document.querySelector("#nestTargetSkin"),
+  nestTargetGrade: document.querySelector("#nestTargetGrade"),
   createEggBtn: document.querySelector("#createEggBtn"),
   broodWatcherBrooding: document.querySelector("#broodWatcherBrooding"),
   addEggToBroodPouch: document.querySelector("#addEggToBroodPouch"),
@@ -403,6 +434,9 @@ const els = {
   broodPouchDialog: document.querySelector("#broodPouchDialog"),
   broodPouchForm: document.querySelector("#broodPouchForm"),
   broodPouchDialogTitle: document.querySelector("#broodPouchDialogTitle"),
+  broodPouchDueAt: document.querySelector("#broodPouchDueAt"),
+  broodPouchOddsSummary: document.querySelector("#broodPouchOddsSummary"),
+  broodPouchNotes: document.querySelector("#broodPouchNotes"),
   skinSearch: document.querySelector("#skinSearch"),
   skinSpeciesFilter: document.querySelector("#skinSpeciesFilter"),
   skinTypeFilter: document.querySelector("#skinTypeFilter"),
@@ -426,6 +460,8 @@ const els = {
   mapLayerLocations: document.querySelector("#mapLayerLocations"),
   mapLayerCrystals: document.querySelector("#mapLayerCrystals"),
   mapLayerFood: document.querySelector("#mapLayerFood"),
+  mapPinsPersonal: document.querySelector("#mapPinsPersonal"),
+  mapPinsClan: document.querySelector("#mapPinsClan"),
   addMapPinBtn: document.querySelector("#addMapPinBtn"),
   mapStage: document.querySelector("#mapStage"),
   mapPinDialog: document.querySelector("#mapPinDialog"),
@@ -440,6 +476,7 @@ const els = {
   mapReferenceGallery: document.querySelector("#mapReferenceGallery"),
   mapReferenceCount: document.querySelector("#mapReferenceCount"),
   mapReferenceSummary: document.querySelector("#mapReferenceSummary"),
+  toggleMapFavoriteBtn: document.querySelector("#toggleMapFavoriteBtn"),
   clanContent: document.querySelector("#clanContent"),
   syncConfigDialog: document.querySelector("#syncConfigDialog"),
   syncConfigForm: document.querySelector("#syncConfigForm"),
@@ -455,11 +492,26 @@ const els = {
   elderTickCountdown: document.querySelector("#elderTickCountdown"),
   elderTickDescription: document.querySelector("#elderTickDescription"),
   elderTickResetBtn: document.querySelector("#elderTickResetBtn"),
+  elderTickForceResetBtn: document.querySelector("#elderTickForceResetBtn"),
+  elderTickAccountList: document.querySelector("#elderTickAccountList"),
   backupStats: document.querySelector("#backupStats"),
+  backupHealthStatus: document.querySelector("#backupHealthStatus"),
+  setupChecklist: document.querySelector("#setupChecklist"),
+  dataQualityList: document.querySelector("#dataQualityList"),
+  recentlyChangedList: document.querySelector("#recentlyChangedList"),
+  undoChangeBtn: document.querySelector("#undoChangeBtn"),
+  openChangelogBtn: document.querySelector("#openChangelogBtn"),
   appVersionLabel: document.querySelector("#appVersionLabel"),
   importFile: document.querySelector("#importFile"),
+  importPreviewDialog: document.querySelector("#importPreviewDialog"),
+  importPreviewContent: document.querySelector("#importPreviewContent"),
   geneticsImageFile: document.querySelector("#geneticsImageFile"),
   geneticsImportStatus: document.querySelector("#geneticsImportStatus"),
+  skinTurntableDialog: document.querySelector("#skinTurntableDialog"),
+  skinTurntableTitle: document.querySelector("#skinTurntableTitle"),
+  skinTurntableVideo: document.querySelector("#skinTurntableVideo"),
+  changelogDialog: document.querySelector("#changelogDialog"),
+  changelogContent: document.querySelector("#changelogContent"),
   speciesOptions: document.querySelector("#speciesOptions"),
   skinOptions: document.querySelector("#skinOptions"),
   accountOptions: document.querySelector("#accountOptions"),
@@ -472,7 +524,7 @@ const els = {
 init();
 
 function init() {
-  if (refreshAllDerivedRecords()) saveState();
+  if (refreshAllDerivedRecords()) saveState({ skipHistory: true });
   lastKnownStateText = localStorage.getItem(STORAGE_KEY) || "";
   renderAppVersion();
   buildStaticSelects();
@@ -484,6 +536,7 @@ function init() {
   bindDesktopAuthCallbacks();
   bindBrowserAuthCallback();
   void refreshClanSync({ quiet: true });
+  maybeShowChangelog();
 }
 
 function buildStarterSkins() {
@@ -555,7 +608,10 @@ function createDefaultState() {
       species: DEFAULT_SPECIES,
       statFields: STAT_FIELDS,
       skipClanShareConfirmation: false,
-      elderTickStartedAt: ""
+      elderTickStartedAt: "",
+      elderTickAccounts: {},
+      favoriteMapAreas: [],
+      lastBackupAt: ""
     }
   };
 }
@@ -594,7 +650,10 @@ function normalizeState(input = {}) {
       species: mergeSpecies(input.settings?.species || []),
       statFields: STAT_FIELDS,
       skipClanShareConfirmation: Boolean(input.settings?.skipClanShareConfirmation),
-      elderTickStartedAt: normalizeElderTickStartedAt(input.settings?.elderTickStartedAt)
+      elderTickStartedAt: normalizeElderTickStartedAt(input.settings?.elderTickStartedAt),
+      elderTickAccounts: normalizeElderTickAccounts(input.settings?.elderTickAccounts, accounts),
+      favoriteMapAreas: normalizeFavoriteMapAreas(input.settings?.favoriteMapAreas),
+      lastBackupAt: normalizeOptionalIso(input.settings?.lastBackupAt)
     }
   };
 }
@@ -602,6 +661,25 @@ function normalizeState(input = {}) {
 function normalizeElderTickStartedAt(value) {
   const timestamp = Date.parse(text(value));
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
+}
+
+function normalizeOptionalIso(value) {
+  const timestamp = Date.parse(text(value));
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
+}
+
+function normalizeElderTickAccounts(value, accounts = []) {
+  if (!value || typeof value !== "object") return {};
+  const accountIds = new Set(accounts.map((account) => account.id));
+  return Object.fromEntries(Object.entries(value)
+    .map(([accountId, startedAt]) => [text(accountId), normalizeOptionalIso(startedAt)])
+    .filter(([accountId, startedAt]) => accountId && startedAt && (!accountIds.size || accountIds.has(accountId))));
+}
+
+function normalizeFavoriteMapAreas(value) {
+  const validIds = new Set(MAP_REFERENCE_AREAS.map((area) => area.id));
+  return mergeUniqueStrings([], Array.isArray(value) ? value : [])
+    .filter((areaId) => validIds.has(areaId));
 }
 
 function normalizeAccount(account) {
@@ -710,9 +788,21 @@ function mergeImportedState(currentInput, incomingInput) {
       species: mergeSpecies([...(current.settings?.species || []), ...(incoming.settings?.species || [])]),
       statFields: STAT_FIELDS,
       skipClanShareConfirmation: Boolean(current.settings?.skipClanShareConfirmation || incoming.settings?.skipClanShareConfirmation),
-      elderTickStartedAt: current.settings?.elderTickStartedAt || incoming.settings?.elderTickStartedAt || ""
+      elderTickStartedAt: current.settings?.elderTickStartedAt || incoming.settings?.elderTickStartedAt || "",
+      elderTickAccounts: mergeElderTickAccounts(current.settings?.elderTickAccounts, incoming.settings?.elderTickAccounts),
+      favoriteMapAreas: mergeUniqueStrings(current.settings?.favoriteMapAreas, incoming.settings?.favoriteMapAreas)
+        .filter((areaId) => MAP_REFERENCE_AREAS.some((area) => area.id === areaId)),
+      lastBackupAt: newerTimestamp(current.settings?.lastBackupAt, incoming.settings?.lastBackupAt) || ""
     }
   });
+}
+
+function mergeElderTickAccounts(current = {}, incoming = {}) {
+  const keys = new Set([...Object.keys(current || {}), ...Object.keys(incoming || {})]);
+  return Object.fromEntries([...keys].map((key) => {
+    const next = newerTimestamp(current?.[key], incoming?.[key]) || current?.[key] || incoming?.[key] || "";
+    return [key, next];
+  }).filter(([, value]) => Boolean(value)));
 }
 
 function mergeAccountDatasets(currentAccounts, incomingAccounts, accountIdMap) {
@@ -892,7 +982,10 @@ function mergeBroodPouchEntry(existing, incoming) {
     createdAt: olderTimestamp(existing.createdAt, incoming.createdAt),
     updatedAt: newerTimestamp(existing.updatedAt, incoming.updatedAt),
     dragonId: chooseImportText(existing.dragonId, incoming.dragonId, preferIncoming),
-    brood: chooseImportText(existing.brood, incoming.brood, preferIncoming, ["Unassigned brood"])
+    brood: chooseImportText(existing.brood, incoming.brood, preferIncoming, ["Unassigned brood"]),
+    dueAt: chooseImportText(existing.dueAt, incoming.dueAt, preferIncoming),
+    oddsSummary: chooseImportText(existing.oddsSummary, incoming.oddsSummary, preferIncoming),
+    notes: mergeTextBlocks(existing.notes, incoming.notes)
   };
 }
 
@@ -927,6 +1020,7 @@ function mergeSkinRecord(existing, incoming) {
     recipeA: chooseImportText(existing.recipeA, incoming.recipeA, preferIncoming),
     recipeB: chooseImportText(existing.recipeB, incoming.recipeB, preferIncoming),
     owned: Boolean(existing.owned || incoming.owned),
+    wishlist: Boolean(existing.wishlist || incoming.wishlist),
     notes: mergeTextBlocks(existing.notes, incoming.notes)
   };
 }
@@ -1111,7 +1205,8 @@ function mergeSkinCatalog(savedSkins, starterSkins) {
       source: shouldUseStarterSkinSource(saved, starter) ? starter.source : saved.source,
       recipeA: saved.recipeA || starter.recipeA,
       recipeB: saved.recipeB || starter.recipeB,
-      owned: saved.owned || starter.owned
+      owned: saved.owned || starter.owned,
+      wishlist: Boolean(saved.wishlist || starter.wishlist)
     };
 
     if (shouldUseStarterMutationDefinition(starter)) {
@@ -1245,6 +1340,7 @@ function normalizeSkin(skin) {
     recipeA: text(skin.recipeA),
     recipeB: text(skin.recipeB),
     owned: Boolean(skin.owned),
+    wishlist: Boolean(skin.wishlist),
     notes: text(skin.notes)
   };
 }
@@ -1313,10 +1409,40 @@ function mergeSpecies(savedSpecies) {
   return [...byName.values()];
 }
 
-function saveState() {
+function saveState(options = {}) {
+  if (!options.skipHistory) pushUndoSnapshot(options.reason || "Tracker change");
   state.updatedAt = new Date().toISOString();
   lastKnownStateText = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, lastKnownStateText);
+}
+
+function pushUndoSnapshot(reason) {
+  const current = localStorage.getItem(STORAGE_KEY);
+  if (!current || current === lastKnownStateText && !state.updatedAt) return;
+  const history = loadUndoHistory();
+  if (history[0]?.data === current) return;
+  history.unshift({
+    id: uid("undo"),
+    reason: text(reason) || "Tracker change",
+    createdAt: new Date().toISOString(),
+    data: current
+  });
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_UNDO_HISTORY)));
+}
+
+function loadUndoHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item?.data && item?.createdAt).slice(0, MAX_UNDO_HISTORY)
+      : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveUndoHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify((history || []).slice(0, MAX_UNDO_HISTORY)));
 }
 
 function startAutoSync() {
@@ -1338,7 +1464,11 @@ function startAutoSync() {
 
 function startElderTickCountdown() {
   if (elderTickTimer) clearInterval(elderTickTimer);
-  elderTickTimer = setInterval(renderElderTick, 1000);
+  elderTickTimer = setInterval(() => {
+    renderElderTick();
+    renderElderTickAccountList();
+    if (currentTab === "brood-pouch") renderBroodPouch();
+  }, 1000);
 }
 
 function syncStateFromStorage() {
@@ -1364,7 +1494,11 @@ function syncStateFromStorage() {
 function bindEvents() {
   els.tabs.forEach((tab) => tab.addEventListener("click", () => setTab(tab.dataset.tab, { updateHash: true })));
   window.addEventListener("hashchange", () => setTab(startupTab(), { replaceHash: false }));
+  els.globalSearch?.addEventListener("input", renderGlobalSearch);
+  els.globalSearchResults?.addEventListener("click", handleGlobalSearchAction);
+  document.addEventListener("click", handleDocumentSearchClose);
   els.addDragonBtn.addEventListener("click", () => openDragonDialog());
+  els.homeAddAccountBtn?.addEventListener("click", () => openAccountDialog());
   els.addAccountBtn.addEventListener("click", () => openAccountDialog());
   els.addSkinBtn.addEventListener("click", () => openSkinDialog());
   els.addUpstatBtn?.addEventListener("click", () => openUpstatDialog());
@@ -1391,7 +1525,9 @@ function bindEvents() {
     control?.addEventListener("change", handleDragonAccountFieldChange);
   });
 
-  ["dragonStatus", "dragonNestRole", "dragonElderProgress", "dragonSocialPoints", "dragonDominantMutation", "dragonAgilePoints", "dragonFastMutation", "dragonScavengerPoints", "dragonSurvivorMutation"].forEach((id) => {
+  document.querySelector("#dragonStatus")?.addEventListener("change", handleDragonStatusChange);
+
+  ["dragonNestRole", "dragonElderProgress", "dragonSocialPoints", "dragonDominantMutation", "dragonAgilePoints", "dragonFastMutation", "dragonScavengerPoints", "dragonSurvivorMutation"].forEach((id) => {
     const control = document.querySelector(`#${id}`);
     control?.addEventListener("input", syncDragonComputedFields);
     control?.addEventListener("change", syncDragonComputedFields);
@@ -1409,8 +1545,12 @@ function bindEvents() {
   [els.parentTwo, els.broodWatcherBrooding].forEach((control) => {
     control.addEventListener("change", renderNesting);
   });
+  [els.nestTargetSkin, els.nestTargetGrade].forEach((control) => {
+    control?.addEventListener("change", renderNesting);
+  });
 
   els.createEggBtn.addEventListener("click", createEggFromPlanner);
+  els.nestingOutput?.addEventListener("click", handleNestingOutputAction);
 
   [els.skinSearch, els.skinSpeciesFilter, els.skinTypeFilter, els.mutatedSkinsOnly].forEach((control) => {
     control.addEventListener("input", renderSkins);
@@ -1422,7 +1562,7 @@ function bindEvents() {
     control?.addEventListener("change", renderUpstats);
   });
 
-  document.querySelector("#upstatSpecies")?.addEventListener("change", () => renderUpstatSkinSelect(document.querySelector("#upstatSpecies")?.value || ""));
+  document.querySelector("#upstatSpecies")?.addEventListener("change", () => renderUpstatSkinSelect(document.querySelector("#upstatSpecies")?.value || "", ""));
   document.querySelector("#upstatComplete")?.addEventListener("change", syncUpstatCompleteControls);
   document.querySelector("#upstatAPlusCount")?.addEventListener("input", syncUpstatCompleteControls);
 
@@ -1436,6 +1576,9 @@ function bindEvents() {
   els.mapAreaSelect?.addEventListener("change", renderMapReferences);
   els.mapReferenceGallery?.addEventListener("click", handleMapReferenceCarouselClick);
   els.mapReferenceGallery?.addEventListener("scroll", handleMapReferenceCarouselScroll, true);
+  els.mapPinsPersonal?.addEventListener("change", renderMapPins);
+  els.mapPinsClan?.addEventListener("change", renderMapPins);
+  els.toggleMapFavoriteBtn?.addEventListener("click", toggleCurrentMapFavorite);
   els.addMapPinBtn?.addEventListener("click", startMapPinPlacement);
   els.mapStage?.addEventListener("click", handleMapStageClick);
   document.querySelectorAll("[data-map-action='import-code']").forEach((button) => {
@@ -1465,6 +1608,9 @@ function bindEvents() {
   document.querySelectorAll("[data-action='export-json']").forEach((button) => {
     button.addEventListener("click", exportJson);
   });
+  document.querySelectorAll("[data-action='export-safe-json']").forEach((button) => {
+    button.addEventListener("click", exportSafeJson);
+  });
   document.querySelectorAll("[data-action='export-csv']").forEach((button) => {
     button.addEventListener("click", exportCsv);
   });
@@ -1476,16 +1622,29 @@ function bindEvents() {
   });
 
   els.importFile.addEventListener("change", importJson);
+  els.importPreviewDialog?.addEventListener("click", handleImportPreviewAction);
   els.geneticsImageFile?.addEventListener("change", importGeneticsPng);
   els.clearDragonsBtn.addEventListener("click", clearDragons);
   els.factoryResetBtn.addEventListener("click", factoryReset);
+  els.undoChangeBtn?.addEventListener("click", undoLastChange);
+  els.openChangelogBtn?.addEventListener("click", () => openChangelog({ manual: true }));
   els.elderTickResetBtn?.addEventListener("click", handleElderTickReset);
+  els.elderTickForceResetBtn?.addEventListener("click", handleElderTickForceReset);
+  els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
 
   els.dragonList.addEventListener("click", handleDragonAction);
+  els.homeAccountList?.addEventListener("click", handleAccountAction);
+  els.homeAccountList?.addEventListener("click", handleDragonAction);
+  els.homeAccountList?.addEventListener("click", handleAccountCardOpen);
+  els.homeAccountList?.addEventListener("keydown", handleAccountCardKeydown);
+  els.accountDetailContent?.addEventListener("click", handleAccountAction);
+  els.accountDetailContent?.addEventListener("click", handleDragonAction);
   els.accountList.addEventListener("click", handleAccountAction);
   els.accountList.addEventListener("click", handleDragonAction);
   els.accountList.addEventListener("click", handleAccountCardOpen);
   els.accountList.addEventListener("keydown", handleAccountCardKeydown);
+  els.accountSpeciesMatrix?.addEventListener("click", handleAccountAction);
+  els.accountSpeciesMatrix?.addEventListener("click", handleDragonAction);
   els.broodPouchList?.addEventListener("click", handleBroodPouchAction);
   els.skinList.addEventListener("click", handleSkinAction);
   els.skinList.addEventListener("pointerover", handleSkinTurntableStart);
@@ -1520,7 +1679,8 @@ function buildStaticSelects() {
   fillSelect(els.skinTypeFilter, ["All rarities", ...SKIN_TYPES]);
   fillSelect(els.upstatStatusFilter, ["All processes", ...UPSTAT_STATUSES]);
   fillSelect(document.querySelector("#upstatStatus"), UPSTAT_STATUSES);
-  fillSelect(document.querySelector("#upstatSpecies"), collectSpeciesNames());
+  renderUpstatSpeciesSelect();
+  fillSelect(els.nestTargetGrade, ["Any stat target", "A", "A+", "A++"]);
   renderMapAreaSelect();
 
   const dlcGrid = document.querySelector("#accountDlcGrid");
@@ -1548,10 +1708,13 @@ function renderAll() {
   renderDragonSkinSelects(document.querySelector("#dragonSpecies")?.value || "");
   renderFilters();
   renderCurrentTab();
+  renderGlobalSearch();
+  renderSyncStatusBadge();
   renderBackup();
 }
 
 function renderCurrentTab() {
+  if (currentTab === "home") renderHome();
   if (currentTab === "dragons") renderDragons();
   if (currentTab === "players") renderAccounts();
   if (currentTab === "nesting") {
@@ -1570,10 +1733,7 @@ function renderDatalists() {
   const speciesNames = collectSpeciesNames();
   els.speciesOptions.innerHTML = speciesNames.map((name) => `<option value="${escapeAttr(name)}"></option>`).join("");
 
-  const skinNames = [...new Set([
-    ...state.skins.map((skin) => skin.name),
-    ...state.dragons.flatMap((dragon) => [dragon.skin, dragon.recessiveSkin])
-  ].filter(Boolean))].sort(sortText);
+  const skinNames = collectSkinNames();
   els.skinOptions.innerHTML = skinNames.map((name) => `<option value="${escapeAttr(name)}"></option>`).join("");
 
   const lineageNames = [...new Set([
@@ -1590,6 +1750,7 @@ function renderDatalists() {
 function renderFilters() {
   const currentSpecies = els.speciesFilter.value || "All species";
   const currentSkinSpecies = els.skinSpeciesFilter.value || "All species";
+  const currentNestSkin = els.nestTargetSkin?.value || "";
   fillSelect(els.speciesFilter, ["All species", ...collectSpeciesNames()]);
   els.speciesFilter.value = [...els.speciesFilter.options].some((option) => option.value === currentSpecies)
     ? currentSpecies
@@ -1607,6 +1768,13 @@ function renderFilters() {
       ? currentUpstatSpecies
       : "All species";
   }
+
+  if (els.nestTargetSkin) {
+    fillSelect(els.nestTargetSkin, ["Any target skin", ...collectSkinNames()]);
+    els.nestTargetSkin.value = [...els.nestTargetSkin.options].some((option) => option.value === currentNestSkin)
+      ? currentNestSkin
+      : "Any target skin";
+  }
 }
 
 function collectSpeciesNames() {
@@ -1615,6 +1783,115 @@ function collectSpeciesNames() {
 
 function collectPlayerNames() {
   return [...new Set(state.accounts.map((account) => account.username).filter(Boolean))].sort(sortText);
+}
+
+function collectSkinNames() {
+  return [...new Set([
+    ...state.skins.map((skin) => skin.name),
+    ...state.dragons.flatMap((dragon) => [dragon.skin, dragon.recessiveSkin])
+  ].filter(Boolean))].sort(sortText);
+}
+
+function renderGlobalSearch() {
+  if (!els.globalSearch || !els.globalSearchResults) return;
+  const query = text(els.globalSearch.value).toLowerCase();
+  if (!query) {
+    els.globalSearchResults.hidden = true;
+    els.globalSearchResults.innerHTML = "";
+    return;
+  }
+
+  const results = globalSearchResults(query).slice(0, 10);
+  els.globalSearchResults.hidden = !results.length;
+  els.globalSearchResults.innerHTML = results.length
+    ? results.map((result) => `
+      <button class="global-search-result" type="button" data-global-tab="${escapeAttr(result.tab)}" data-global-kind="${escapeAttr(result.kind)}" data-global-id="${escapeAttr(result.id || "")}" data-global-query="${escapeAttr(result.query || result.label)}">
+        <strong>${escapeHtml(result.label)}</strong>
+        <span>${escapeHtml(result.detail)}</span>
+      </button>
+    `).join("")
+    : "";
+}
+
+function globalSearchResults(query) {
+  const matches = [];
+  const includes = (...values) => values.join(" ").toLowerCase().includes(query);
+
+  state.dragons.forEach((dragon) => {
+    if (!includes(dragon.username, dragon.accountName, dragon.species, dragon.sex, dragon.status, dragon.skin, dragon.recessiveSkin, dragon.nestRole, dragon.bloodline, dragon.notes, ...dragon.tags)) return;
+    matches.push({ tab: "dragons", kind: "dragon", id: dragon.id, label: dragonAccountLabel(dragon), detail: compactJoin([dragon.species, dragon.sex, dragon.skin, dragon.status]), query: dragon.accountName });
+  });
+
+  state.accounts.forEach((account) => {
+    if (!includes(account.username, account.accountName, account.discord, account.steam)) return;
+    matches.push({ tab: "home", kind: "account", id: account.id, label: compactJoin([account.username, account.accountName]), detail: `${dragonsForAccount(account.id).length}/7 dragons`, query: account.accountName });
+  });
+
+  state.skins.forEach((skin) => {
+    if (!includes(skin.name, skin.species, skin.type, skin.source, skin.recipeA, skin.recipeB)) return;
+    matches.push({ tab: "skins", kind: "skin", id: skin.id, label: skin.name, detail: compactJoin([skin.species, skin.type, skin.wishlist ? "Wishlist" : ""]), query: skin.name });
+  });
+
+  state.upstats.forEach((upstat) => {
+    if (!includes(upstat.species, upstat.skin, upstat.status, upstat.notes)) return;
+    matches.push({ tab: "upstats", kind: "upstat", id: upstat.id, label: `${upstat.species} ${upstat.skin}`, detail: compactJoin([upstat.status, `${upstat.aPlusCount}/18 A+`]), query: upstat.skin });
+  });
+
+  MAP_REFERENCE_AREAS.forEach((area) => {
+    if (!includes(area.name, area.region, area.id)) return;
+    matches.push({ tab: "map", kind: "map-area", id: area.id, label: area.name, detail: compactJoin([area.region, `${area.files.length} references`]), query: area.name });
+  });
+
+  clanUi.sharedDragons.forEach((record) => {
+    const summary = record.summary || {};
+    if (!includes(summary.displayName, summary.playerName, summary.accountName, summary.species, summary.sex, summary.skin, summary.recessiveSkin)) return;
+    matches.push({ tab: "clans", kind: "clan-dragon", id: record.id, label: summary.displayName || "Shared Dragon", detail: compactJoin([summary.species, summary.skin, `Shared by ${clanMemberName(record.source_user_id)}`]), query: summary.displayName || summary.skin });
+  });
+
+  return matches;
+}
+
+function handleGlobalSearchAction(event) {
+  const button = event.target.closest(".global-search-result");
+  if (!button) return;
+  const tab = button.dataset.globalTab;
+  const kind = button.dataset.globalKind;
+  const query = button.dataset.globalQuery || "";
+  const id = button.dataset.globalId || "";
+  els.globalSearch.value = "";
+  els.globalSearchResults.hidden = true;
+  els.globalSearchResults.innerHTML = "";
+  setTab(tab, { updateHash: true });
+
+  if (tab === "dragons" && els.dragonSearch) {
+    els.dragonSearch.value = query;
+    renderDragons();
+  }
+  if ((tab === "players" || tab === "home") && els.accountSearch) {
+    els.accountSearch.value = query;
+    if (tab === "players") renderAccounts();
+    if (tab === "home") renderHome();
+    if (kind === "account") openAccountDetailDialog(id);
+  }
+  if (tab === "skins" && els.skinSearch) {
+    els.skinSearch.value = query;
+    renderSkins();
+  }
+  if (tab === "upstats" && els.upstatSearch) {
+    els.upstatSearch.value = query;
+    renderUpstats();
+  }
+  if (tab === "map" && kind === "map-area") selectMapReferenceArea(id);
+  if (tab === "clans") {
+    clanUi.libraryFilters = { ...clanUi.libraryFilters, dragon: query };
+    renderClans();
+  }
+}
+
+function handleDocumentSearchClose(event) {
+  if (!els.globalSearchResults || els.globalSearchResults.hidden) return;
+  if (event.target === els.globalSearch || els.globalSearchResults.contains(event.target)) return;
+  els.globalSearchResults.hidden = true;
 }
 
 function findExistingPlayerName(value) {
@@ -1759,8 +2036,10 @@ function renderStats(dragons) {
 
 function renderAccounts() {
   const accounts = getFilteredAccounts();
+  renderAccountSpeciesMatrix(accounts);
 
   if (!state.accounts.length) {
+    if (els.accountSpeciesMatrix) els.accountSpeciesMatrix.innerHTML = "";
     els.accountList.innerHTML = `
       <div class="empty-state">
         <h2>No players yet</h2>
@@ -1771,6 +2050,7 @@ function renderAccounts() {
   }
 
   if (!accounts.length) {
+    if (els.accountSpeciesMatrix) els.accountSpeciesMatrix.innerHTML = "";
     els.accountList.innerHTML = `
       <div class="empty-state">
         <h2>No matching players</h2>
@@ -1780,13 +2060,32 @@ function renderAccounts() {
     return;
   }
 
+  els.accountList.innerHTML = renderAccountSections(accounts);
+}
+
+function renderHome() {
+  if (!els.homeAccountList) return;
+  if (!state.accounts.length) {
+    els.homeAccountList.innerHTML = `
+      <div class="empty-state">
+        <h2>No accounts yet</h2>
+        <p>Add a player, then add accounts and dragons under them.</p>
+      </div>
+    `;
+    return;
+  }
+  const accounts = [...state.accounts].sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+  els.homeAccountList.innerHTML = renderAccountSections(accounts);
+}
+
+function renderAccountSections(accounts) {
   const byUser = new Map();
   accounts.forEach((account) => {
     if (!byUser.has(account.username)) byUser.set(account.username, []);
     byUser.get(account.username).push(account);
   });
 
-  els.accountList.innerHTML = [...byUser.entries()].map(([username, userAccounts]) => {
+  return [...byUser.entries()].map(([username, userAccounts]) => {
     const dragonCount = userAccounts.reduce((sum, account) => sum + dragonsForAccount(account.id).length, 0);
     const clanOnlyPlayer = userAccounts.every((account) => account.clanImported);
     return `
@@ -1807,6 +2106,69 @@ function renderAccounts() {
       </section>
     `;
   }).join("");
+}
+
+function renderAccountSpeciesMatrix(accounts) {
+  if (!els.accountSpeciesMatrix) return;
+  if (!accounts.length) {
+    els.accountSpeciesMatrix.innerHTML = "";
+    return;
+  }
+
+  const speciesNames = collectSpeciesNames();
+  els.accountSpeciesMatrix.innerHTML = `
+    <div class="matrix-head">
+      <span>Account</span>
+      ${speciesNames.map((species) => `<span>${escapeHtml(species)}</span>`).join("")}
+    </div>
+    ${accounts.map((account) => {
+      const accountDragons = dragonsForAccount(account.id);
+      return `
+        <div class="matrix-row">
+          <button class="matrix-account" type="button" data-account-action="open-detail" data-id="${escapeAttr(account.id)}">${escapeHtml(compactJoin([account.username, account.accountName]))}</button>
+          ${speciesNames.map((species) => renderAccountSpeciesMatrixCell(account, species, accountDragons)).join("")}
+        </div>
+      `;
+    }).join("")}
+  `;
+}
+
+function renderAccountSpeciesMatrixCell(account, species, accountDragons) {
+  const dragon = accountDragons.find((item) => item.species === species);
+  if (dragon) {
+    return `
+      <button class="matrix-cell is-filled" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.skin]))}">
+        <strong>${escapeHtml(statusShortLabel(dragon.status))}</strong>
+        <span>${escapeHtml(dragon.skin || "Skin?")}</span>
+      </button>
+    `;
+  }
+
+  const missingDlc = missingDlcForSpecies(account, species);
+  return `
+    <button class="matrix-cell is-open${missingDlc ? " is-dlc-warning" : ""}" type="button" data-account-action="add-dragon" data-id="${escapeAttr(account.id)}" data-species="${escapeAttr(species)}" title="${missingDlc ? `Missing DLC: ${missingDlc}` : `Add ${species}`}">
+      <strong>Open</strong>
+      <span>${escapeHtml(missingDlc || "Add")}</span>
+    </button>
+  `;
+}
+
+function statusShortLabel(status) {
+  return {
+    Hatchie: "H",
+    Juvi: "J",
+    Grown: "G",
+    "4th Pointed": "4",
+    Elder: "E"
+  }[status] || "?";
+}
+
+function missingDlcForSpecies(account, species) {
+  const dlc = normalizeDlc(account?.dlc);
+  if (species === "Acid Spitter" && !dlc.acidSpitterSpecies) return "Acid DLC";
+  if (species === "Blitz Striker" && !dlc.blitzStrikerSpecies) return "Blitz DLC";
+  if (species === "Bio" && !dlc.kickstarter) return "Kickstarter";
+  return "";
 }
 
 function getFilteredAccounts() {
@@ -1914,6 +2276,13 @@ function openAccountDetailDialog(id) {
           <div><dt>Steam</dt><dd>${escapeHtml(account.steam || "Not recorded")}</dd></div>
           <div><dt>Source</dt><dd>${account.clanImported ? "Clan shared" : "Local record"}</dd></div>
         </dl>
+        ${account.clanImported ? "" : `
+          <div class="card-actions">
+            <button class="tool-button" type="button" data-account-action="edit" data-id="${escapeAttr(account.id)}">Edit Account</button>
+            <button class="primary-button" type="button" data-account-action="add-dragon" data-id="${escapeAttr(account.id)}">Add Dragon</button>
+            <button class="danger-button" type="button" data-account-action="delete-account" data-id="${escapeAttr(account.id)}">Delete Account</button>
+          </div>
+        `}
       </section>
       <section class="account-detail-section">
         <h3>Roster</h3>
@@ -1945,7 +2314,13 @@ function renderAccountDetailDragon(dragon) {
           <h4>${escapeHtml(dragon.species || "Unknown species")}</h4>
           <p>${escapeHtml(compactJoin([dragon.sex, dragon.status, dragon.clanImported ? "Clan shared" : "Local record"]))}</p>
         </div>
-        <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
+        <div class="account-detail-dragon-actions">
+          <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
+          ${dragon.clanImported ? "" : `
+            <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
+            <button class="danger-button" type="button" data-dragon-action="delete" data-id="${escapeAttr(dragon.id)}">Delete</button>
+          `}
+        </div>
       </div>
       <dl class="account-detail-list account-detail-dragon-fields">
         <div><dt>Skin</dt><dd>${escapeHtml(dragon.skin || "Unknown")}</dd></div>
@@ -2059,6 +2434,10 @@ function renderNesting() {
         <h2>No parent records</h2>
         <p>Add dragons before planning nests.</p>
       </div>
+      <div class="plan-panel full">
+        <h2>Pairing Helper</h2>
+        ${renderNestPairingHelper()}
+      </div>
     `;
     return;
   }
@@ -2069,6 +2448,10 @@ function renderNesting() {
       <div class="empty-state">
         <h2>Select two dragons</h2>
         <p>The plan will update from their saved records.</p>
+      </div>
+      <div class="plan-panel full">
+        <h2>Pairing Helper</h2>
+        ${renderNestPairingHelper()}
       </div>
     `;
     return;
@@ -2093,6 +2476,10 @@ function renderNesting() {
     <div class="plan-panel full lineage-tree-panel">
       <h2>Family Tree</h2>
       ${renderNestingFamilyTree(parentA, parentB, bloodline, inbredNest)}
+    </div>
+    <div class="plan-panel full">
+      <h2>Pairing Helper</h2>
+      ${renderNestPairingHelper(parentA, parentB)}
     </div>
     <div class="plan-panel">
       <h2>${escapeHtml(dragonAccountLabel(parentA))}</h2>
@@ -2134,6 +2521,101 @@ function renderNesting() {
   `;
 }
 
+function renderNestPairingHelper(currentA = null, currentB = null) {
+  const targetSkin = text(els.nestTargetSkin?.value);
+  const targetGrade = text(els.nestTargetGrade?.value);
+  const requestedSkin = targetSkin && targetSkin !== "Any target skin" ? targetSkin : "";
+  const requestedGrade = targetGrade && targetGrade !== "Any stat target" ? targetGrade : "";
+  const candidates = nestPairCandidates(requestedSkin, requestedGrade).slice(0, 5);
+
+  if (!state.dragons.length) {
+    return `<p class="planner-note">Add dragons first, then choose a target skin or stat grade to see suggested nest pairs.</p>`;
+  }
+
+  if (!requestedSkin && !requestedGrade) {
+    return `<p class="planner-note">Choose a target skin or stat grade above to rank possible pairings. The helper only suggests same-species, male/female pairs that are not known inbred.</p>`;
+  }
+
+  if (!candidates.length) {
+    return `<p class="planner-note">No valid saved pair currently matches that target. Add more parent records or broaden the target.</p>`;
+  }
+
+  return `
+    <div class="pairing-list">
+      ${candidates.map((candidate) => {
+        const selected = (currentA?.id === candidate.a.id && currentB?.id === candidate.b.id)
+          || (currentA?.id === candidate.b.id && currentB?.id === candidate.a.id);
+        return `
+          <article class="pairing-score${selected ? " is-selected" : ""}">
+            <div>
+              <strong>${escapeHtml(candidate.a.species)}</strong>
+              <span>${escapeHtml(`${dragonAccountLabel(candidate.a)} x ${dragonAccountLabel(candidate.b)}`)}</span>
+              <small>${escapeHtml(candidate.reasons.join(" / "))}</small>
+            </div>
+            <button class="tool-button" type="button" data-nest-pair-a="${escapeAttr(candidate.a.id)}" data-nest-pair-b="${escapeAttr(candidate.b.id)}">Use Pair</button>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function nestPairCandidates(targetSkin, targetGrade) {
+  const candidates = [];
+  for (let i = 0; i < state.dragons.length; i += 1) {
+    for (let j = i + 1; j < state.dragons.length; j += 1) {
+      const a = state.dragons[i];
+      const b = state.dragons[j];
+      if (!canNestTogether(a, b) || !hasValidNestSexPair(a, b) || isInbredNest(a, b)) continue;
+      const score = scoreNestPair(a, b, targetSkin, targetGrade);
+      if (score.value <= 0) continue;
+      candidates.push({ a, b, score: score.value, reasons: score.reasons });
+    }
+  }
+  return candidates.sort((left, right) => right.score - left.score || sortText(dragonAccountLabel(left.a), dragonAccountLabel(right.a)));
+}
+
+function scoreNestPair(a, b, targetSkin, targetGrade) {
+  let value = 0;
+  const reasons = [];
+  if (targetSkin) {
+    const target = canonicalSkinName(targetSkin);
+    const carriers = [a.skin, a.recessiveSkin, b.skin, b.recessiveSkin].filter((skin) => canonicalSkinName(skin) === target).length;
+    if (carriers) {
+      value += carriers * 35;
+      reasons.push(`${carriers} target skin slot${carriers === 1 ? "" : "s"}`);
+    }
+  }
+  if (targetGrade) {
+    const targetScore = gradeScore(targetGrade);
+    const strongStats = STAT_FIELDS.reduce((sum, field) => (
+      sum + (gradeScore(a.stats?.[field.key]) >= targetScore ? 1 : 0) + (gradeScore(b.stats?.[field.key]) >= targetScore ? 1 : 0)
+    ), 0);
+    if (strongStats) {
+      value += strongStats;
+      reasons.push(`${strongStats} stat slot${strongStats === 1 ? "" : "s"} at ${targetGrade}+`);
+    }
+  }
+  if (hasFullSocial(a) || hasFullSocial(b)) {
+    value += 8;
+    reasons.push("Social advantage");
+  }
+  if (a.status === "Elder" || b.status === "Elder") {
+    value += 4;
+    reasons.push("Elder parent");
+  }
+  return { value, reasons };
+}
+
+function handleNestingOutputAction(event) {
+  const button = event.target.closest("[data-nest-pair-a][data-nest-pair-b]");
+  if (!button) return;
+  els.parentOne.value = button.dataset.nestPairA;
+  renderNestingOptions();
+  els.parentTwo.value = button.dataset.nestPairB;
+  renderNesting();
+}
+
 function renderBroodPouch() {
   if (!els.broodPouchList) return;
   const entries = [...(state.broodPouch || [])]
@@ -2166,7 +2648,10 @@ function renderBroodPouch() {
         <div><dt>Recessive</dt><dd>${escapeHtml(dragon.recessiveSkin || "Unknown")}</dd></div>
         <div><dt>Line</dt><dd>${escapeHtml(dragon.bloodline || "Unknown")}</dd></div>
         <div><dt>Added</dt><dd>${escapeHtml(formatDateTime(entry.createdAt))}</dd></div>
+        ${entry.dueAt ? `<div><dt>Reminder</dt><dd>${escapeHtml(formatCountdownUntil(entry.dueAt))}</dd></div>` : ""}
+        ${entry.oddsSummary ? `<div><dt>Odds</dt><dd>${escapeHtml(entry.oddsSummary)}</dd></div>` : ""}
       </dl>
+      ${entry.notes ? `<p class="planner-note">${escapeHtml(entry.notes)}</p>` : ""}
       <div class="card-actions">
         <button class="tool-button" type="button" data-brood-pouch-action="edit" data-id="${escapeAttr(entry.id)}">Edit Brood</button>
         <button class="tool-button" type="button" data-brood-pouch-action="edit-dragon" data-dragon-id="${escapeAttr(dragon.id)}">Edit Egg</button>
@@ -2185,6 +2670,9 @@ function openBroodPouchDialog(dragonId, entryId = "") {
   setFormValue("broodPouchId", entry?.id || "");
   setFormValue("broodPouchDragonId", dragon.id);
   setFormValue("broodPouchBrood", entry?.brood === "Unassigned brood" ? "" : entry?.brood || "");
+  setFormValue("broodPouchDueAt", entry?.dueAt ? toLocalDateTimeInputValue(entry.dueAt) : "");
+  setFormValue("broodPouchOddsSummary", entry?.oddsSummary || "");
+  setFormValue("broodPouchNotes", entry?.notes || "");
   showModal(els.broodPouchDialog);
 }
 
@@ -2206,7 +2694,10 @@ function handleBroodPouchSubmit(event) {
     createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     dragonId,
-    brood
+    brood,
+    dueAt: dateTimeLocalToIso(values.get("dueAt")),
+    oddsSummary: text(values.get("oddsSummary")),
+    notes: text(values.get("notes"))
   });
   const index = (state.broodPouch || []).findIndex((item) => item.id === entry.id);
   if (index >= 0) state.broodPouch[index] = entry;
@@ -2739,7 +3230,7 @@ function renderSkins() {
 function renderSkinCard(skin) {
   const turntable = turntableForSkin(skin);
   return `
-    <article class="skin-card${turntable ? " has-turntable" : ""}" data-id="${escapeAttr(skin.id)}">
+    <article class="skin-card${turntable ? " has-turntable" : ""}${skin.wishlist ? " is-wishlist" : ""}" data-id="${escapeAttr(skin.id)}">
       ${renderSkinTurntable(turntable, skin)}
       <div class="card-head">
         <div class="card-title">
@@ -2750,10 +3241,12 @@ function renderSkinCard(skin) {
       </div>
       <div class="skin-meta">
         ${skin.owned ? `<span class="small-pill">Owned</span>` : `<span class="small-pill">Not owned</span>`}
+        ${skin.wishlist ? `<span class="small-pill">Wishlist</span>` : ""}
         ${skin.recipeA ? `<span class="small-pill">A: ${escapeHtml(skin.recipeA)}</span>` : ""}
         ${skin.recipeB ? `<span class="small-pill">B: ${escapeHtml(skin.recipeB)}</span>` : ""}
       </div>
       <div class="card-actions">
+        <button class="tool-button" type="button" data-skin-action="wishlist" data-id="${escapeAttr(skin.id)}">${skin.wishlist ? "Unwishlist" : "Wishlist"}</button>
         <button class="tool-button" type="button" data-skin-action="edit" data-id="${escapeAttr(skin.id)}">Edit</button>
         <button class="danger-button" type="button" data-skin-action="delete" data-id="${escapeAttr(skin.id)}">Delete</button>
       </div>
@@ -2924,7 +3417,7 @@ function openUpstatDialog(id = "") {
   els.upstatForm.reset();
   els.upstatDialogTitle.textContent = record ? "Edit Upstat" : "Add Upstat";
   setFormValue("upstatId", record?.id || "");
-  fillSelect(document.querySelector("#upstatSpecies"), collectSpeciesNames());
+  renderUpstatSpeciesSelect();
   setFormValue("upstatSpecies", record?.species || collectSpeciesNames()[0] || "");
   renderUpstatSkinSelect(document.querySelector("#upstatSpecies")?.value || "", record?.skin || "");
   fillSelect(document.querySelector("#upstatStatus"), UPSTAT_STATUSES);
@@ -2937,8 +3430,15 @@ function openUpstatDialog(id = "") {
   showModal(els.upstatDialog);
 }
 
+function renderUpstatSpeciesSelect() {
+  const select = document.querySelector("#upstatSpecies");
+  if (!select) return;
+  fillSelect(select, ["", ...collectSpeciesNames(), "All"]);
+  if (select.options[0]) select.options[0].textContent = "Select species";
+}
+
 function renderUpstatSkinSelect(species, selectedSkin = document.querySelector("#upstatSkin")?.value || "") {
-  fillSkinSelect(document.querySelector("#upstatSkin"), skinOptionsForSpecies(species), selectedSkin, "Select skin");
+  fillBoundSkinSelect(document.querySelector("#upstatSkin"), skinOptionsForSpecies(species), selectedSkin, "Select skin");
 }
 
 function renderUpstatAccountSelect(selectedAccountId = "") {
@@ -3084,7 +3584,9 @@ async function refreshClanSync(options = {}) {
     clanUi.members = [];
     clanUi.sharedDragons = [];
     clanUi.sharedPins = [];
+    clanUi.discordSubmissions = [];
     clanUi.activeClanId = "";
+    renderSyncStatusBadge();
     if (currentTab === "clans") renderClans();
     return;
   }
@@ -3100,7 +3602,9 @@ async function refreshClanSync(options = {}) {
       clanUi.members = [];
       clanUi.sharedDragons = [];
       clanUi.sharedPins = [];
+      clanUi.discordSubmissions = [];
       clanUi.activeClanId = "";
+      renderSyncStatusBadge();
       if (currentTab === "clans") renderClans();
       return;
     }
@@ -3124,20 +3628,23 @@ async function refreshClanSync(options = {}) {
     reconcileActiveClan();
 
     if (clanUi.activeClanId) {
-      const [members, sharedDragons, sharedPins] = await Promise.all([
+      const [members, sharedDragons, sharedPins, discordSubmissions] = await Promise.all([
         clanSync.getClanMembers(clanUi.activeClanId),
         clanSync.getSharedDragons(clanUi.activeClanId),
-        clanSync.getClanMapPins(clanUi.activeClanId)
+        clanSync.getClanMapPins(clanUi.activeClanId),
+        clanSync.getDiscordSubmissions?.(clanUi.activeClanId) || []
       ]);
       clanUi.members = Array.isArray(members) ? members : [];
       clanUi.sharedDragons = Array.isArray(sharedDragons) ? sharedDragons : [];
       clanUi.sharedPins = Array.isArray(sharedPins) ? sharedPins : [];
+      clanUi.discordSubmissions = Array.isArray(discordSubmissions) ? discordSubmissions : [];
       const localClanChanges = materializeClanSharedDragons(clanUi.activeClanId, clanUi.sharedDragons);
       if (localClanChanges && !document.querySelector("dialog[open]")) renderAll();
     } else {
       clanUi.members = [];
       clanUi.sharedDragons = [];
       clanUi.sharedPins = [];
+      clanUi.discordSubmissions = [];
     }
 
     const signature = JSON.stringify({
@@ -3146,7 +3653,8 @@ async function refreshClanSync(options = {}) {
       memberships: clanUi.memberships,
       members: clanUi.members,
       sharedDragons: clanUi.sharedDragons,
-      sharedPins: clanUi.sharedPins
+      sharedPins: clanUi.sharedPins,
+      discordSubmissions: clanUi.discordSubmissions
     });
     const changed = signature !== clanUi.lastSignature;
     clanUi.lastSignature = signature;
@@ -3154,8 +3662,11 @@ async function refreshClanSync(options = {}) {
     if (changed && currentTab === "map") renderMapPins();
     if (changed && currentTab === "dragons") renderDragons();
     if (changed && currentTab === "players") renderAccounts();
+    renderSyncStatusBadge();
+    if (currentTab === "settings") renderBackup();
   } catch (error) {
     clanUi.error = clanFriendlyError(error);
+    renderSyncStatusBadge();
     if (currentTab === "clans" || !options.quiet) renderClans();
   }
 }
@@ -3417,6 +3928,9 @@ function renderClans() {
   const skinOptions = clanLibraryFilterOptions("skin", filters.skin, "All skins");
   const recessiveOptions = clanLibraryFilterOptions("recessiveSkin", filters.recessive, "All recessives");
   const sexOptions = clanLibraryFilterOptions("sex", filters.sex, "Any sex");
+  const sourceOptions = CLAN_LIBRARY_SOURCE_FILTERS.map((option) => (
+    `<option value="${escapeAttr(option.value)}"${option.value === filters.source ? " selected" : ""}>${escapeHtml(option.label)}</option>`
+  )).join("");
   const sharedRows = filteredSharedDragons.length
     ? filteredSharedDragons.map((record) => {
       const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
@@ -3429,6 +3943,9 @@ function renderClans() {
       `;
     }).join("")
     : `<p class="account-empty">${clanUi.sharedDragons.length ? "No shared dragons match these filters." : "No dragons have been shared with this clan yet."}</p>`;
+  const discordSubmissionRows = clanUi.discordSubmissions.length
+    ? clanUi.discordSubmissions.map(renderDiscordSubmissionRow).join("")
+    : `<p class="account-empty">No pending Discord bot submissions for this clan.</p>`;
 
   els.clanContent.innerHTML = `
     <section class="clan-panel clan-identity-panel">
@@ -3482,11 +3999,53 @@ function renderClans() {
         <div class="field"><label for="clanLibrarySkin">Skin</label><select id="clanLibrarySkin" name="skin">${skinOptions}</select></div>
         <div class="field"><label for="clanLibraryRecessive">Recessive</label><select id="clanLibraryRecessive" name="recessive">${recessiveOptions}</select></div>
         <div class="field"><label for="clanLibrarySex">Sex</label><select id="clanLibrarySex" name="sex">${sexOptions}</select></div>
+        <div class="field"><label for="clanLibrarySource">Source</label><select id="clanLibrarySource" name="source">${sourceOptions}</select></div>
         <div class="clan-library-search-actions"><button class="primary-button" type="submit">Apply</button><button class="tool-button" type="button" data-clan-action="clear-library-search">Clear</button></div>
       </form>
       <div class="clan-share-list">${sharedRows}</div>
     </section>
+
+    <section class="clan-panel clan-shared-panel">
+      <div class="card-head">
+        <div class="card-title"><h2>Discord Inbox</h2><p class="card-subtitle">Slash command submissions waiting for review</p></div>
+        <span class="pill">${clanUi.discordSubmissions.length} pending</span>
+      </div>
+      <p class="clan-copy">The Discord bot can collect dragon and location details from clan channels. Import only the records you want saved to this device.</p>
+      <div class="clan-share-list">${discordSubmissionRows}</div>
+    </section>
   `;
+}
+
+function renderDiscordSubmissionRow(record) {
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const type = text(record.submission_type);
+  const title = type === "dragon"
+    ? text(payload.name || payload.accountName, 80) || "Dragon submission"
+    : type === "map_pin"
+      ? text(payload.label, 80) || "Map pin submission"
+      : text(payload.title, 120) || "Discord note";
+  const detail = type === "dragon"
+    ? compactJoin([payload.species, payload.sex, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.status])
+    : type === "map_pin"
+      ? compactJoin([payload.type || "Location", `${Number(payload.x).toFixed(1)}%, ${Number(payload.y).toFixed(1)}%`])
+      : text(payload.notes, 160);
+  return `
+    <article class="clan-share-row discord-submission-row">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(detail || "No extra details")}</span>
+      <small>${escapeHtml(discordSubmissionTypeLabel(type))} from ${escapeHtml(record.discord_username || "Discord user")} - ${formatDate(record.created_at)}</small>
+      <div class="clan-share-row-actions">
+        ${type === "note" ? "" : `<button class="primary-button" type="button" data-clan-action="import-discord-submission" data-id="${escapeAttr(record.id)}">Import</button>`}
+        <button class="tool-button" type="button" data-clan-action="ignore-discord-submission" data-id="${escapeAttr(record.id)}">Ignore</button>
+      </div>
+    </article>
+  `;
+}
+
+function discordSubmissionTypeLabel(type) {
+  if (type === "dragon") return "Dragon";
+  if (type === "map_pin") return "Map pin";
+  return "Note";
 }
 
 function clanLibraryFilterOptions(summaryKey, selectedValue, emptyLabel) {
@@ -3504,11 +4063,101 @@ function getFilteredClanSharedDragons() {
   const includes = (value, query) => !query || text(value).toLowerCase().includes(query.toLowerCase());
   return clanUi.sharedDragons.filter((record) => {
     const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
+    if (!matchesClanSourceFilter(record, summary, filters.source)) return false;
     return includes(summary.displayName, filters.dragon)
       && includes(summary.skin, filters.skin)
       && includes(summary.recessiveSkin, filters.recessive)
       && (!filters.sex || text(summary.sex).toLowerCase() === filters.sex.toLowerCase());
   });
+}
+
+function matchesClanSourceFilter(record, summary, filter) {
+  if (!filter) return true;
+  if (filter === "mine") return record.source_user_id === clanUi.user?.id;
+  if (filter === "others") return record.source_user_id && record.source_user_id !== clanUi.user?.id;
+  if (filter === "missing-local") return !hasLocalDragonMatchingClanSummary(summary);
+  if (filter === "breeders") return ["Breeder", "Pure", "Ultra Pure"].includes(text(summary.nestRole)) || Number(summary.socialPoints) >= SOCIAL_POINTS_MAX;
+  if (filter === "fourth") return text(summary.status) === "4th Pointed" || text(summary.status) === "Elder" || Boolean(summary.dominantMutation);
+  if (filter === "elder") return text(summary.status) === "Elder";
+  return true;
+}
+
+function hasLocalDragonMatchingClanSummary(summary = {}) {
+  const player = text(summary.playerName || summary.username || "Unknown Player");
+  const account = text(summary.accountName || summary.displayName || "Dragon");
+  const species = canonicalSpeciesName(summary.species);
+  return state.dragons.some((dragon) =>
+    accountIdentityKey(dragon.username || "Unknown Player", dragon.accountName || dragon.name) === accountIdentityKey(player, account)
+    && dragon.species === species
+  );
+}
+
+function discordSubmissionById(id) {
+  return clanUi.discordSubmissions.find((record) => record.id === id) || null;
+}
+
+function importDiscordSubmission(record) {
+  if (record.submission_type === "dragon") return importDiscordDragonSubmission(record);
+  if (record.submission_type === "map_pin") return importDiscordMapPinSubmission(record);
+  throw new Error("Only dragon and map pin submissions can be imported.");
+}
+
+function importDiscordDragonSubmission(record) {
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const species = canonicalSpeciesName(payload.species);
+  if (!species) throw new Error("The Discord dragon submission needs a species.");
+  const playerName = text(payload.playerName || record.discord_username || "Discord Player", 80) || "Discord Player";
+  const accountName = text(payload.accountName || payload.name || `${species} from Discord`, 80) || `${species} from Discord`;
+  const account = upsertAccountRecord({ username: playerName, accountName });
+  const duplicate = duplicateDragonForAccount(account.id, species);
+  if (duplicate) throw new Error(`${account.accountName} already has a ${species}. Edit the existing dragon instead.`);
+
+  const dragon = normalizeDragon({
+    id: uid("dragon"),
+    createdAt: record.created_at || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    accountId: account.id,
+    username: account.username,
+    accountName: account.accountName,
+    name: account.accountName,
+    species,
+    sex: text(payload.sex, 20) || "Unknown",
+    status: text(payload.status, 40) || "Hatchie",
+    skin: text(payload.skin, 100),
+    recessiveSkin: text(payload.recessiveSkin, 100),
+    bloodline: text(payload.bloodline, 10),
+    tags: ["discord"],
+    notes: [
+      text(payload.notes, 600),
+      `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
+    ].filter(Boolean).join(" | ")
+  });
+  dragon.skinType = skinTypeForName(dragon.skin, dragon.species);
+  state.dragons.push(dragon);
+  refreshAllDerivedRecords();
+  saveState();
+  return dragon;
+}
+
+function importDiscordMapPinSubmission(record) {
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const pin = normalizeMapPin({
+    id: uid("pin"),
+    createdAt: record.created_at || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    label: text(payload.label, 80) || "Discord location",
+    type: text(payload.type, 40) || "Location",
+    x: payload.x,
+    y: payload.y,
+    notes: [
+      text(payload.notes, 500),
+      `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
+    ].filter(Boolean).join(" | "),
+    sharedBy: record.discord_username || "Discord"
+  });
+  state.mapPins.push(pin);
+  saveState();
+  return pin;
 }
 
 function openSyncConfigDialog() {
@@ -3566,7 +4215,7 @@ async function clearSyncConfiguration() {
     // Local sign-out should continue even when the old project is offline.
   }
   clanSync.clearConfig();
-  Object.assign(clanUi, { activeClanId: "", error: "", identityLinks: [], inviteCode: "", members: [], memberships: [], profileUserId: "", sharedDragons: [], sharedPins: [], user: null, lastSignature: "" });
+  Object.assign(clanUi, { activeClanId: "", discordSubmissions: [], error: "", identityLinks: [], inviteCode: "", members: [], memberships: [], profileUserId: "", sharedDragons: [], sharedPins: [], user: null, lastSignature: "" });
   localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
   closeModal("syncConfigDialog");
   renderClans();
@@ -3587,7 +4236,7 @@ async function handleClanAction(event) {
     if (action === "link-steam") await clanSync.startSteamLink();
     if (action === "refresh") await refreshClanSync();
     if (action === "clear-library-search") {
-      clanUi.libraryFilters = { dragon: "", skin: "", recessive: "", sex: "" };
+      clanUi.libraryFilters = { dragon: "", skin: "", recessive: "", sex: "", source: "" };
       renderClans();
       return;
     }
@@ -3598,10 +4247,29 @@ async function handleClanAction(event) {
       showToast("Share confirmations restored");
       return;
     }
+    if (action === "import-discord-submission") {
+      const record = discordSubmissionById(button.dataset.id);
+      if (!record) throw new Error("That Discord submission is no longer available.");
+      importDiscordSubmission(record);
+      await clanSync.resolveDiscordSubmission(record.id, "imported");
+      await refreshClanSync({ quiet: true });
+      renderAll();
+      showToast("Discord submission imported");
+      return;
+    }
+    if (action === "ignore-discord-submission") {
+      const record = discordSubmissionById(button.dataset.id);
+      if (!record) throw new Error("That Discord submission is no longer available.");
+      await clanSync.resolveDiscordSubmission(record.id, "ignored");
+      await refreshClanSync({ quiet: true });
+      renderClans();
+      showToast("Discord submission ignored");
+      return;
+    }
     if (action === "sign-out") {
       if (!confirm("Sign out of clan sync on this device? Your local tracker data will stay here.")) return;
       await clanSync.signOut();
-      Object.assign(clanUi, { activeClanId: "", identityLinks: [], inviteCode: "", members: [], memberships: [], profileUserId: "", sharedDragons: [], sharedPins: [], user: null, lastSignature: "" });
+      Object.assign(clanUi, { activeClanId: "", discordSubmissions: [], identityLinks: [], inviteCode: "", members: [], memberships: [], profileUserId: "", sharedDragons: [], sharedPins: [], user: null, lastSignature: "" });
       localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
       renderAll();
       showToast("Signed out of clan sync");
@@ -3688,7 +4356,8 @@ async function handleClanSubmit(event) {
       dragon: text(values.get("dragon"), 100),
       skin: text(values.get("skin"), 100),
       recessive: text(values.get("recessive"), 100),
-      sex: text(values.get("sex"), 20)
+      sex: text(values.get("sex"), 20),
+      source: text(values.get("source"), 40)
     };
     renderClans();
     return;
@@ -3866,7 +4535,10 @@ function normalizeBroodPouchEntry(entry) {
     createdAt: text(entry?.createdAt) || now,
     updatedAt: text(entry?.updatedAt) || now,
     dragonId: text(entry?.dragonId || entry?.eggId),
-    brood: text(entry?.brood || entry?.broodName) || "Unassigned brood"
+    brood: text(entry?.brood || entry?.broodName) || "Unassigned brood",
+    dueAt: normalizeOptionalIso(entry?.dueAt || entry?.reminderAt),
+    oddsSummary: text(entry?.oddsSummary, 240),
+    notes: text(entry?.notes, 1000)
   };
 }
 
@@ -3877,17 +4549,27 @@ function broodPouchIdentityKey(entry) {
 function renderMapAreaSelect() {
   if (!els.mapAreaSelect) return;
   const current = els.mapAreaSelect.value || MAP_REFERENCE_AREAS[0]?.id || "";
+  const favorites = normalizeFavoriteMapAreas(state.settings?.favoriteMapAreas || []);
+  const favoriteAreas = favorites
+    .map((id) => MAP_REFERENCE_AREAS.find((area) => area.id === id))
+    .filter(Boolean);
   const byRegion = new Map();
   MAP_REFERENCE_AREAS.forEach((area) => {
     const region = area.region || "Other";
     if (!byRegion.has(region)) byRegion.set(region, []);
     byRegion.get(region).push(area);
   });
-  els.mapAreaSelect.innerHTML = [...byRegion.entries()].map(([region, areas]) => `
+  els.mapAreaSelect.innerHTML = [
+    favoriteAreas.length ? `
+      <optgroup label="Favorites">
+        ${favoriteAreas.map((area) => `<option value="${escapeAttr(area.id)}">[Fav] ${escapeHtml(area.name)}</option>`).join("")}
+      </optgroup>
+    ` : "",
+    ...[...byRegion.entries()].map(([region, areas]) => `
     <optgroup label="${escapeAttr(region)}">
       ${areas.map((area) => `<option value="${escapeAttr(area.id)}">${escapeHtml(area.name)}</option>`).join("")}
     </optgroup>
-  `).join("");
+  `)].join("");
   els.mapAreaSelect.value = MAP_REFERENCE_AREAS.some((area) => area.id === current)
     ? current
     : MAP_REFERENCE_AREAS[0]?.id || "";
@@ -3921,6 +4603,20 @@ function selectMapReferenceArea(areaId) {
   renderMapReferences();
 }
 
+function toggleCurrentMapFavorite() {
+  const areaId = els.mapAreaSelect?.value || "";
+  if (!areaId) return;
+  const favorites = new Set(normalizeFavoriteMapAreas(state.settings?.favoriteMapAreas || []));
+  if (favorites.has(areaId)) favorites.delete(areaId);
+  else favorites.add(areaId);
+  state.settings.favoriteMapAreas = [...favorites];
+  saveState();
+  renderMapAreaSelect();
+  els.mapAreaSelect.value = areaId;
+  renderMapReferences();
+  showToast(favorites.has(areaId) ? "Map area favorited" : "Map area removed from favorites");
+}
+
 function renderMapReferences() {
   if (!els.mapAreaSelect || !els.mapReferenceGallery) return;
   if (!els.mapAreaSelect.options.length) renderMapAreaSelect();
@@ -3932,6 +4628,11 @@ function renderMapReferences() {
   }
   if (els.mapReferenceSummary) {
     els.mapReferenceSummary.textContent = area.note || `${compactJoin([area.region, area.name])} in-game reference screenshots.`;
+  }
+  if (els.toggleMapFavoriteBtn) {
+    const isFavorite = normalizeFavoriteMapAreas(state.settings?.favoriteMapAreas || []).includes(area.id);
+    els.toggleMapFavoriteBtn.textContent = isFavorite ? "Unfavorite Area" : "Favorite Area";
+    els.toggleMapFavoriteBtn.setAttribute("aria-pressed", String(isFavorite));
   }
 
   const slides = area.files.map((file, index) => {
@@ -4039,8 +4740,10 @@ function renderMapLayers() {
 
 function renderMapPins() {
   if (!els.mapPinLayer || !els.mapPinList) return;
-  const localPins = [...state.mapPins].map((pin) => ({ ...pin, remote: false }));
-  const remotePins = visibleClanMapPins().map((pin) => ({
+  const showPersonal = els.mapPinsPersonal?.checked !== false;
+  const showClan = els.mapPinsClan?.checked !== false;
+  const localPins = showPersonal ? [...state.mapPins].map((pin) => ({ ...pin, remote: false })) : [];
+  const remotePins = showClan ? visibleClanMapPins().map((pin) => ({
     id: pin.id,
     label: pin.label,
     type: pin.pin_type,
@@ -4049,8 +4752,9 @@ function renderMapPins() {
     notes: pin.notes,
     sharedBy: clanMemberName(pin.source_user_id),
     remote: true,
-    sourceUserId: pin.source_user_id
-  }));
+    sourceUserId: pin.source_user_id,
+    updatedAt: pin.updated_at || pin.updatedAt || pin.created_at
+  })) : [];
   const pins = [...localPins, ...remotePins].sort((a, b) => sortText(a.label, b.label));
   els.mapPinCount.textContent = `${pins.length} pin${pins.length === 1 ? "" : "s"}`;
   els.mapPinLayer.innerHTML = pins.map((pin) => `
@@ -4064,7 +4768,7 @@ function renderMapPins() {
       <article class="map-pin-card${pin.remote ? " is-clan-pin" : ""}" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-id="${escapeAttr(pin.id)}"`}>
         <div>
           <strong>${escapeHtml(pin.label)}</strong>
-          <span>${escapeHtml(compactJoin([pin.type, pin.remote ? `Clan: ${pin.sharedBy}` : pin.sharedBy]))}</span>
+          <span>${escapeHtml(compactJoin([pin.type, pin.remote ? `Clan: ${pin.sharedBy}` : pin.sharedBy, pin.updatedAt ? `Updated ${formatDateTime(pin.updatedAt)}` : ""]))}</span>
         </div>
         ${pin.notes ? `<p>${escapeHtml(pin.notes)}</p>` : ""}
         <div class="card-actions">
@@ -4135,7 +4839,8 @@ function handleMapStageClick(event) {
   }
 
   if (!mapPinPlacementActive || !els.mapStage) return;
-  const rect = els.mapStage.getBoundingClientRect();
+  const visibleLayer = els.mapStage.querySelector(".map-layer.is-visible");
+  const rect = (visibleLayer || els.mapStage).getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   const x = clampPercent(((event.clientX - rect.left) / rect.width) * 100);
   const y = clampPercent(((event.clientY - rect.top) / rect.height) * 100);
@@ -4287,6 +4992,106 @@ function renderBackup() {
   `;
   renderSyncSettings();
   renderElderTick();
+  renderElderTickAccountList();
+  renderBackupHealth();
+  renderSetupChecklist();
+  renderDataQualityList();
+  renderRecentlyChangedList();
+  renderUndoButton();
+  renderAppVersion();
+}
+
+function renderBackupHealth() {
+  if (!els.backupHealthStatus) return;
+  const lastBackup = normalizeOptionalIso(state.settings?.lastBackupAt);
+  const ageDays = lastBackup ? Math.floor((Date.now() - Date.parse(lastBackup)) / 86_400_000) : null;
+  if (!lastBackup) {
+    els.backupHealthStatus.textContent = "No JSON backup has been exported from this device yet.";
+    return;
+  }
+  els.backupHealthStatus.textContent = ageDays <= 1
+    ? `Last backup was recent: ${formatDateTime(lastBackup)}.`
+    : `Last backup was ${ageDays} day${ageDays === 1 ? "" : "s"} ago: ${formatDateTime(lastBackup)}.`;
+}
+
+function renderSetupChecklist() {
+  if (!els.setupChecklist) return;
+  const items = [
+    { label: "Add at least one player/account", done: state.accounts.length > 0 },
+    { label: "Add dragons to the tracker", done: state.dragons.length > 0 },
+    { label: "Export a JSON backup", done: Boolean(state.settings?.lastBackupAt) },
+    { label: "Configure clan sync only if you want shared dragons or pins", done: Boolean(clanSync?.isConfigured()) },
+    { label: "Link Steam if you want elder tick reminders", done: hasLinkedSteamIdentity() }
+  ];
+  els.setupChecklist.innerHTML = renderQualityItems(items);
+}
+
+function renderDataQualityList() {
+  if (!els.dataQualityList) return;
+  const issues = dataQualityIssues();
+  els.dataQualityList.innerHTML = renderQualityItems(issues.length ? issues : [{ label: "No obvious data issues found.", done: true }]);
+}
+
+function dataQualityIssues() {
+  const issues = [];
+  const accountSpecies = new Map();
+  state.dragons.forEach((dragon) => {
+    const key = `${dragon.accountId}::${dragon.species}`;
+    if (accountSpecies.has(key)) issues.push({ label: `Duplicate ${dragon.species} on ${dragonAccountLabel(dragon)}.`, tone: "risk" });
+    accountSpecies.set(key, true);
+    if (!dragon.skin) issues.push({ label: `${dragonAccountLabel(dragon)} is missing a visible skin.`, tone: "warn" });
+    if (!dragon.recessiveSkin) issues.push({ label: `${dragonAccountLabel(dragon)} is missing a recessive skin.`, tone: "warn" });
+    if (dragon.sex === "Unknown") issues.push({ label: `${dragonAccountLabel(dragon)} has unknown sex.`, tone: "warn" });
+    const knownStats = STAT_FIELDS.filter((field) => dragon.stats?.[field.key] && dragon.stats[field.key] !== "Unknown").length;
+    if (knownStats < STAT_FIELDS.length) issues.push({ label: `${dragonAccountLabel(dragon)} has ${knownStats}/18 saved stats.`, tone: "warn" });
+  });
+  return issues.slice(0, 12);
+}
+
+function renderQualityItems(items) {
+  return `
+    <div class="quality-list">
+      ${items.map((item) => {
+        const tone = item.tone || (item.done ? "good" : "warn");
+        return `
+          <div class="quality-item">
+            <span class="quality-dot ${tone}" aria-hidden="true"></span>
+            <span>${escapeHtml(item.label)}</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderRecentlyChangedList() {
+  if (!els.recentlyChangedList) return;
+  const records = [
+    ...state.dragons.map((item) => ({ label: dragonAccountLabel(item), detail: compactJoin([item.species, item.status]), updatedAt: item.updatedAt })),
+    ...state.accounts.map((item) => ({ label: compactJoin([item.username, item.accountName]), detail: "Account", updatedAt: item.updatedAt })),
+    ...state.skins.map((item) => ({ label: item.name, detail: compactJoin([item.species, item.type]), updatedAt: item.updatedAt })),
+    ...state.upstats.map((item) => ({ label: `${item.species} ${item.skin}`, detail: item.status, updatedAt: item.updatedAt })),
+    ...state.mapPins.map((item) => ({ label: item.label, detail: compactJoin([item.type, "Map pin"]), updatedAt: item.updatedAt })),
+    ...(state.broodPouch || []).map((item) => ({ label: item.brood, detail: "Brood pouch", updatedAt: item.updatedAt }))
+  ].filter((item) => item.updatedAt)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 8);
+
+  els.recentlyChangedList.innerHTML = records.length
+    ? `<div class="quality-list">${records.map((item) => `
+        <div class="quality-item">
+          <span class="quality-dot good" aria-hidden="true"></span>
+          <span><strong>${escapeHtml(item.label)}</strong> ${escapeHtml(item.detail)} - ${escapeHtml(formatDateTime(item.updatedAt))}</span>
+        </div>
+      `).join("")}</div>`
+    : `<p class="account-empty">No recent records yet.</p>`;
+}
+
+function renderUndoButton() {
+  if (!els.undoChangeBtn) return;
+  const history = loadUndoHistory();
+  els.undoChangeBtn.disabled = !history.length;
+  els.undoChangeBtn.textContent = history.length ? `Undo Last Change (${history.length})` : "Undo Last Change";
 }
 
 function hasLinkedSteamIdentity() {
@@ -4332,8 +5137,20 @@ function handleElderTickReset() {
   showToast("Elder tick recorded. Your next reminder is in six hours.");
 }
 
+function handleElderTickForceReset() {
+  if (!hasLinkedSteamIdentity() && !elderTickStartTime()) {
+    showToast("Link Steam in Clans before starting the elder tick timer.");
+    setTab("clans", { updateHash: true });
+    return;
+  }
+  state.settings.elderTickStartedAt = new Date().toISOString();
+  saveState();
+  renderElderTick();
+  showToast("Elder tick timer reset. Your next reminder is in six hours.");
+}
+
 function renderElderTick() {
-  if (!els.elderTickState || !els.elderTickCountdown || !els.elderTickDescription || !els.elderTickResetBtn) return;
+  if (!els.elderTickState || !els.elderTickCountdown || !els.elderTickDescription || !els.elderTickResetBtn || !els.elderTickForceResetBtn) return;
   const startedAt = elderTickStartTime();
   const steamLinked = hasLinkedSteamIdentity();
 
@@ -4345,6 +5162,7 @@ function renderElderTick() {
       : "Link Steam in Clans to start this local six-hour reminder. It does not read or control the game.";
     els.elderTickResetBtn.textContent = "Start 6-Hour Timer";
     els.elderTickResetBtn.disabled = !steamLinked;
+    els.elderTickForceResetBtn.disabled = true;
     return;
   }
 
@@ -4356,6 +5174,7 @@ function renderElderTick() {
     els.elderTickDescription.textContent = `Next elder tick reminder: ${formatDateTime(dueAt.toISOString())}.`;
     els.elderTickResetBtn.textContent = "Mark Tick Taken";
     els.elderTickResetBtn.disabled = true;
+    els.elderTickForceResetBtn.disabled = false;
     return;
   }
 
@@ -4364,6 +5183,64 @@ function renderElderTick() {
   els.elderTickDescription.textContent = "Take the elder tick in-game, then mark it taken here to begin the next six-hour reminder.";
   els.elderTickResetBtn.textContent = "Mark Tick Taken";
   els.elderTickResetBtn.disabled = false;
+  els.elderTickForceResetBtn.disabled = false;
+}
+
+function elderTickAccountStartTime(accountId) {
+  const timestamp = Date.parse(state.settings?.elderTickAccounts?.[accountId] || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function elderTickAccountRemainingMs(accountId, now = Date.now()) {
+  const startedAt = elderTickAccountStartTime(accountId);
+  if (!startedAt) return 0;
+  return Math.max(0, startedAt + ELDER_TICK_INTERVAL_MS - now);
+}
+
+function renderElderTickAccountList() {
+  if (!els.elderTickAccountList) return;
+  const steamLinked = hasLinkedSteamIdentity();
+  const accounts = [...state.accounts].sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+  if (!accounts.length) {
+    els.elderTickAccountList.innerHTML = `<p class="account-empty">Add accounts to track account-specific elder timers.</p>`;
+    return;
+  }
+
+  els.elderTickAccountList.innerHTML = accounts.map((account) => {
+    const startedAt = elderTickAccountStartTime(account.id);
+    const remaining = elderTickAccountRemainingMs(account.id);
+    const ready = startedAt && remaining <= 0;
+    const stateLabel = !startedAt ? "Not started" : ready ? "Ready now" : formatElderTickCountdown(remaining);
+    return `
+      <div class="elder-account-row">
+        <div>
+          <strong>${escapeHtml(compactJoin([account.username, account.accountName]))}</strong>
+          <span>${escapeHtml(startedAt ? `Started ${formatDateTime(new Date(startedAt).toISOString())}` : (steamLinked ? "Start this account when you log it into Steam." : "Link Steam first for elder tick reminders."))}</span>
+        </div>
+        <span class="pill ${ready ? "status-elder" : ""}">${escapeHtml(stateLabel)}</span>
+        <button class="tool-button" type="button" data-elder-account-action="reset" data-account-id="${escapeAttr(account.id)}" ${steamLinked ? "" : "disabled"}>${startedAt ? "Reset" : "Start"}</button>
+      </div>
+    `;
+  }).join("");
+}
+
+function handleElderTickAccountAction(event) {
+  const button = event.target.closest("[data-elder-account-action]");
+  if (!button) return;
+  if (!hasLinkedSteamIdentity()) {
+    showToast("Link Steam in Clans before starting account elder timers.");
+    setTab("clans", { updateHash: true });
+    return;
+  }
+  const account = accountById(button.dataset.accountId);
+  if (!account) return;
+  state.settings.elderTickAccounts = {
+    ...(state.settings.elderTickAccounts || {}),
+    [account.id]: new Date().toISOString()
+  };
+  saveState();
+  renderElderTickAccountList();
+  showToast(`${account.accountName} elder tick timer reset`);
 }
 
 function renderSyncSettings() {
@@ -4392,9 +5269,49 @@ function renderSyncSettings() {
   els.syncSettingsDescription.textContent = "This device knows the shared sync space. Open Clans to connect Discord and join or create a clan.";
 }
 
+function renderSyncStatusBadge() {
+  if (!els.syncStatusBadge) return;
+  let label = "Local Only";
+  let tone = "local";
+  if (!clanSync) {
+    label = "Sync Unavailable";
+    tone = "risk";
+  } else if (clanSync.isConfigured() && clanUi.user && activeClan()) {
+    label = `Clan: ${activeClan().name}`;
+    tone = "online";
+  } else if (clanSync.isConfigured() && clanUi.user) {
+    label = "Signed In";
+    tone = "ready";
+  } else if (clanSync.isConfigured()) {
+    label = "Sync Ready";
+    tone = "ready";
+  }
+  els.syncStatusBadge.textContent = label;
+  els.syncStatusBadge.dataset.syncTone = tone;
+}
+
 function renderAppVersion() {
   if (!els.appVersionLabel) return;
   els.appVersionLabel.textContent = `Version ${APP_VERSION}`;
+}
+
+function maybeShowChangelog() {
+  if (!els.changelogDialog || !els.changelogContent) return;
+  if (localStorage.getItem(LAST_SEEN_VERSION_KEY) === APP_VERSION) return;
+  openChangelog({ manual: false });
+  localStorage.setItem(LAST_SEEN_VERSION_KEY, APP_VERSION);
+}
+
+function openChangelog(options = {}) {
+  if (!els.changelogDialog || !els.changelogContent) return;
+  els.changelogContent.innerHTML = `
+    <h3>Version ${escapeHtml(APP_VERSION)}</h3>
+    <ul>
+      ${CHANGELOG_ITEMS.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+    </ul>
+    ${options.manual ? `<p class="planner-note">This is the local app changelog. The GitHub release page is still the source of downloadable update files.</p>` : ""}
+  `;
+  showModal(els.changelogDialog);
 }
 
 function handleDragonSkinControlChange(event) {
@@ -4498,6 +5415,20 @@ function fillSkinSelect(select, options, selectedValue, placeholder) {
   select.value = matchedSelected || selected;
 }
 
+function fillBoundSkinSelect(select, options, selectedValue, placeholder) {
+  if (!select) return;
+  const values = [...new Set(options.map(text).filter(Boolean))].sort(sortText);
+  const selected = text(selectedValue);
+  const matchedSelected = selected
+    ? values.find((value) => canonicalSkinName(value) === canonicalSkinName(selected))
+    : "";
+  select.innerHTML = [
+    `<option value="">${escapeHtml(placeholder)}</option>`,
+    ...values.map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
+  ].join("");
+  select.value = matchedSelected || "";
+}
+
 function setDragonStatsTo18APlus() {
   STAT_FIELDS.forEach((field) => setFormValue(`stat-${field.key}`, "A+"));
   syncAllAPlusIndicator();
@@ -4507,6 +5438,27 @@ function syncAllAPlusIndicator() {
   const indicator = document.querySelector("#dragonAllAPlus");
   if (!indicator) return;
   indicator.checked = STAT_FIELDS.every((field) => gradeScore(document.querySelector(`#stat-${field.key}`)?.value) >= gradeScore("A+"));
+}
+
+function handleDragonStatusChange() {
+  const status = document.querySelector("#dragonStatus")?.value || "Hatchie";
+  const elderInput = document.querySelector("#dragonElderProgress");
+  const dominantInput = document.querySelector("#dragonDominantMutation");
+  const fastInput = document.querySelector("#dragonFastMutation");
+  const survivorInput = document.querySelector("#dragonSurvivorMutation");
+
+  if (status !== "4th Pointed" && status !== "Elder" && elderInput) {
+    elderInput.value = "";
+  }
+  if (!canUseDominantMutation(status) && dominantInput) {
+    dominantInput.checked = false;
+  }
+  if (["Hatchie", "Juvi", "Grown"].includes(status)) {
+    if (fastInput) fastInput.checked = false;
+    if (survivorInput) survivorInput.checked = false;
+  }
+
+  syncDragonComputedFields();
 }
 
 function syncDragonComputedFields() {
@@ -4598,6 +5550,7 @@ function openDragonDialog(id = "", options = {}) {
     accountId: account?.id || "",
     username: account?.username || "",
     accountName: account?.accountName || "",
+    species: options.species || "",
     status: "Hatchie",
     sex: "Unknown",
     skinType: "Unknown",
@@ -4816,7 +5769,8 @@ function handleSkinSubmit(event) {
     source: form.get("source"),
     recipeA: form.get("recipeA"),
     recipeB: form.get("recipeB"),
-    owned: form.has("owned")
+    owned: form.has("owned"),
+    wishlist: Boolean(existing?.wishlist)
   });
 
   upsertSpecies(skin.species === "All" ? "" : skin.species);
@@ -4843,11 +5797,19 @@ function handleDragonAction(event) {
     return;
   }
 
-  if (action === "edit") openDragonDialog(id);
+  const fromAccountDetail = Boolean(els.accountDetailContent?.contains(button));
+
+  if (action === "edit") {
+    if (fromAccountDetail) closeModal("accountDetailDialog");
+    openDragonDialog(id);
+  }
   if (action === "clone") cloneDragon(dragon);
   if (action === "toggleStatus") toggleDragonStatus(dragon);
   if (action === "share") void shareDragonWithClan(dragon);
-  if (action === "delete") deleteDragon(dragon);
+  if (action === "delete") {
+    deleteDragon(dragon);
+    if (fromAccountDetail && !dragonById(id)) closeModal("accountDetailDialog");
+  }
 }
 
 async function shareMapPinWithClan(pin) {
@@ -4910,14 +5872,31 @@ function handleAccountAction(event) {
 
   const account = accountById(button.dataset.id);
   if (!account) return;
+  const fromAccountDetail = Boolean(els.accountDetailContent?.contains(button));
 
-  if (action === "edit") openAccountDialog(account.id);
-  if (action === "add-dragon") openDragonDialog("", { accountId: account.id });
+  if (action === "open-detail") openAccountDetailDialog(account.id);
+  if (action === "edit") {
+    if (fromAccountDetail) closeModal("accountDetailDialog");
+    openAccountDialog(account.id);
+  }
+  if (action === "add-dragon") {
+    if (fromAccountDetail) closeModal("accountDetailDialog");
+    openDragonDialog("", { accountId: account.id, species: button.dataset.species || "" });
+  }
   if (action === "share-account") void shareAccountWithClan(account);
-  if (action === "delete-account") deleteAccount(account);
+  if (action === "delete-account") {
+    deleteAccount(account);
+    if (fromAccountDetail && !accountById(account.id)) closeModal("accountDetailDialog");
+  }
 }
 
 function handleSkinAction(event) {
+  const turntableButton = event.target.closest(".skin-turntable");
+  if (turntableButton) {
+    openSkinTurntableDialog(turntableButton);
+    return;
+  }
+
   const button = event.target.closest("[data-skin-action]");
   if (!button) return;
   const id = button.dataset.id;
@@ -4926,7 +5905,29 @@ function handleSkinAction(event) {
   if (!skin) return;
 
   if (action === "edit") openSkinDialog(id);
+  if (action === "wishlist") toggleSkinWishlist(skin);
   if (action === "delete") deleteSkin(skin);
+}
+
+function toggleSkinWishlist(skin) {
+  skin.wishlist = !skin.wishlist;
+  skin.updatedAt = new Date().toISOString();
+  saveState();
+  renderAll();
+  showToast(skin.wishlist ? `${skin.name} added to wishlist` : `${skin.name} removed from wishlist`);
+}
+
+function openSkinTurntableDialog(turntableButton) {
+  if (!els.skinTurntableDialog || !els.skinTurntableVideo) return;
+  const card = turntableButton.closest(".skin-card");
+  const skin = skinById(card?.dataset.id);
+  const source = turntableButton.querySelector("video")?.currentSrc || turntableButton.querySelector("video")?.getAttribute("src") || "";
+  if (!source) return;
+  if (els.skinTurntableTitle) els.skinTurntableTitle.textContent = `${skin?.name || "Skin"} Turntable`;
+  els.skinTurntableVideo.pause();
+  els.skinTurntableVideo.src = source;
+  showModal(els.skinTurntableDialog);
+  els.skinTurntableVideo.play().catch(() => {});
 }
 
 function cloneDragon(dragon) {
@@ -5016,6 +6017,9 @@ function deleteAccountsByIds(accountIds) {
   state.accounts = state.accounts.filter((account) => !accountIdSet.has(account.id));
   state.dragons = state.dragons.filter((dragon) => !removedDragonIds.has(dragon.id));
   state.broodPouch = (state.broodPouch || []).filter((entry) => !removedDragonIds.has(entry.dragonId));
+  if (state.settings?.elderTickAccounts) {
+    accountIdSet.forEach((accountId) => delete state.settings.elderTickAccounts[accountId]);
+  }
   clearDragonParentReferences(removedDragonIds);
   refreshAllDerivedRecords();
   saveState();
@@ -5162,120 +6166,6 @@ function promptEggAccount(parentA, parentB) {
     username,
     accountName
   });
-}
-
-function addRandomDragon() {
-  const preferredSpecies = currentTab === "nesting"
-    ? dragonById(els.parentOne.value)?.species || dragonById(els.parentTwo.value)?.species || ""
-    : "";
-  const dragon = createRandomDragon(preferredSpecies);
-  state.dragons.push(dragon);
-  refreshAllDerivedRecords();
-  saveState();
-  renderAll();
-
-  if (currentTab === "nesting") {
-    if (!els.parentOne.value) {
-      els.parentOne.value = dragon.id;
-    } else if (!els.parentTwo.value || els.parentTwo.value === els.parentOne.value) {
-      els.parentTwo.value = dragon.id;
-    }
-    renderNesting();
-  }
-
-  showToast(`${dragon.name} added`);
-}
-
-function createRandomDragon(preferredSpecies = "") {
-  const species = canonicalSpeciesName(preferredSpecies) || randomChoice(collectSpeciesNames()) || "Flame Stalker";
-  const speciesSkins = skinOptionsForSpecies(species);
-  const visibleSkin = randomChoice(speciesSkins) || "Iconic";
-  const recessiveSkin = randomChoice(speciesSkins) || visibleSkin;
-  const status = randomWeightedChoice([
-    ["Grown", 70],
-    ["4th Pointed", 20],
-    ["Elder", 10]
-  ]);
-  const elderProgress = randomElderProgressForStatus(status);
-  const sex = randomChoice(["Female", "Male"]);
-  const socialPoints = randomWeightedChoice([
-    [0, 26],
-    [1, 22],
-    [2, 22],
-    [3, 30]
-  ]);
-  const nestRole = Math.random() < 0.28 ? "Breeder" : "Unknown";
-  const agilePoints = randomInt(0, AGILE_POINTS_MAX);
-  const scavengerPoints = randomInt(0, SCAVENGER_POINTS_MAX);
-  const stats = Object.fromEntries(STAT_FIELDS.map((field) => [field.key, randomStatGrade()]));
-  const account = upsertAccountRecord({
-    username: randomChoice(["CPTBLUMISH", "Mystic", "Harbinger", "Kora", "Kiwi"]),
-    accountName: nextRandomDragonName(species, visibleSkin)
-  });
-
-  const dragon = normalizeDragon({
-    id: uid("dragon"),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    accountId: account.id,
-    username: account.username,
-    accountName: account.accountName,
-    name: account.accountName,
-    species,
-    sex,
-    status,
-    nestRole,
-    skin: visibleSkin,
-    recessiveSkin,
-    bloodline: randomBloodlineGrade(),
-    stats,
-    dominantMutation: Math.random() < 0.18,
-    growth: 100,
-    elderProgress,
-    socialPoints,
-    agilePoints,
-    fastMutation: agilePoints >= AGILE_POINTS_MAX && Math.random() < 0.22,
-    scavengerPoints,
-    survivorMutation: scavengerPoints >= SCAVENGER_POINTS_MAX && Math.random() < 0.22,
-    tags: ["debug", "random"],
-    notes: "Generated with Add Random for testing."
-  });
-
-  dragon.skinType = skinTypeForName(dragon.skin, dragon.species);
-  return dragon;
-}
-
-function nextRandomDragonName(species, skin) {
-  const count = state.dragons.filter((dragon) => dragon.tags.includes("random")).length + 1;
-  return `Debug ${skin || species} ${String(count).padStart(3, "0")}`;
-}
-
-function randomElderProgressForStatus(status) {
-  if (status === "Elder") return 100;
-  if (status === "4th Pointed") return randomInt(25, 99);
-  return randomInt(0, 24);
-}
-
-function randomStatGrade() {
-  return randomWeightedChoice([
-    ["C", 12],
-    ["C+", 12],
-    ["B-", 14],
-    ["B", 14],
-    ["B+", 13],
-    ["A-", 12],
-    ["A", 10],
-    ["A+", 8],
-    ["A++", 5]
-  ]);
-}
-
-function randomBloodlineGrade() {
-  return randomWeightedChoice([
-    ["C", 10],
-    ["B", 14],
-    ["A", 15]
-  ]);
 }
 
 function canNestTogether(parentA, parentB) {
@@ -5577,9 +6467,51 @@ function bloodlineScore(grade) {
 }
 
 function exportJson() {
-  saveState();
+  state.settings.lastBackupAt = new Date().toISOString();
+  saveState({ skipHistory: true });
   downloadBlob(`day-of-dragons-tracker-${dateStamp()}.json`, JSON.stringify(state, null, 2), "application/json");
+  renderBackup();
   showToast("JSON backup exported");
+}
+
+function exportSafeJson() {
+  state.settings.lastBackupAt = new Date().toISOString();
+  saveState({ skipHistory: true });
+  downloadBlob(`dragon-tracker-safe-${dateStamp()}.json`, JSON.stringify(safeExportState(), null, 2), "application/json");
+  renderBackup();
+  showToast("Safe JSON backup exported");
+}
+
+function safeExportState() {
+  return normalizeState({
+    ...state,
+    accounts: state.accounts.map((account) => ({
+      ...account,
+      discord: "",
+      steam: ""
+    })),
+    dragons: state.dragons.map((dragon) => ({
+      ...dragon,
+      server: "",
+      notes: "",
+      birthDate: "",
+      tags: []
+    })),
+    mapPins: state.mapPins.map((pin) => ({
+      ...pin,
+      sharedBy: "",
+      notes: ""
+    })),
+    broodPouch: (state.broodPouch || []).map((entry) => ({
+      ...entry,
+      notes: ""
+    })),
+    settings: {
+      ...state.settings,
+      elderTickStartedAt: "",
+      elderTickAccounts: {}
+    }
+  });
 }
 
 function exportCsv() {
@@ -5634,22 +6566,14 @@ function importJson() {
       if (!hasImportableBackupData(parsed)) {
         throw new Error("Backup must contain tracker records.");
       }
-      const before = {
-        accounts: state.accounts.length,
-        dragons: state.dragons.length,
-        skins: state.skins.length,
-        upstats: state.upstats.length,
-        lineageRecords: state.lineageRecords.length,
-        mapPins: state.mapPins.length
+      const merged = mergeImportedState(state, parsed);
+      pendingImportState = {
+        parsed,
+        merged,
+        summary: compareImportPreview(state, parsed, merged)
       };
-      if (!confirm("Merge this backup with the current tracker data? Matching accounts and dragons will update; new records will be added.")) return;
-      state = mergeImportedState(state, parsed);
-      refreshAllDerivedRecords();
-      saveState();
-      renderAll();
-      const addedDragons = Math.max(0, state.dragons.length - before.dragons);
-      const addedAccounts = Math.max(0, state.accounts.length - before.accounts);
-      showToast(`Backup merged: ${addedAccounts} accounts, ${addedDragons} dragons added`);
+      renderImportPreview(pendingImportState.summary);
+      showModal(els.importPreviewDialog);
     } catch (error) {
       alert(`Could not import backup: ${error.message}`);
     } finally {
@@ -5660,7 +6584,83 @@ function importJson() {
 }
 
 function hasImportableBackupData(parsed) {
-  return ["accounts", "dragons", "skins", "upstats", "lineageRecords", "mapPins"].some((key) => Array.isArray(parsed?.[key]));
+  return ["accounts", "dragons", "skins", "upstats", "lineageRecords", "mapPins", "broodPouch"].some((key) => Array.isArray(parsed?.[key]));
+}
+
+function compareImportPreview(current, incomingRaw, merged) {
+  const incoming = normalizeState(incomingRaw);
+  return [
+    ["accounts", "Accounts"],
+    ["dragons", "Dragons"],
+    ["skins", "Skins"],
+    ["upstats", "Upstats"],
+    ["lineageRecords", "Lineage names"],
+    ["mapPins", "Map pins"],
+    ["broodPouch", "Brood pouch"]
+  ].map(([key, label]) => ({
+    key,
+    label,
+    current: current[key]?.length || 0,
+    incoming: incoming[key]?.length || 0,
+    merged: merged[key]?.length || 0,
+    added: Math.max(0, (merged[key]?.length || 0) - (current[key]?.length || 0))
+  }));
+}
+
+function renderImportPreview(summary) {
+  if (!els.importPreviewContent) return;
+  els.importPreviewContent.innerHTML = `
+    <div class="import-preview-grid">
+      ${summary.map((item) => `
+        <div class="import-preview-metric">
+          <strong>${escapeHtml(item.label)}</strong>
+          <span>Current ${item.current}</span>
+          <span>Incoming ${item.incoming}</span>
+          <span>Merged ${item.merged}</span>
+          <em>+${item.added} new</em>
+        </div>
+      `).join("")}
+    </div>
+    <p class="planner-note">Import merges matching accounts and dragons instead of replacing your tracker. Undo Last Change can restore the previous local data after import.</p>
+  `;
+}
+
+function handleImportPreviewAction(event) {
+  const button = event.target.closest("[data-import-preview-action]");
+  if (!button) return;
+  const action = button.dataset.importPreviewAction;
+  if (action === "cancel") {
+    pendingImportState = null;
+    closeModal("importPreviewDialog");
+    return;
+  }
+  if (action !== "confirm" || !pendingImportState) return;
+  const beforeCounts = { accounts: state.accounts.length, dragons: state.dragons.length };
+  state = pendingImportState.merged;
+  pendingImportState = null;
+  refreshAllDerivedRecords();
+  saveState({ reason: "Import backup" });
+  closeModal("importPreviewDialog");
+  renderAll();
+  showToast(`Backup merged: +${Math.max(0, state.accounts.length - beforeCounts.accounts)} accounts, +${Math.max(0, state.dragons.length - beforeCounts.dragons)} dragons`);
+}
+
+function undoLastChange() {
+  const history = loadUndoHistory();
+  const snapshot = history.shift();
+  if (!snapshot) {
+    showToast("No undo snapshot available");
+    return;
+  }
+  try {
+    state = normalizeState(JSON.parse(snapshot.data));
+    saveUndoHistory(history);
+    saveState({ skipHistory: true });
+    renderAll();
+    showToast(`Undid: ${snapshot.reason}`);
+  } catch (error) {
+    showToast(`Could not undo: ${error.message}`);
+  }
 }
 
 async function importGeneticsPng() {
@@ -6312,25 +7312,6 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value)));
 }
 
-function randomChoice(values) {
-  if (!values.length) return "";
-  return values[Math.floor(Math.random() * values.length)];
-}
-
-function randomWeightedChoice(entries) {
-  const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
-  let roll = Math.random() * total;
-  for (const [value, weight] of entries) {
-    roll -= weight;
-    if (roll <= 0) return value;
-  }
-  return entries[entries.length - 1]?.[0] || "";
-}
-
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
 function normalizeGrowthValue(status, value) {
   if (ADULT_OR_HIGHER_STATUSES.has(status)) return 100;
   if (value === "" || value === null || value === undefined) return "";
@@ -6545,6 +7526,11 @@ function closeModal(id) {
   const dialog = document.querySelector(`#${id}`);
   if (!dialog) return;
   if (id === "mapPinDialog" || id === "mapImportDialog") cancelMapPinPlacement();
+  if (id === "skinTurntableDialog" && els.skinTurntableVideo) {
+    els.skinTurntableVideo.pause();
+    els.skinTurntableVideo.removeAttribute("src");
+    els.skinTurntableVideo.load();
+  }
   if (dialog.close) dialog.close();
   else dialog.removeAttribute("open");
 }
@@ -6599,6 +7585,28 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
   return date.toLocaleString();
+}
+
+function toLocalDateTimeInputValue(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function dateTimeLocalToIso(value) {
+  const raw = text(value);
+  if (!raw) return "";
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function formatCountdownUntil(value) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Unknown";
+  const remaining = timestamp - Date.now();
+  if (remaining <= 0) return `Due now (${formatDateTime(value)})`;
+  return `${formatElderTickCountdown(remaining)} (${formatDateTime(value)})`;
 }
 
 function formatBytes(bytes) {

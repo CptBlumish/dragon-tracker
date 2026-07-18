@@ -291,6 +291,15 @@
       return this.request(`/rest/v1/clan_map_pins?select=id,source_user_id,source_local_id,label,pin_type,x,y,notes,updated_at&clan_id=eq.${encodeURIComponent(clanId)}&order=updated_at.desc`, { method: "GET" }, true);
     }
 
+    async getDiscordSubmissions(clanId) {
+      return this.request(`/rest/v1/discord_bot_submissions?select=id,discord_user_id,discord_username,submission_type,payload,status,created_at&clan_id=eq.${encodeURIComponent(clanId)}&status=eq.pending&order=created_at.desc&limit=50`, { method: "GET" }, true);
+    }
+
+    async resolveDiscordSubmission(recordId, status) {
+      const normalized = ["imported", "ignored"].includes(status) ? status : "ignored";
+      return this.rpc("resolve_discord_bot_submission", { p_submission_id: recordId, p_status: normalized });
+    }
+
     async shareMapPin(clanId, pin) {
       const user = await this.getCurrentUser();
       if (!user) throw new Error("Connect Discord before sharing a map pin.");

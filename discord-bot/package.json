@@ -1,0 +1,22 @@
+{
+  "name": "dragon-tracker-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord companion bot for Dragon Tracker clan submissions.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "node src/deploy-commands.js",
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/deploy-commands.js && node --check src/commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.26.4",
+    "dotenv": "^16.4.7"
+  },
+  "overrides": {
+    "undici": "^6.27.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
