@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.3";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.4";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -136,6 +136,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "elder", label: "Elders" }
 ];
 const CHANGELOG_ITEMS = [
+  "Added the Players species grid to Home for the selected Home player.",
   "Moved the personal Home player selector onto the Home screen.",
   "Added a personal Home player setting so Home can focus on one player's accounts.",
   "Fixed startup panel styling and account-row hover controls.",
@@ -410,6 +411,7 @@ const els = {
   dragonList: document.querySelector("#dragonList"),
   addDragonBtn: document.querySelector("#addDragonBtn"),
   homeAccountList: document.querySelector("#homeAccountList"),
+  homeAccountSpeciesMatrix: document.querySelector("#homeAccountSpeciesMatrix"),
   homeAddAccountBtn: document.querySelector("#homeAddAccountBtn"),
   homePlayerSummary: document.querySelector("#homePlayerSummary"),
   homePersonalPlayerSelect: document.querySelector("#homePersonalPlayerSelect"),
@@ -1655,6 +1657,8 @@ function bindEvents() {
   els.homeAccountList?.addEventListener("click", handleDragonAction);
   els.homeAccountList?.addEventListener("click", handleAccountCardOpen);
   els.homeAccountList?.addEventListener("keydown", handleAccountCardKeydown);
+  els.homeAccountSpeciesMatrix?.addEventListener("click", handleAccountAction);
+  els.homeAccountSpeciesMatrix?.addEventListener("click", handleDragonAction);
   els.accountDetailContent?.addEventListener("click", handleAccountAction);
   els.accountDetailContent?.addEventListener("click", handleDragonAction);
   els.accountList.addEventListener("click", handleAccountAction);
@@ -2085,6 +2089,7 @@ function renderHome() {
   if (!els.homeAccountList) return;
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect);
   if (!state.accounts.length) {
+    renderAccountSpeciesMatrix([], els.homeAccountSpeciesMatrix);
     if (els.homePlayerSummary) els.homePlayerSummary.textContent = "Add a player to choose a personal home view.";
     els.homeAccountList.innerHTML = `
       <div class="empty-state">
@@ -2113,6 +2118,7 @@ function renderHome() {
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect, personalPlayer);
 
   if (!accounts.length) {
+    renderAccountSpeciesMatrix([], els.homeAccountSpeciesMatrix);
     els.homeAccountList.innerHTML = `
       <div class="empty-state">
         <h2>No accounts for ${escapeHtml(personalPlayer)}</h2>
@@ -2122,6 +2128,7 @@ function renderHome() {
     return;
   }
 
+  renderAccountSpeciesMatrix(accounts, els.homeAccountSpeciesMatrix);
   els.homeAccountList.innerHTML = renderAccountSections(accounts);
 }
 
@@ -2155,15 +2162,15 @@ function renderAccountSections(accounts) {
   }).join("");
 }
 
-function renderAccountSpeciesMatrix(accounts) {
-  if (!els.accountSpeciesMatrix) return;
+function renderAccountSpeciesMatrix(accounts, target = els.accountSpeciesMatrix) {
+  if (!target) return;
   if (!accounts.length) {
-    els.accountSpeciesMatrix.innerHTML = "";
+    target.innerHTML = "";
     return;
   }
 
   const speciesNames = collectSpeciesNames();
-  els.accountSpeciesMatrix.innerHTML = `
+  target.innerHTML = `
     <div class="matrix-head">
       <span>Account</span>
       ${speciesNames.map((species) => `<span>${escapeHtml(species)}</span>`).join("")}

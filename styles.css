@@ -343,6 +343,10 @@ svg {
   padding: 12px;
 }
 
+.home-account-species-matrix {
+  margin-top: 14px;
+}
+
 .matrix-head,
 .matrix-row {
   display: grid;
