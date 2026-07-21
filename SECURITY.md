@@ -4,7 +4,7 @@ Dragon Tracker is local-first. Dragon records, players, accounts, map pins, and 
 
 ## Optional Clan Sync
 
-Clan Sync is opt-in. Discord is used only to establish a tracker identity, and Steam linking uses Steam OpenID to verify a SteamID64. The app does not request Discord email, guild, message, or friend-list access, and it never reads Steam passwords, cookies, client files, or account-switching data.
+Clan Sync is opt-in. Discord is used only to establish a tracker identity. The app does not request Discord email, guild, message, or friend-list access, and it never reads Steam passwords, cookies, client files, or account-switching data.
 
 Only explicitly shared dragons and map pins are sent to the clan backend. Backups, account credentials, OAuth client secrets, service-role keys, browser cookies, and unshared tracker records must never be uploaded or committed. Desktop sign-in sessions are stored with operating-system encrypted storage when available.
 

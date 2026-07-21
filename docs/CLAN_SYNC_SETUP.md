@@ -20,7 +20,7 @@ supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
 ```
 
-The migration in `supabase/migrations/0001_clan_sync.sql` creates clan tables, opt-in shared dragon and pin tables, Steam identity link tables, Row Level Security policies, and role-checked RPC functions.
+The migration in `supabase/migrations/0001_clan_sync.sql` creates clan tables, opt-in shared dragon and pin tables, Row Level Security policies, and role-checked RPC functions.
 
 ## 2. Configure Discord Identity
 
@@ -50,20 +50,7 @@ The migration in `supabase/migrations/0001_clan_sync.sql` creates clan tables, o
 
 The app uses Discord only to create a sign-in identity for clan permissions. It does not read Discord messages, servers, friend lists, or email.
 
-## 3. Deploy Steam OpenID Linking
-
-Steam linking verifies a SteamID64 through Steam OpenID. It does not use Steam passwords, cookies, local Steam files, or a Steam Web API key. The callback returns to the installed app or, for the included local server, to the exact `localhost` or `127.0.0.1` tracker page that began the link.
-
-Set the callback target, then deploy the function:
-
-```powershell
-supabase secrets set DRAGON_TRACKER_DEEP_LINK=dragontracker://auth/callback
-supabase functions deploy steam-openid --no-verify-jwt
-```
-
-The function validates the Steam OpenID assertion server-side and stores only the SteamID64 in `identity_links`. Steam link state is hashed, short-lived, and single-use.
-
-## 4. Configure Dragon Tracker
+## 3. Configure Dragon Tracker
 
 In the app, open **Settings** and select **Connect Sync**. Enter only:
 
@@ -74,7 +61,7 @@ The anon or publishable key is designed to be public. It grants no access beyond
 
 After saving the connection, open **Clans** and select **Connect Discord**. The tracker opens Discord in the system browser. After approval, Discord returns the user to the desktop app or local browser tracker. Every member then uses a one-use invite code to join the correct clan.
 
-## 5. Verify Before Inviting Anyone
+## 4. Verify Before Inviting Anyone
 
 Use two Discord accounts and confirm all of the following:
 
@@ -85,8 +72,7 @@ Use two Discord accounts and confirm all of the following:
 5. A regular member cannot create an invite or change a role.
 6. A clan owner cannot leave until ownership is transferred.
 7. An expired or already-used invite cannot be redeemed.
-8. Steam linking shows only that it is linked, not the SteamID64 in the app interface.
-9. A packaged app and a browser-local tracker can both connect Discord, redeem the same invite, and view a deliberately shared test dragon.
+8. A packaged app and a browser-local tracker can both connect Discord, redeem the same invite, and view a deliberately shared test dragon.
 
 ## Sharing Rules
 
@@ -101,12 +87,12 @@ Use two Discord accounts and confirm all of the following:
 The normal **Share to Clan** button does not require a Discord bot. A bot is optional and should be treated as a server-side integration, not part of the desktop app.
 
 1. Create a separate Discord application and bot for the clan. Install it only in the clan server, using only the permissions required for slash commands. Do not grant Administrator.
-2. Create a command such as `/dragon submit` that gathers a display name, species, skin, recessive skin, stage, and optional public note.
+2. Use the included slash commands for dragon creation, egg requests, upstat progress, brood pouch eggs, current nests, map pins, and notes.
 3. Register a Supabase Edge Function as the Discord Interactions Endpoint. The function must verify Discord's `X-Signature-Ed25519` and `X-Signature-Timestamp` headers before handling every request.
 4. Store `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, and any Supabase service-role credential as Supabase secrets. Do not place them in Dragon Tracker, a backup, GitHub source, or a Discord message.
 5. Insert bot submissions as pending shared-dragon proposals. A clan owner or admin should approve a submission before it becomes visible to the clan. Never use a bot submission to overwrite someone else's local dragon or store account details, credentials, private notes, or backup data.
 
-Build and deploy this bot endpoint only after adding a server-side review flow. It is intentionally not enabled by the standard clan-sync configuration.
+Bot submissions remain pending until a tracker user imports or ignores them from **Clans > Discord Inbox**. They should never overwrite someone else's local dragon or store account details, credentials, private notes, or backup data.
 
 ## Release Checklist
 

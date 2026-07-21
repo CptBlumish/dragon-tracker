@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.5";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.6";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -136,6 +136,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "elder", label: "Elders" }
 ];
 const CHANGELOG_ITEMS = [
+  "Added breeder-focused Discord bot submissions and a Pure-only clan library filter.",
+  "Made elder tick timers fully local so Steam is no longer required.",
   "Added compact sex markers to account species grid cells.",
   "Added the Players species grid to Home for the selected Home player.",
   "Moved the personal Home player selector onto the Home screen.",
@@ -389,7 +391,7 @@ const clanUi = {
   discordSubmissions: [],
   identityLinks: [],
   lastSignature: "",
-  libraryFilters: { dragon: "", skin: "", recessive: "", sex: "", source: "" },
+  libraryFilters: { dragon: "", skin: "", recessive: "", sex: "", pure: "", source: "" },
   members: [],
   memberships: [],
   sharedDragons: [],
@@ -3692,11 +3694,6 @@ async function refreshClanSync(options = {}) {
     ]);
     clanUi.identityLinks = Array.isArray(identityLinks) ? identityLinks : [];
     clanUi.memberships = Array.isArray(memberships) ? memberships : [];
-    const elderTickStarted = startElderTickIfNeeded();
-    if (elderTickStarted) {
-      renderElderTick();
-      if (!options.quiet) showToast("Steam identity linked. Elder tick timer started.");
-    }
     reconcileActiveClan();
 
     if (clanUi.activeClanId) {
@@ -3941,7 +3938,6 @@ function renderClans() {
         <h2>What connects</h2>
         <dl class="line-list">
           <div><dt>Discord</dt><dd>Identity only, using the identify scope.</dd></div>
-          <div><dt>Steam</dt><dd>Optional SteamID64 verification through Steam OpenID.</dd></div>
           <div><dt>Sharing</dt><dd>Only dragons and map pins you choose to share.</dd></div>
         </dl>
       </section>
@@ -3969,7 +3965,6 @@ function renderClans() {
 
   const currentClan = activeClan();
   const membership = activeClanMembership();
-  const steamLinked = clanUi.identityLinks.some((link) => link.provider === "steam");
   const clanOptions = clanUi.memberships.map((item) => {
     const clan = clanMembershipClan(item);
     if (!clan) return "";
@@ -4000,6 +3995,11 @@ function renderClans() {
   const skinOptions = clanLibraryFilterOptions("skin", filters.skin, "All skins");
   const recessiveOptions = clanLibraryFilterOptions("recessiveSkin", filters.recessive, "All recessives");
   const sexOptions = clanLibraryFilterOptions("sex", filters.sex, "Any sex");
+  const pureOptions = [
+    `<option value="">Any skin pair</option>`,
+    `<option value="pure"${filters.pure === "pure" ? " selected" : ""}>Pure only</option>`,
+    `<option value="not-pure"${filters.pure === "not-pure" ? " selected" : ""}>Not pure</option>`
+  ].join("");
   const sourceOptions = CLAN_LIBRARY_SOURCE_FILTERS.map((option) => (
     `<option value="${escapeAttr(option.value)}"${option.value === filters.source ? " selected" : ""}>${escapeHtml(option.label)}</option>`
   )).join("");
@@ -4009,7 +4009,7 @@ function renderClans() {
       return `
         <article class="clan-share-row">
           <strong>${escapeHtml(summary.displayName || "Shared Dragon")}</strong>
-          <span>${escapeHtml(compactJoin([summary.species, summary.sex, summary.skin, summary.recessiveSkin ? `Res: ${summary.recessiveSkin}` : "", summary.status]))}</span>
+          <span>${escapeHtml(compactJoin([summary.species, summary.sex, summary.skin, summary.recessiveSkin ? `Res: ${summary.recessiveSkin}` : "", isPureSkinPair(summary) ? "Pure" : "", summary.status]))}</span>
           <small>Shared by ${escapeHtml(clanMemberName(record.source_user_id))}</small>
         </article>
       `;
@@ -4026,13 +4026,12 @@ function renderClans() {
         <span class="pill">Connected</span>
       </div>
       <dl class="line-list">
-        <div><dt>Steam</dt><dd>${steamLinked ? "SteamID verified" : "Not linked"}</dd></div>
+        <div><dt>Identity</dt><dd>Discord verified</dd></div>
         <div><dt>Data default</dt><dd>Local only</dd></div>
       </dl>
       ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
       <div class="card-actions">
         <button class="tool-button" type="button" data-clan-action="refresh">Refresh</button>
-        ${steamLinked ? "" : `<button class="tool-button" type="button" data-clan-action="link-steam">Link Steam</button>`}
         <button class="tool-button" type="button" data-clan-action="configure">Sync Settings</button>
         ${state.settings.skipClanShareConfirmation ? `<button class="tool-button" type="button" data-clan-action="enable-share-prompts">Ask Before Sharing</button>` : ""}
         <button class="danger-button" type="button" data-clan-action="sign-out">Sign Out</button>
@@ -4071,6 +4070,7 @@ function renderClans() {
         <div class="field"><label for="clanLibrarySkin">Skin</label><select id="clanLibrarySkin" name="skin">${skinOptions}</select></div>
         <div class="field"><label for="clanLibraryRecessive">Recessive</label><select id="clanLibraryRecessive" name="recessive">${recessiveOptions}</select></div>
         <div class="field"><label for="clanLibrarySex">Sex</label><select id="clanLibrarySex" name="sex">${sexOptions}</select></div>
+        <div class="field"><label for="clanLibraryPure">Pure</label><select id="clanLibraryPure" name="pure">${pureOptions}</select></div>
         <div class="field"><label for="clanLibrarySource">Source</label><select id="clanLibrarySource" name="source">${sourceOptions}</select></div>
         <div class="clan-library-search-actions"><button class="primary-button" type="submit">Apply</button><button class="tool-button" type="button" data-clan-action="clear-library-search">Clear</button></div>
       </form>
@@ -4095,19 +4095,36 @@ function renderDiscordSubmissionRow(record) {
     ? text(payload.name || payload.accountName, 80) || "Dragon submission"
     : type === "map_pin"
       ? text(payload.label, 80) || "Map pin submission"
-      : text(payload.title, 120) || "Discord note";
+      : type === "egg_request"
+        ? text(payload.requester || payload.species, 100) || "Egg request"
+        : type === "upstat"
+          ? text(compactJoin([payload.species, payload.skin]), 120) || "Upstat submission"
+          : type === "brood_pouch"
+            ? text(payload.name || payload.accountName, 80) || "Brood pouch egg"
+            : type === "current_nest"
+              ? text(compactJoin([payload.father, payload.mother]), 140) || "Current nest"
+              : text(payload.title, 120) || "Discord note";
   const detail = type === "dragon"
     ? compactJoin([payload.species, payload.sex, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.status])
     : type === "map_pin"
       ? compactJoin([payload.type || "Location", `${Number(payload.x).toFixed(1)}%, ${Number(payload.y).toFixed(1)}%`])
-      : text(payload.notes, 160);
+      : type === "egg_request"
+        ? compactJoin([payload.species, payload.sex, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.goal])
+        : type === "upstat"
+          ? compactJoin([payload.status, `${Number(payload.aPlusCount) || 0}/18 A+`, payload.accountName])
+          : type === "brood_pouch"
+            ? compactJoin([payload.species, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.brood, payload.dueAt])
+            : type === "current_nest"
+              ? compactJoin([payload.species, payload.expectedSkin, payload.broodWatcherBrooding ? "BW brooding" : "", payload.breeder, payload.requester])
+              : text(payload.notes, 160);
+  const canImport = ["dragon", "map_pin", "upstat", "brood_pouch"].includes(type);
   return `
     <article class="clan-share-row discord-submission-row">
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(detail || "No extra details")}</span>
       <small>${escapeHtml(discordSubmissionTypeLabel(type))} from ${escapeHtml(record.discord_username || "Discord user")} - ${formatDate(record.created_at)}</small>
       <div class="clan-share-row-actions">
-        ${type === "note" ? "" : `<button class="primary-button" type="button" data-clan-action="import-discord-submission" data-id="${escapeAttr(record.id)}">Import</button>`}
+        ${canImport ? `<button class="primary-button" type="button" data-clan-action="import-discord-submission" data-id="${escapeAttr(record.id)}">Import</button>` : ""}
         <button class="tool-button" type="button" data-clan-action="ignore-discord-submission" data-id="${escapeAttr(record.id)}">Ignore</button>
       </div>
     </article>
@@ -4117,6 +4134,10 @@ function renderDiscordSubmissionRow(record) {
 function discordSubmissionTypeLabel(type) {
   if (type === "dragon") return "Dragon";
   if (type === "map_pin") return "Map pin";
+  if (type === "egg_request") return "Egg request";
+  if (type === "upstat") return "Upstat";
+  if (type === "brood_pouch") return "Brood pouch";
+  if (type === "current_nest") return "Current nest";
   return "Note";
 }
 
@@ -4136,11 +4157,19 @@ function getFilteredClanSharedDragons() {
   return clanUi.sharedDragons.filter((record) => {
     const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
     if (!matchesClanSourceFilter(record, summary, filters.source)) return false;
+    if (filters.pure === "pure" && !isPureSkinPair(summary)) return false;
+    if (filters.pure === "not-pure" && isPureSkinPair(summary)) return false;
     return includes(summary.displayName, filters.dragon)
       && includes(summary.skin, filters.skin)
       && includes(summary.recessiveSkin, filters.recessive)
       && (!filters.sex || text(summary.sex).toLowerCase() === filters.sex.toLowerCase());
   });
+}
+
+function isPureSkinPair(summary = {}) {
+  const skin = text(summary.skin).toLowerCase();
+  const recessive = text(summary.recessiveSkin).toLowerCase();
+  return Boolean(skin && recessive && skin === recessive);
 }
 
 function matchesClanSourceFilter(record, summary, filter) {
@@ -4171,7 +4200,9 @@ function discordSubmissionById(id) {
 function importDiscordSubmission(record) {
   if (record.submission_type === "dragon") return importDiscordDragonSubmission(record);
   if (record.submission_type === "map_pin") return importDiscordMapPinSubmission(record);
-  throw new Error("Only dragon and map pin submissions can be imported.");
+  if (record.submission_type === "upstat") return importDiscordUpstatSubmission(record);
+  if (record.submission_type === "brood_pouch") return importDiscordBroodPouchSubmission(record);
+  throw new Error("Only dragon, map pin, upstat, and brood pouch submissions can be imported.");
 }
 
 function importDiscordDragonSubmission(record) {
@@ -4230,6 +4261,83 @@ function importDiscordMapPinSubmission(record) {
   state.mapPins.push(pin);
   saveState();
   return pin;
+}
+
+function importDiscordUpstatSubmission(record) {
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const species = canonicalSpeciesName(payload.species);
+  if (!species) throw new Error("The Discord upstat submission needs a species.");
+  const accountName = text(payload.accountName, 80);
+  const account = accountName
+    ? state.accounts.find((item) => text(item.accountName).toLowerCase() === accountName.toLowerCase()) || null
+    : null;
+  const upstat = normalizeUpstat({
+    id: uid("upstat"),
+    createdAt: record.created_at || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    species,
+    skin: text(payload.skin, 100) || "Unknown Skin",
+    status: text(payload.status, 40) || "In Progress",
+    aPlusCount: payload.aPlusCount,
+    accountId: account?.id || "",
+    notes: [
+      text(payload.notes, 1000),
+      accountName && !account ? `Discord account note: ${accountName}` : "",
+      `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
+    ].filter(Boolean).join(" | ")
+  });
+  state.upstats.push(upstat);
+  saveState();
+  return upstat;
+}
+
+function importDiscordBroodPouchSubmission(record) {
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const species = canonicalSpeciesName(payload.species);
+  if (!species) throw new Error("The Discord brood pouch submission needs a species.");
+  const playerName = text(payload.playerName || record.discord_username || "Discord Player", 80) || "Discord Player";
+  const accountName = text(payload.accountName || payload.name || `${species} egg`, 80) || `${species} egg`;
+  const account = upsertAccountRecord({ username: playerName, accountName });
+  const duplicate = duplicateDragonForAccount(account.id, species);
+  if (duplicate) throw new Error(`${account.accountName} already has a ${species}. Edit the existing dragon instead.`);
+
+  const dragon = normalizeDragon({
+    id: uid("dragon"),
+    createdAt: record.created_at || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    accountId: account.id,
+    username: account.username,
+    accountName: account.accountName,
+    name: account.accountName,
+    species,
+    sex: text(payload.sex, 20) || "Unknown",
+    status: "Hatchie",
+    skin: text(payload.skin, 100),
+    recessiveSkin: text(payload.recessiveSkin, 100),
+    tags: ["discord", "egg"],
+    notes: [
+      text(payload.notes, 1000),
+      `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
+    ].filter(Boolean).join(" | ")
+  });
+  dragon.skinType = skinTypeForName(dragon.skin, dragon.species);
+  state.dragons.push(dragon);
+  state.broodPouch.push(normalizeBroodPouchEntry({
+    id: uid("brood-pouch"),
+    createdAt: record.created_at || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    dragonId: dragon.id,
+    brood: text(payload.brood, 80) || "Unassigned brood",
+    dueAt: normalizeOptionalIso(payload.dueAt),
+    oddsSummary: text(payload.oddsSummary, 180),
+    notes: [
+      text(payload.notes, 1000),
+      `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
+    ].filter(Boolean).join(" | ")
+  }));
+  refreshAllDerivedRecords();
+  saveState();
+  return dragon;
 }
 
 function openSyncConfigDialog() {
@@ -4308,7 +4416,7 @@ async function handleClanAction(event) {
     if (action === "link-steam") await clanSync.startSteamLink();
     if (action === "refresh") await refreshClanSync();
     if (action === "clear-library-search") {
-      clanUi.libraryFilters = { dragon: "", skin: "", recessive: "", sex: "", source: "" };
+      clanUi.libraryFilters = { dragon: "", skin: "", recessive: "", sex: "", pure: "", source: "" };
       renderClans();
       return;
     }
@@ -4429,6 +4537,7 @@ async function handleClanSubmit(event) {
       skin: text(values.get("skin"), 100),
       recessive: text(values.get("recessive"), 100),
       sex: text(values.get("sex"), 20),
+      pure: text(values.get("pure"), 20),
       source: text(values.get("source"), 40)
     };
     renderClans();
@@ -5123,7 +5232,7 @@ function renderSetupChecklist() {
     { label: "Add dragons to the tracker", done: state.dragons.length > 0 },
     { label: "Export a JSON backup", done: Boolean(state.settings?.lastBackupAt) },
     { label: "Configure clan sync only if you want shared dragons or pins", done: Boolean(clanSync?.isConfigured()) },
-    { label: "Link Steam if you want elder tick reminders", done: hasLinkedSteamIdentity() }
+    { label: "Start an elder tick timer when needed", done: Boolean(elderTickStartTime() || Object.keys(state.settings?.elderTickAccounts || {}).length) }
   ];
   els.setupChecklist.innerHTML = renderQualityItems(items);
 }
@@ -5196,10 +5305,6 @@ function renderUndoButton() {
   els.undoChangeBtn.textContent = history.length ? `Undo Last Change (${history.length})` : "Undo Last Change";
 }
 
-function hasLinkedSteamIdentity() {
-  return clanUi.identityLinks.some((link) => link.provider === "steam");
-}
-
 function elderTickStartTime() {
   const timestamp = Date.parse(state.settings?.elderTickStartedAt || "");
   return Number.isFinite(timestamp) ? timestamp : 0;
@@ -5219,19 +5324,7 @@ function formatElderTickCountdown(milliseconds) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function startElderTickIfNeeded() {
-  if (!hasLinkedSteamIdentity() || elderTickStartTime()) return false;
-  state.settings.elderTickStartedAt = new Date().toISOString();
-  saveState();
-  return true;
-}
-
 function handleElderTickReset() {
-  if (!hasLinkedSteamIdentity() && !elderTickStartTime()) {
-    showToast("Link Steam in Clans before starting the elder tick timer.");
-    setTab("clans", { updateHash: true });
-    return;
-  }
   if (elderTickRemainingMs() > 0) return;
   state.settings.elderTickStartedAt = new Date().toISOString();
   saveState();
@@ -5240,11 +5333,6 @@ function handleElderTickReset() {
 }
 
 function handleElderTickForceReset() {
-  if (!hasLinkedSteamIdentity() && !elderTickStartTime()) {
-    showToast("Link Steam in Clans before starting the elder tick timer.");
-    setTab("clans", { updateHash: true });
-    return;
-  }
   state.settings.elderTickStartedAt = new Date().toISOString();
   saveState();
   renderElderTick();
@@ -5254,16 +5342,13 @@ function handleElderTickForceReset() {
 function renderElderTick() {
   if (!els.elderTickState || !els.elderTickCountdown || !els.elderTickDescription || !els.elderTickResetBtn || !els.elderTickForceResetBtn) return;
   const startedAt = elderTickStartTime();
-  const steamLinked = hasLinkedSteamIdentity();
 
   if (!startedAt) {
-    els.elderTickState.textContent = steamLinked ? "Ready to Start" : "Steam Required";
-    els.elderTickCountdown.textContent = steamLinked ? "Timer will start shortly" : "Link Steam to begin";
-    els.elderTickDescription.textContent = steamLinked
-      ? "Steam is linked. The six-hour reminder will start as soon as the connection refreshes."
-      : "Link Steam in Clans to start this local six-hour reminder. It does not read or control the game.";
+    els.elderTickState.textContent = "Local Timer";
+    els.elderTickCountdown.textContent = "Ready to start";
+    els.elderTickDescription.textContent = "Start this six-hour reminder when you log into the account in-game. No Steam link is required.";
     els.elderTickResetBtn.textContent = "Start 6-Hour Timer";
-    els.elderTickResetBtn.disabled = !steamLinked;
+    els.elderTickResetBtn.disabled = false;
     els.elderTickForceResetBtn.disabled = true;
     return;
   }
@@ -5301,7 +5386,6 @@ function elderTickAccountRemainingMs(accountId, now = Date.now()) {
 
 function renderElderTickAccountList() {
   if (!els.elderTickAccountList) return;
-  const steamLinked = hasLinkedSteamIdentity();
   const accounts = [...state.accounts].sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
   if (!accounts.length) {
     els.elderTickAccountList.innerHTML = `<p class="account-empty">Add accounts to track account-specific elder timers.</p>`;
@@ -5317,10 +5401,10 @@ function renderElderTickAccountList() {
       <div class="elder-account-row">
         <div>
           <strong>${escapeHtml(compactJoin([account.username, account.accountName]))}</strong>
-          <span>${escapeHtml(startedAt ? `Started ${formatDateTime(new Date(startedAt).toISOString())}` : (steamLinked ? "Start this account when you log it into Steam." : "Link Steam first for elder tick reminders."))}</span>
+          <span>${escapeHtml(startedAt ? `Started ${formatDateTime(new Date(startedAt).toISOString())}` : "Start this when you log into the account in-game.")}</span>
         </div>
         <span class="pill ${ready ? "status-elder" : ""}">${escapeHtml(stateLabel)}</span>
-        <button class="tool-button" type="button" data-elder-account-action="reset" data-account-id="${escapeAttr(account.id)}" ${steamLinked ? "" : "disabled"}>${startedAt ? "Reset" : "Start"}</button>
+        <button class="tool-button" type="button" data-elder-account-action="reset" data-account-id="${escapeAttr(account.id)}">${startedAt ? "Reset" : "Start"}</button>
       </div>
     `;
   }).join("");
@@ -5329,11 +5413,6 @@ function renderElderTickAccountList() {
 function handleElderTickAccountAction(event) {
   const button = event.target.closest("[data-elder-account-action]");
   if (!button) return;
-  if (!hasLinkedSteamIdentity()) {
-    showToast("Link Steam in Clans before starting account elder timers.");
-    setTab("clans", { updateHash: true });
-    return;
-  }
   const account = accountById(button.dataset.accountId);
   if (!account) return;
   state.settings.elderTickAccounts = {

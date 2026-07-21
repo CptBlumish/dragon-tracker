@@ -5,7 +5,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const INGEST_SECRET = Deno.env.get("DRAGON_TRACKER_BOT_INGEST_SECRET") || "";
 const MAX_TEXT = 500;
 
-type SubmissionType = "dragon" | "map_pin" | "note";
+type SubmissionType = "dragon" | "map_pin" | "note" | "egg_request" | "upstat" | "brood_pouch" | "current_nest";
 
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -41,7 +41,7 @@ function authorize(request: Request) {
 
 function normalizeType(value: unknown): SubmissionType {
   const type = clean(value, 30);
-  if (type === "dragon" || type === "map_pin" || type === "note") return type;
+  if (type === "dragon" || type === "map_pin" || type === "note" || type === "egg_request" || type === "upstat" || type === "brood_pouch" || type === "current_nest") return type;
   throw new Error("Unsupported submission type");
 }
 
@@ -73,6 +73,59 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
       x,
       y,
       notes: clean(input.notes, 500)
+    };
+  }
+
+  if (type === "egg_request") {
+    return {
+      requester: clean(input.requester || input.playerName || input.username, 100),
+      species: clean(input.species, 80),
+      skin: clean(input.skin, 100),
+      recessiveSkin: clean(input.recessiveSkin || input.recessive, 100),
+      sex: clean(input.sex, 20),
+      goal: clean(input.goal, 120),
+      notes: clean(input.notes, 1000)
+    };
+  }
+
+  if (type === "upstat") {
+    const aPlusCount = Number(input.aPlusCount ?? input.currentAPlus ?? input.aplus);
+    return {
+      species: clean(input.species, 80),
+      skin: clean(input.skin, 100),
+      status: clean(input.status, 40),
+      aPlusCount: Number.isFinite(aPlusCount) ? Math.max(0, Math.min(18, Math.round(aPlusCount))) : 0,
+      accountName: clean(input.accountName || input.account, 80),
+      notes: clean(input.notes, 1000)
+    };
+  }
+
+  if (type === "brood_pouch") {
+    return {
+      name: clean(input.name || input.eggName || input.accountName, 80),
+      playerName: clean(input.playerName || input.username, 80),
+      accountName: clean(input.accountName || input.account || input.name, 80),
+      species: clean(input.species, 80),
+      sex: clean(input.sex, 20),
+      skin: clean(input.skin, 100),
+      recessiveSkin: clean(input.recessiveSkin || input.recessive, 100),
+      brood: clean(input.brood || input.currentBrood, 80),
+      dueAt: clean(input.dueAt || input.due || input.reminder, 80),
+      oddsSummary: clean(input.oddsSummary || input.odds, 180),
+      notes: clean(input.notes, 1000)
+    };
+  }
+
+  if (type === "current_nest") {
+    return {
+      father: clean(input.father, 100),
+      mother: clean(input.mother, 100),
+      species: clean(input.species, 80),
+      breeder: clean(input.breeder || input.playerName || input.username, 100),
+      requester: clean(input.requester, 100),
+      expectedSkin: clean(input.expectedSkin || input.skin, 120),
+      broodWatcherBrooding: Boolean(input.broodWatcherBrooding || input.bwBrooding),
+      notes: clean(input.notes, 1000)
     };
   }
 

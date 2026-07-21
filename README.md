@@ -20,7 +20,7 @@ The desktop app can check for updates from the Help menu. The current app versio
 - Upstat progress, including 18A+ tracking
 - Nesting planner with species/sex validation, inbred nest warnings, skin odds, stat projection, and family tree display
 - Map tab with locations, crystals, food maps, clickable area references, and share/import location pins
-- Optional Clan Sync with Discord identity, SteamID64 verification, opt-in dragon and map-pin sharing, and role-based clan access
+- Optional Clan Sync with Discord identity, opt-in dragon and map-pin sharing, Discord bot intake, and role-based clan access
 - PNG genetics screenshot import for stat letters and bloodline quality
 - JSON backup/import and CSV export
 
@@ -32,11 +32,11 @@ Only share backup files with people you trust.
 
 ## Clan Sync
 
-Clan Sync is optional and begins with no shared data. Connecting Discord establishes an identity for clan permissions; it does not grant access to Discord messages, servers, friend lists, or email. Steam linking verifies only a SteamID64 through Steam OpenID.
+Clan Sync is optional and begins with no shared data. Connecting Discord establishes an identity for clan permissions; it does not grant access to Discord messages, servers, friend lists, or email.
 
 Only dragons and map pins that a member explicitly shares are visible to a clan. Local accounts, full backups, and unshared records remain on the device. Project owners can follow [Clan Sync Setup](docs/CLAN_SYNC_SETUP.md) to deploy the secure backend.
 
-The optional Discord bot can send dragon and map-pin submissions to a clan inbox for review. Project owners can follow [Discord Bot Link](docs/discord-bot.md) to deploy it.
+The optional Discord bot can send dragon, egg request, upstat, brood pouch, current nest, and map-pin submissions to a clan inbox for review. Project owners can follow [Discord Bot Link](docs/discord-bot.md) to deploy it.
 
 ## Feedback
 

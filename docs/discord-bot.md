@@ -4,7 +4,7 @@ Dragon Tracker can receive clan submissions from a Discord bot. The bot does not
 
 ## Architecture
 
-1. Discord slash command collects a dragon, map pin, or note.
+1. Discord slash command collects a dragon, egg request, upstat record, brood pouch egg, current nest, map pin, or note.
 2. The bot sends the submission to `supabase/functions/discord-bot-ingest`.
 3. The Edge Function checks `DRAGON_TRACKER_BOT_INGEST_SECRET`.
 4. Supabase stores the record in `discord_bot_submissions`.
@@ -16,6 +16,7 @@ Run this SQL in Supabase:
 
 ```text
 supabase/migrations/0004_discord_bot_submissions.sql
+supabase/migrations/0005_breeder_bot_submissions.sql
 ```
 
 Deploy this Edge Function:
@@ -41,9 +42,16 @@ The same `DRAGON_TRACKER_BOT_INGEST_SECRET` must be used in Supabase and the bot
 ## Bot Commands
 
 - `/dt-dragon`
+- `/dt-createdragon`
+- `/dt-eggrequest`
+- `/dt-upstat`
+- `/dt-broodpouch`
+- `/dt-currentnest`
 - `/dt-location`
 - `/dt-note`
 - `/dt-help`
+
+Optional prefix aliases are available for servers that prefer typed commands: `!createdragon`, `!eggrequest`, `!upstat`, `!broodpouch`, `!broodvault`, and `!currentnest`. Keep `ENABLE_PREFIX_COMMANDS=false` unless you also enable Discord's Message Content Intent for the bot.
 
 ## Security Rules
 
