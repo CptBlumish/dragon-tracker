@@ -107,6 +107,7 @@ function dragonPayload(interaction) {
     skin: clean(interaction.options.getString("skin"), 100),
     recessiveSkin: clean(interaction.options.getString("recessive"), 100),
     bloodline: clean(interaction.options.getString("bloodline"), 10),
+    nestRole: clean(interaction.options.getString("nest_role"), 30) || "Unknown",
     notes: clean(interaction.options.getString("notes"), 600)
   };
 }

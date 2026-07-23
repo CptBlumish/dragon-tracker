@@ -99,6 +99,7 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
       skin: clean(input.skin, 100),
       recessiveSkin: clean(input.recessiveSkin, 100),
       bloodline: clean(input.bloodline, 10),
+      nestRole: clean(input.nestRole, 30),
       notes: clean(input.notes, 600)
     };
   }

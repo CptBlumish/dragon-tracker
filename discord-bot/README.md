@@ -36,7 +36,7 @@ npm start
 ## Commands
 
 - `/dt-dragon` submits a dragon to the tracker inbox.
-- `/dt-createdragon` submits a dragon using the breeder-friendly command name.
+- `/dt-createdragon` submits a dragon using the breeder-friendly command name. Its optional `Nest role` is a Dragon Tracker setting, not a Discord server role.
 - `/dt-eggrequest` submits an egg request.
 - `/dt-upstat` submits skin upstat progress.
 - `/dt-broodpouch` submits an egg stored in a brood pouch or brood vault.

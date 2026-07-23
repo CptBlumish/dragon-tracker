@@ -4244,6 +4244,7 @@ function importDiscordDragonSubmission(record) {
     skin: text(payload.skin, 100),
     recessiveSkin: text(payload.recessiveSkin, 100),
     bloodline: text(payload.bloodline, 10),
+    nestRole: normalizeNestRole(payload.nestRole),
     tags: ["discord"],
     notes: [
       text(payload.notes, 600),

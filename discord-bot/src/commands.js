@@ -13,6 +13,7 @@ export const SPECIES_CHOICES = [
 export const SEX_CHOICES = ["Female", "Male", "Unknown"];
 export const STATUS_CHOICES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder"];
 export const BLOODLINE_CHOICES = ["F", "E", "D", "C", "B", "A"];
+export const NEST_ROLE_CHOICES = ["Unknown", "Breeder", "Pure", "Ultra Pure"];
 export const UPSTAT_STATUS_CHOICES = ["Not Started", "In Progress", "Partial A+", "Near 18A+", "18A+ Complete"];
 
 function addChoices(option, values) {
@@ -32,6 +33,7 @@ function dragonCommand(name, description) {
     .addStringOption((option) => option.setName("player").setDescription("Player name").setRequired(false).setMaxLength(80))
     .addStringOption((option) => option.setName("account").setDescription("Account name if different from dragon name").setRequired(false).setMaxLength(80))
     .addStringOption((option) => addChoices(option.setName("bloodline").setDescription("Bloodline quality").setRequired(false), BLOODLINE_CHOICES))
+    .addStringOption((option) => addChoices(option.setName("nest_role").setDescription("Tracker nest role, not a Discord server role").setRequired(false), NEST_ROLE_CHOICES))
     .addStringOption((option) => option.setName("notes").setDescription("Short notes").setRequired(false).setMaxLength(600));
 }
 
