@@ -183,10 +183,12 @@ function notePayload(interaction) {
 
 async function handleCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName === "dt-help") {
-    await interaction.reply({
-      ephemeral: true,
-      content: [
+  try {
+    // Acknowledge every slash command immediately so Discord cannot expire it.
+    await interaction.deferReply({ ephemeral: true });
+
+    if (interaction.commandName === "dt-help") {
+      await interaction.editReply([
         "Dragon Tracker bot commands:",
         "`/dt-dragon` sends a dragon record to the clan inbox.",
         "`/dt-createdragon` is the same dragon helper with a clearer breeder name.",
@@ -198,13 +200,10 @@ async function handleCommand(interaction) {
         "`/dt-location` sends a map pin to the clan inbox.",
         "`/dt-note` sends a note for review.",
         "Open Dragon Tracker > Clans > Discord Inbox to import or ignore submissions."
-      ].join("\n")
-    });
-    return;
-  }
+      ].join("\n"));
+      return;
+    }
 
-  await interaction.deferReply({ ephemeral: true });
-  try {
     if (interaction.commandName === "dt-dragon" || interaction.commandName === "dt-createdragon") {
       const payload = dragonPayload(interaction);
       await submitToTracker(interaction, "dragon", payload);
@@ -254,7 +253,14 @@ async function handleCommand(interaction) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "The tracker could not receive that submission.";
-    await interaction.editReply(`Could not send to Dragon Tracker: ${message}`);
+    console.error(`Command ${interaction.commandName} failed: ${message}`);
+    if (interaction.deferred || interaction.replied) {
+      try {
+        await interaction.editReply(`Could not send to Dragon Tracker: ${message}`);
+      } catch (replyError) {
+        console.error(`Could not report ${interaction.commandName} failure: ${replyError instanceof Error ? replyError.message : "unknown error"}`);
+      }
+    }
   }
 }
 
@@ -371,7 +377,9 @@ client.once("clientReady", () => {
   if (optionalEnv("DRAGON_TRACKER_CLAN_ID")) console.log("Default Dragon Tracker clan configured.");
 });
 client.on("interactionCreate", (interaction) => {
-  void handleCommand(interaction);
+  void handleCommand(interaction).catch((error) => {
+    console.error(`Unhandled Discord interaction error: ${error instanceof Error ? error.message : "unknown error"}`);
+  });
 });
 client.on("messageCreate", (message) => {
   void handlePrefixMessage(message);
