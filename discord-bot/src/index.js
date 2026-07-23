@@ -138,6 +138,24 @@ async function announceDragonSubmission(channel, payload, submittedBy) {
   });
 }
 
+async function announceEggRequest(channel, payload, submittedBy) {
+  if (!channel?.isTextBased?.()) return;
+  const details = [
+    `**${payload.requester}** is looking for an egg`,
+    [payload.species, payload.sex].filter(Boolean).join(" | "),
+    payload.skin ? `Skin: ${payload.skin}` : "",
+    payload.recessiveSkin ? `Recessive: ${payload.recessiveSkin}` : "",
+    payload.goal ? `Goal: ${payload.goal}` : "",
+    payload.notes ? `Notes: ${payload.notes}` : "",
+    `Submitted by: ${submittedBy || "a clan member"}`,
+    "Breeders: contact the requester when you have a suitable nest."
+  ].filter(Boolean);
+  await channel.send({
+    content: ["**Dragon Tracker - Egg Request**", ...details].join("\n"),
+    allowedMentions: { parse: [] }
+  });
+}
+
 function eggRequestPayload(interaction) {
   return {
     requester: clean(interaction.options.getString("requester", true), 100),
@@ -219,7 +237,7 @@ async function handleCommand(interaction) {
         "Dragon Tracker bot commands:",
         "`/dt-dragon` sends a dragon record to the clan inbox.",
         "`/dt-createdragon` is the same dragon helper with a clearer breeder name.",
-        "`/dt-eggrequest` sends an egg request.",
+        "`/dt-eggrequest` posts an egg request for breeders and saves it to the tracker inbox.",
         "`/dt-upstat` sends upstat progress.",
         "`/dt-upstat-progress` checks submitted progress for a species and skin.",
         "`/dt-broodpouch` sends an egg in a brood pouch or brood vault.",
@@ -245,7 +263,8 @@ async function handleCommand(interaction) {
     if (interaction.commandName === "dt-eggrequest") {
       const payload = eggRequestPayload(interaction);
       await submitToTracker(interaction, "egg_request", payload);
-      await interaction.editReply(`Sent ${payload.requester}'s egg request to the Dragon Tracker Discord Inbox.`);
+      await announceEggRequest(interaction.channel, payload, interaction.member?.displayName || interaction.user.username);
+      await interaction.editReply(`Posted ${payload.requester}'s egg request for breeders and saved it to the Dragon Tracker Discord Inbox.`);
       return;
     }
     if (interaction.commandName === "dt-upstat") {
@@ -354,7 +373,7 @@ async function handlePrefixMessage(message) {
       await announceDragonSubmission(message.channel, payload, message.member?.displayName || message.author.username);
     }
     if (command === "eggrequest") {
-      await submitPrefixMessage(message, "egg_request", {
+      const payload = {
         requester: prefixValue(args, "requester", "player") || message.member?.displayName || message.author.username,
         species: prefixValue(args, "species", "sp"),
         skin: prefixValue(args, "skin"),
@@ -362,7 +381,9 @@ async function handlePrefixMessage(message) {
         sex: prefixValue(args, "sex"),
         goal: prefixValue(args, "goal"),
         notes: prefixValue(args, "notes", "note")
-      });
+      };
+      await submitPrefixMessage(message, "egg_request", payload);
+      await announceEggRequest(message.channel, payload, message.member?.displayName || message.author.username);
     }
     if (command === "upstat") {
       await submitPrefixMessage(message, "upstat", {
