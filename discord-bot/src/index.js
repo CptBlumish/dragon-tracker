@@ -23,6 +23,19 @@ function endpointUrl() {
 }
 
 async function submitToTracker(interaction, type, payload) {
+  return trackerRequest({
+    clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+    source_key: interaction.id,
+    discord_guild_id: interaction.guildId || "",
+    discord_channel_id: interaction.channelId || "",
+    discord_user_id: interaction.user.id,
+    discord_username: interaction.member?.displayName || interaction.user.globalName || interaction.user.username,
+    type,
+    payload
+  });
+}
+
+async function trackerRequest(payload) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -33,16 +46,7 @@ async function submitToTracker(interaction, type, payload) {
         "Authorization": `Bearer ${requiredEnv("DRAGON_TRACKER_BOT_INGEST_SECRET")}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
-        source_key: interaction.id,
-        discord_guild_id: interaction.guildId || "",
-        discord_channel_id: interaction.channelId || "",
-        discord_user_id: interaction.user.id,
-        discord_username: interaction.member?.displayName || interaction.user.globalName || interaction.user.username,
-        type,
-        payload
-      })
+      body: JSON.stringify(payload)
     });
 
     const text = await response.text();
@@ -56,6 +60,39 @@ async function submitToTracker(interaction, type, payload) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function lookupUpstatProgress(interaction) {
+  const species = clean(interaction.options.getString("species", true), 80);
+  const skin = clean(interaction.options.getString("skin", true), 100);
+  return trackerRequest({
+    action: "upstat_lookup",
+    clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+    discord_guild_id: interaction.guildId || "",
+    species,
+    skin
+  });
+}
+
+function upstatProgressMessage(result) {
+  const species = clean(result?.species, 80) || "Unknown species";
+  const skin = clean(result?.skin, 100) || "Unknown skin";
+  const records = Array.isArray(result?.upstatRecords) ? result.upstatRecords : [];
+  const dragonCount = Number(result?.matchingDragonCount || 0);
+  if (!records.length) {
+    return `${species} ${skin}: no submitted upstat progress yet. ${dragonCount ? `${dragonCount} matching dragon submission${dragonCount === 1 ? "" : "s"} found.` : ""}`.trim();
+  }
+
+  const best = Math.max(...records.map((record) => Math.max(0, Math.min(18, Number(record?.aPlusCount) || 0))));
+  const latest = records[0];
+  const latestCount = Math.max(0, Math.min(18, Number(latest?.aPlusCount) || 0));
+  const latestStatus = clean(latest?.status, 40) || "In Progress";
+  const submittedBy = clean(latest?.submittedBy, 100) || "a clan member";
+  return [
+    `${species} ${skin}: best submitted progress is ${best}/18 A+.`,
+    `Latest update: ${latestCount}/18 A+ - ${latestStatus} (${submittedBy}).`,
+    `${records.length} upstat update${records.length === 1 ? "" : "s"}; ${dragonCount} matching dragon submission${dragonCount === 1 ? "" : "s"}.`
+  ].join("\n");
 }
 
 function dragonPayload(interaction) {
@@ -155,6 +192,7 @@ async function handleCommand(interaction) {
         "`/dt-createdragon` is the same dragon helper with a clearer breeder name.",
         "`/dt-eggrequest` sends an egg request.",
         "`/dt-upstat` sends upstat progress.",
+        "`/dt-upstat-progress` checks submitted progress for a species and skin.",
         "`/dt-broodpouch` sends an egg in a brood pouch or brood vault.",
         "`/dt-currentnest` sends a current nest note.",
         "`/dt-location` sends a map pin to the clan inbox.",
@@ -183,6 +221,11 @@ async function handleCommand(interaction) {
       const payload = upstatPayload(interaction);
       await submitToTracker(interaction, "upstat", payload);
       await interaction.editReply(`Sent ${payload.species} ${payload.skin} upstat progress to the Dragon Tracker Discord Inbox.`);
+      return;
+    }
+    if (interaction.commandName === "dt-upstat-progress") {
+      const result = await lookupUpstatProgress(interaction);
+      await interaction.editReply(upstatProgressMessage(result));
       return;
     }
     if (interaction.commandName === "dt-broodpouch") {
@@ -323,7 +366,7 @@ if (optionalEnv("ENABLE_PREFIX_COMMANDS", "false").toLowerCase() === "true") {
   intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
 }
 const client = new Client({ intents });
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`Dragon Tracker bot online as ${client.user?.tag || "unknown"}.`);
   if (optionalEnv("DRAGON_TRACKER_CLAN_ID")) console.log("Default Dragon Tracker clan configured.");
 });

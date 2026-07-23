@@ -1,0 +1,24 @@
+name: Supabase Heartbeat
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep Dragon Tracker sync active
+        env:
+          HEARTBEAT_SECRET: ${{ secrets.DRAGON_TRACKER_HEARTBEAT_SECRET }}
+        run: |
+          test -n "$HEARTBEAT_SECRET"
+          curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+            -X POST "https://iigmqyvtiqrbmwanfezx.supabase.co/functions/v1/discord-bot-ingest" \
+            -H "Authorization: Bearer $HEARTBEAT_SECRET" \
+            -H "Content-Type: application/json" \
+            --data '{"action":"heartbeat"}'

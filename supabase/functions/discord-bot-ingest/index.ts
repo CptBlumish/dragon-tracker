@@ -1,8 +1,9 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const INGEST_SECRET = Deno.env.get("DRAGON_TRACKER_BOT_INGEST_SECRET") || "";
+const HEARTBEAT_SECRET = Deno.env.get("DRAGON_TRACKER_HEARTBEAT_SECRET") || "";
 const MAX_TEXT = 500;
 
 type SubmissionType = "dragon" | "map_pin" | "note" | "egg_request" | "upstat" | "brood_pouch" | "current_nest";
@@ -31,18 +32,59 @@ function serviceClient() {
   return createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-function authorize(request: Request) {
-  const expected = `Bearer ${INGEST_SECRET}`;
-  if (!INGEST_SECRET || request.headers.get("Authorization") !== expected) {
-    return false;
-  }
-  return true;
+function hasBearerToken(request: Request, secret: string) {
+  return Boolean(secret) && request.headers.get("Authorization") === `Bearer ${secret}`;
 }
 
 function normalizeType(value: unknown): SubmissionType {
   const type = clean(value, 30);
   if (type === "dragon" || type === "map_pin" || type === "note" || type === "egg_request" || type === "upstat" || type === "brood_pouch" || type === "current_nest") return type;
   throw new Error("Unsupported submission type");
+}
+
+function normalizedLookupValue(value: unknown, max: number) {
+  return clean(value, max).toLocaleLowerCase();
+}
+
+async function lookupUpstatProgress(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
+  const species = clean(input.species, 80);
+  const skin = clean(input.skin, 100);
+  if (!species || !skin) throw new Error("Species and skin are required for an upstat lookup");
+
+  const { data, error } = await database
+    .from("discord_bot_submissions")
+    .select("submission_type,payload,discord_username,created_at")
+    .eq("clan_id", clanId)
+    .in("submission_type", ["dragon", "upstat"])
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+
+  const speciesKey = normalizedLookupValue(species, 80);
+  const skinKey = normalizedLookupValue(skin, 100);
+  const matching = (data ?? []).filter((record) => {
+    const payload = record.payload && typeof record.payload === "object" ? record.payload as Record<string, unknown> : {};
+    return normalizedLookupValue(payload.species, 80) === speciesKey && normalizedLookupValue(payload.skin, 100) === skinKey;
+  });
+  const upstatRecords = matching
+    .filter((record) => record.submission_type === "upstat")
+    .map((record) => {
+      const payload = record.payload && typeof record.payload === "object" ? record.payload as Record<string, unknown> : {};
+      const aPlusCount = Number(payload.aPlusCount);
+      return {
+        aPlusCount: Number.isFinite(aPlusCount) ? Math.max(0, Math.min(18, Math.round(aPlusCount))) : 0,
+        status: clean(payload.status, 40) || "In Progress",
+        submittedBy: clean(record.discord_username, 100) || "Discord user",
+        createdAt: clean(record.created_at, 80)
+      };
+    });
+
+  return {
+    species,
+    skin,
+    matchingDragonCount: matching.filter((record) => record.submission_type === "dragon").length,
+    upstatRecords
+  };
 }
 
 function normalizePayload(type: SubmissionType, input: Record<string, unknown>) {
@@ -138,23 +180,32 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
 Deno.serve(async (request) => {
   try {
     if (request.method !== "POST") return json({ error: "POST required" }, 405);
-    if (!authorize(request)) return json({ error: "Unauthorized" }, 401);
-
     const body = await request.json();
-    const type = normalizeType(body.type);
-    const clanId = requireUuid(body.clan_id);
-    const sourceKey = clean(body.source_key, 160);
+    const input = body && typeof body === "object" ? body as Record<string, unknown> : {};
+    if (clean(input.action, 40) === "heartbeat") {
+      if (!hasBearerToken(request, HEARTBEAT_SECRET)) return json({ error: "Unauthorized" }, 401);
+      return json({ ok: true, checkedAt: new Date().toISOString() });
+    }
+
+    if (!hasBearerToken(request, INGEST_SECRET)) return json({ error: "Unauthorized" }, 401);
+    const clanId = requireUuid(input.clan_id);
+    const database = serviceClient();
+    if (clean(input.action, 40) === "upstat_lookup") {
+      return json(await lookupUpstatProgress(database, clanId, input));
+    }
+
+    const type = normalizeType(input.type);
+    const sourceKey = clean(input.source_key, 160);
     if (!sourceKey) throw new Error("source_key is required");
 
-    const payload = normalizePayload(type, body.payload && typeof body.payload === "object" ? body.payload : {});
-    const database = serviceClient();
+    const payload = normalizePayload(type, input.payload && typeof input.payload === "object" ? input.payload : {});
     const { error } = await database.from("discord_bot_submissions").upsert({
       clan_id: clanId,
       source_key: sourceKey,
-      discord_guild_id: clean(body.discord_guild_id, 40),
-      discord_channel_id: clean(body.discord_channel_id, 40),
-      discord_user_id: clean(body.discord_user_id, 40),
-      discord_username: clean(body.discord_username, 100) || "Discord user",
+      discord_guild_id: clean(input.discord_guild_id, 40),
+      discord_channel_id: clean(input.discord_channel_id, 40),
+      discord_user_id: clean(input.discord_user_id, 40),
+      discord_username: clean(input.discord_username, 100) || "Discord user",
       submission_type: type,
       payload,
       status: "pending"

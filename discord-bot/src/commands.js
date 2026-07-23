@@ -82,6 +82,12 @@ export const commands = [
     .addStringOption((option) => option.setName("notes").setDescription("Progress notes").setRequired(false).setMaxLength(1000)),
 
   new SlashCommandBuilder()
+    .setName("dt-upstat-progress")
+    .setDescription("Check submitted upstat progress for a skin.")
+    .addStringOption((option) => addChoices(option.setName("species").setDescription("Dragon species").setRequired(true), SPECIES_CHOICES))
+    .addStringOption((option) => option.setName("skin").setDescription("Visible skin being upstatted").setRequired(true).setMaxLength(100)),
+
+  new SlashCommandBuilder()
     .setName("dt-broodpouch")
     .setDescription("Submit an egg in a brood pouch or brood vault.")
     .addStringOption((option) => option.setName("name").setDescription("Egg or account name").setRequired(true).setMaxLength(80))
