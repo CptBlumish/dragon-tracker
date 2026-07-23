@@ -1,7 +1,8 @@
 import "dotenv/config";
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, PermissionFlagsBits } from "discord.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_BREEDER_ROLE_NAME = "Breeder";
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -112,6 +113,31 @@ function dragonPayload(interaction) {
   };
 }
 
+function hasBreederAccess(member, permissions) {
+  if (permissions?.has?.(PermissionFlagsBits.Administrator)) return true;
+  const requiredRoleId = optionalEnv("DISCORD_BREEDER_ROLE_ID");
+  const roles = member?.roles?.cache;
+  if (!roles) return false;
+  if (requiredRoleId) return roles.has(requiredRoleId);
+  return roles.some((role) => role.name === DEFAULT_BREEDER_ROLE_NAME);
+}
+
+async function announceDragonSubmission(channel, payload, submittedBy) {
+  if (!channel?.isTextBased?.()) return;
+  const details = [
+    `**${payload.name}**`,
+    [payload.species, payload.sex, payload.status].filter(Boolean).join(" | "),
+    payload.skin ? `Skin: ${payload.skin}` : "",
+    payload.recessiveSkin ? `Recessive: ${payload.recessiveSkin}` : "",
+    payload.nestRole && payload.nestRole !== "Unknown" ? `Nest role: ${payload.nestRole}` : "",
+    `Submitted by: ${submittedBy || "a breeder"}`
+  ].filter(Boolean);
+  await channel.send({
+    content: [`**Dragon Tracker - Breeder Submission**`, ...details].join("\n"),
+    allowedMentions: { parse: [] }
+  });
+}
+
 function eggRequestPayload(interaction) {
   return {
     requester: clean(interaction.options.getString("requester", true), 100),
@@ -206,8 +232,13 @@ async function handleCommand(interaction) {
     }
 
     if (interaction.commandName === "dt-dragon" || interaction.commandName === "dt-createdragon") {
+      if (!hasBreederAccess(interaction.member, interaction.memberPermissions)) {
+        await interaction.editReply("Only members with the Discord `Breeder` role can submit dragons. Ask a server administrator to assign it.");
+        return;
+      }
       const payload = dragonPayload(interaction);
       await submitToTracker(interaction, "dragon", payload);
+      await announceDragonSubmission(interaction.channel, payload, interaction.member?.displayName || interaction.user.username);
       await interaction.editReply(`Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
       return;
     }
@@ -302,7 +333,11 @@ async function handlePrefixMessage(message) {
   const { command, args } = parsePrefixArgs(message.content);
   try {
     if (command === "createdragon") {
-      await submitPrefixMessage(message, "dragon", {
+      if (!hasBreederAccess(message.member, message.member?.permissions)) {
+        await message.reply("Only members with the Discord `Breeder` role can submit dragons. Ask a server administrator to assign it.");
+        return;
+      }
+      const payload = {
         name: prefixValue(args, "name", "dragon", "account"),
         accountName: prefixValue(args, "account", "name", "dragon"),
         playerName: prefixValue(args, "player", "user") || message.member?.displayName || message.author.username,
@@ -312,8 +347,11 @@ async function handlePrefixMessage(message) {
         skin: prefixValue(args, "skin"),
         recessiveSkin: prefixValue(args, "recessive", "res"),
         bloodline: prefixValue(args, "bloodline", "bl"),
+        nestRole: prefixValue(args, "nest_role", "nestrole", "role") || "Unknown",
         notes: prefixValue(args, "notes", "note")
-      });
+      };
+      await submitPrefixMessage(message, "dragon", payload);
+      await announceDragonSubmission(message.channel, payload, message.member?.displayName || message.author.username);
     }
     if (command === "eggrequest") {
       await submitPrefixMessage(message, "egg_request", {
