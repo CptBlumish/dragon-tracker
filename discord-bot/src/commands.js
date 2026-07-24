@@ -96,6 +96,18 @@ export const commands = [
     .addStringOption((option) => option.setName("skin").setDescription("Visible skin being upstatted").setRequired(true).setMaxLength(100)),
 
   new SlashCommandBuilder()
+    .setName("dt-finddragon")
+    .setDescription("Search dragons shared with this clan.")
+    .addStringOption((option) => addChoices(option.setName("species").setDescription("Dragon species").setRequired(false), SPECIES_CHOICES))
+    .addStringOption((option) => option.setName("skin").setDescription("Visible skin contains").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => option.setName("recessive").setDescription("Recessive skin contains").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => addChoices(option.setName("sex").setDescription("Dragon sex").setRequired(false), SEX_CHOICES))
+    .addStringOption((option) => addChoices(option.setName("nest_role").setDescription("Nest role").setRequired(false), NEST_ROLE_CHOICES))
+    .addStringOption((option) => option.setName("player").setDescription("Player name contains").setRequired(false).setMaxLength(80))
+    .addStringOption((option) => option.setName("account").setDescription("Account name contains").setRequired(false).setMaxLength(80))
+    .addIntegerOption((option) => option.setName("limit").setDescription("Number of matches to show").setRequired(false).setMinValue(1).setMaxValue(12)),
+
+  new SlashCommandBuilder()
     .setName("dt-broodpouch")
     .setDescription("Submit an egg in a brood pouch or brood vault.")
     .addStringOption((option) => option.setName("name").setDescription("Egg or account name").setRequired(true).setMaxLength(80))
