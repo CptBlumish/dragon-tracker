@@ -280,11 +280,10 @@ async function createEggMatchNotifications(
   if (dragonError) throw dragonError;
 
   const requestPayload = payloadRecord(eggRequest.payload);
-  const requesterId = clean(eggRequest.discord_user_id, 40);
   const notifications: Array<Record<string, unknown>> = [];
   for (const dragon of dragons ?? []) {
     const recipientDiscordUserId = clean(dragon.discord_user_id, 40);
-    if (!recipientDiscordUserId || recipientDiscordUserId === requesterId || !optedInUserIds.has(recipientDiscordUserId)) continue;
+    if (!recipientDiscordUserId || !optedInUserIds.has(recipientDiscordUserId)) continue;
     const dragonPayload = payloadRecord(dragon.payload);
     if (!isEggRequestMatch(requestPayload, dragonPayload)) continue;
 

@@ -360,6 +360,13 @@ async function deliverEggMatchNotifications(submissionResult) {
   const notifications = Array.isArray(submissionResult?.eggMatchNotifications)
     ? submissionResult.eggMatchNotifications.filter((item) => item?.notificationSourceKey && item?.recipientDiscordUserId)
     : [];
+  const result = {
+    matchingDragons: notifications.length,
+    matchingOwners: 0,
+    deliveredOwners: 0,
+    blockedOwners: 0,
+    failedOwners: 0
+  };
   const recipientGroups = new Map();
   for (const notification of notifications) {
     const key = clean(notification.recipientDiscordUserId, 40);
@@ -368,21 +375,40 @@ async function deliverEggMatchNotifications(submissionResult) {
     group.push(notification);
     recipientGroups.set(key, group);
   }
+  result.matchingOwners = recipientGroups.size;
 
   const deliveries = await mapWithConcurrency([...recipientGroups.entries()], 3, async ([recipientId, matches]) => {
     try {
       const recipient = await client.users.fetch(recipientId);
       await recipient.send({ content: eggMatchDmMessage(matches), allowedMentions: { parse: [] } });
       await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, "sent")));
-      return true;
+      return "sent";
     } catch (error) {
       const status = dmFailureStatus(error);
       const reason = error instanceof Error ? error.message : "Discord could not deliver the direct message";
       await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, status, reason)));
-      return false;
+      console.error(`Could not DM egg-request match alert to ${recipientId}: ${reason}`);
+      return status;
     }
   });
-  return deliveries.filter(Boolean).length;
+  for (const status of deliveries) {
+    if (status === "sent") result.deliveredOwners += 1;
+    if (status === "blocked") result.blockedOwners += 1;
+    if (status === "failed") result.failedOwners += 1;
+  }
+  return result;
+}
+
+function eggMatchDeliveryMessage(delivery) {
+  if (!delivery?.matchingDragons) return " No alert-eligible submitted dragons matched this request.";
+  const matchLabel = `${delivery.matchingDragons} matching submitted dragon${delivery.matchingDragons === 1 ? "" : "s"}`;
+  if (delivery.deliveredOwners) {
+    return ` Found ${matchLabel} and sent DMs to ${delivery.deliveredOwners} owner${delivery.deliveredOwners === 1 ? "" : "s"}.`;
+  }
+  if (delivery.blockedOwners) {
+    return ` Found ${matchLabel}, but Discord blocked the DM. The matching owner needs to allow direct messages from server members.`;
+  }
+  return ` Found ${matchLabel}, but the DM could not be delivered. Check the bot service log for the Discord error.`;
 }
 
 async function mapWithConcurrency(items, concurrency, worker) {
@@ -533,8 +559,8 @@ async function handleCommand(interaction) {
       const payload = eggRequestPayload(interaction);
       const submissionResult = await submitToTracker(interaction, "egg_request", payload);
       await announceEggRequest(interaction.channel, payload, interaction.member?.displayName || interaction.user.username);
-      const notifiedOwners = await deliverEggMatchNotifications(submissionResult);
-      await interaction.editReply(`Posted ${payload.requester}'s egg request for breeders and saved it to the Dragon Tracker Discord Inbox.${notifiedOwners ? ` Sent private match alerts to ${notifiedOwners} opted-in dragon owner${notifiedOwners === 1 ? "" : "s"}.` : ""}`);
+      const delivery = await deliverEggMatchNotifications(submissionResult);
+      await interaction.editReply(`Posted ${payload.requester}'s egg request for breeders and saved it to the Dragon Tracker Discord Inbox.${eggMatchDeliveryMessage(delivery)}`);
       return;
     }
     if (interaction.commandName === "dt-upstat") {
