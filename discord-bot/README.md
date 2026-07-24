@@ -39,6 +39,22 @@ npm run deploy
 
 The task writes service-only diagnostics to `%LOCALAPPDATA%\Dragon Tracker\discord-bot.log`. The current log rotates once it reaches 2 MB, so ordinary command traffic does not leave an unbounded file behind.
 
+## Automated test bank
+
+For command testing, the test-bank tool submits every valid visible/recessive skin pair for all seven species. It rotates sex, status, nest role, and bloodline values, then adds one upstat record for every species/skin plus brood-pouch and current-nest samples. Records are clearly labeled `[TEST]` and remain in the clan's Discord inbox until they are ignored or imported.
+
+Run it from `discord-bot` with a Discord user id that should own the test records:
+
+```powershell
+npm run seed:test-data -- --user-id YOUR_DISCORD_USER_ID
+```
+
+The matching owner must use `/dt-alerts` with `Enabled` before testing egg-request DMs. To remove only records created by this tool later:
+
+```powershell
+npm run clear:test-data
+```
+
 ## Commands
 
 - `/dt-dragon` submits a dragon to the tracker inbox.
@@ -61,6 +77,6 @@ Prefix commands such as `!createdragon`, `!eggrequest`, `!upstat`, `!broodpouch`
 - Alerts are off until the dragon owner runs `/dt-alerts` with `Enabled`.
 - The bot only checks dragons submitted through this bot for the same clan. It does not scan Discord messages, Steam accounts, or private local tracker data.
 - Dragon search includes records deliberately shared to the clan from the app and bot-submitted dragons waiting in the clan inbox. The bot accepts commands only in its configured Discord server.
-- A requester is never alerted about their own submitted dragons.
+- An opted-in owner can be alerted about their own request when their submitted dragon matches, which is useful for testing and request confirmation.
 - One request produces at most one DM per matching dragon owner, even when several of their dragons match.
 - The bot records only the minimum delivery state needed to prevent repeat alerts for the same request and dragon. It never stores Discord credentials, Steam credentials, or DM contents.

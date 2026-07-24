@@ -5,6 +5,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const INGEST_SECRET = Deno.env.get("DRAGON_TRACKER_BOT_INGEST_SECRET") || "";
 const HEARTBEAT_SECRET = Deno.env.get("DRAGON_TRACKER_HEARTBEAT_SECRET") || "";
 const MAX_TEXT = 500;
+const CLAN_DRAGON_QUERY_LIMIT = 2500;
 
 type SubmissionType = "dragon" | "map_pin" | "note" | "egg_request" | "upstat" | "brood_pouch" | "current_nest";
 
@@ -139,7 +140,7 @@ async function searchClanDragons(database: ReturnType<typeof serviceClient>, cla
       .select("summary,updated_at")
       .eq("clan_id", clanId)
       .order("updated_at", { ascending: false })
-      .limit(1500),
+      .limit(CLAN_DRAGON_QUERY_LIMIT),
     database
       .from("discord_bot_submissions")
       .select("payload,created_at")
@@ -147,7 +148,7 @@ async function searchClanDragons(database: ReturnType<typeof serviceClient>, cla
       .eq("submission_type", "dragon")
       .neq("status", "ignored")
       .order("created_at", { ascending: false })
-      .limit(1500)
+      .limit(CLAN_DRAGON_QUERY_LIMIT)
   ]);
   if (sharedResult.error) throw sharedResult.error;
   if (submittedResult.error) throw submittedResult.error;
@@ -261,7 +262,7 @@ async function createEggMatchNotifications(
     .eq("submission_type", "note")
     .eq("status", "ignored")
     .like("source_key", "egg-alert-pref:%")
-    .limit(1000);
+    .limit(CLAN_DRAGON_QUERY_LIMIT);
   if (preferenceError) throw preferenceError;
   const optedInUserIds = new Set((preferences ?? [])
     .filter((row) => payloadRecord(row.payload).kind === "egg_match_alert_preference" && Boolean(payloadRecord(row.payload).enabled))
@@ -276,7 +277,7 @@ async function createEggMatchNotifications(
     .eq("submission_type", "dragon")
     .neq("status", "ignored")
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(CLAN_DRAGON_QUERY_LIMIT);
   if (dragonError) throw dragonError;
 
   const requestPayload = payloadRecord(eggRequest.payload);
@@ -492,6 +493,16 @@ Deno.serve(async (request) => {
     const clanId = requireUuid(input.clan_id);
     const database = serviceClient();
     const action = clean(input.action, 40);
+    if (action === "test_data_cleanup") {
+      const { data, error } = await database
+        .from("discord_bot_submissions")
+        .delete()
+        .eq("clan_id", clanId)
+        .like("source_key", "test-bank:%")
+        .select("id");
+      if (error) throw error;
+      return json({ ok: true, deleted: data?.length ?? 0 });
+    }
     if (action === "upstat_lookup") {
       return json(await lookupUpstatProgress(database, clanId, input));
     }
