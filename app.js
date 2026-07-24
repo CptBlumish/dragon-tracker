@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.6";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.8";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -135,7 +135,10 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "fourth", label: "4th pointed" },
   { value: "elder", label: "Elders" }
 ];
+const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
+const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added optional automatic import for your own Discord bot submissions, with imported dragons syncing across your tracker installs.",
   "Added breeder-focused Discord bot submissions and a Pure-only clan library filter.",
   "Made elder tick timers fully local so Steam is no longer required.",
   "Added compact sex markers to account species grid cells.",
@@ -635,6 +638,7 @@ function createDefaultState() {
       species: DEFAULT_SPECIES,
       statFields: STAT_FIELDS,
       skipClanShareConfirmation: false,
+      autoImportOwnDiscordSubmissions: false,
       elderTickStartedAt: "",
       elderTickAccounts: {},
       favoriteMapAreas: [],
@@ -678,6 +682,7 @@ function normalizeState(input = {}) {
       species: mergeSpecies(input.settings?.species || []),
       statFields: STAT_FIELDS,
       skipClanShareConfirmation: Boolean(input.settings?.skipClanShareConfirmation),
+      autoImportOwnDiscordSubmissions: Boolean(input.settings?.autoImportOwnDiscordSubmissions),
       elderTickStartedAt: normalizeElderTickStartedAt(input.settings?.elderTickStartedAt),
       elderTickAccounts: normalizeElderTickAccounts(input.settings?.elderTickAccounts, accounts),
       favoriteMapAreas: normalizeFavoriteMapAreas(input.settings?.favoriteMapAreas),
@@ -823,6 +828,7 @@ function mergeImportedState(currentInput, incomingInput) {
       species: mergeSpecies([...(current.settings?.species || []), ...(incoming.settings?.species || [])]),
       statFields: STAT_FIELDS,
       skipClanShareConfirmation: Boolean(current.settings?.skipClanShareConfirmation || incoming.settings?.skipClanShareConfirmation),
+      autoImportOwnDiscordSubmissions: Boolean(current.settings?.autoImportOwnDiscordSubmissions),
       elderTickStartedAt: current.settings?.elderTickStartedAt || incoming.settings?.elderTickStartedAt || "",
       elderTickAccounts: mergeElderTickAccounts(current.settings?.elderTickAccounts, incoming.settings?.elderTickAccounts),
       favoriteMapAreas: mergeUniqueStrings(current.settings?.favoriteMapAreas, incoming.settings?.favoriteMapAreas)
@@ -3665,6 +3671,69 @@ function reconcileActiveClan() {
   else localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
 }
 
+function connectedDiscordUserId(user = clanUi.user) {
+  const identities = Array.isArray(user?.identities) ? user.identities : [];
+  const discordIdentity = identities.find((identity) => text(identity?.provider).toLowerCase() === "discord");
+  const candidates = [
+    discordIdentity?.identity_data?.provider_id,
+    discordIdentity?.identity_data?.sub,
+    discordIdentity?.identity_data?.id,
+    user?.user_metadata?.provider_id,
+    user?.user_metadata?.sub,
+    user?.user_metadata?.id
+  ];
+  return candidates.map(text).find((value) => /^\d{10,24}$/.test(value)) || "";
+}
+
+function discordSubmissionSourceId(record) {
+  return `discord-submission:${text(record?.id || record)}`;
+}
+
+function discordSubmissionTag(record) {
+  return `discord:${text(record?.id || record)}`;
+}
+
+function importedDragonForDiscordSubmission(record) {
+  const marker = discordSubmissionTag(record);
+  return state.dragons.find((dragon) => Array.isArray(dragon.tags) && dragon.tags.includes(marker)) || null;
+}
+
+function isOwnDiscordSubmission(record, discordUserId = connectedDiscordUserId()) {
+  return Boolean(discordUserId && text(record?.discord_user_id) === discordUserId);
+}
+
+async function syncImportedDiscordDragon(clanId, record, dragon) {
+  if (!clanId || !dragon || !CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record?.submission_type))) return;
+  await clanSync.shareDragon(clanId, discordSubmissionSourceId(record), clanDragonSummary(dragon));
+}
+
+async function autoImportOwnDiscordSubmissions(clanId, records) {
+  if (!state.settings.autoImportOwnDiscordSubmissions || !clanId) return new Set();
+  const discordUserId = connectedDiscordUserId();
+  if (!discordUserId) return new Set();
+
+  const importedIds = new Set();
+  const ownSubmissions = Array.isArray(records)
+    ? records.filter((record) => (
+      AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES.has(text(record?.submission_type))
+      && isOwnDiscordSubmission(record, discordUserId)
+    ))
+    : [];
+
+  for (const record of ownSubmissions) {
+    try {
+      const imported = importDiscordSubmission(record);
+      await syncImportedDiscordDragon(clanId, record, imported);
+      await clanSync.resolveDiscordSubmission(record.id, "imported");
+      importedIds.add(record.id);
+    } catch (error) {
+      console.warn("Could not automatically import a Discord submission.", error);
+    }
+  }
+
+  return importedIds;
+}
+
 async function refreshClanSync(options = {}) {
   if (!clanSync || !clanSync.isConfigured()) {
     clanUi.user = null;
@@ -3722,6 +3791,12 @@ async function refreshClanSync(options = {}) {
       clanUi.sharedDragons = Array.isArray(sharedDragons) ? sharedDragons : [];
       clanUi.sharedPins = Array.isArray(sharedPins) ? sharedPins : [];
       clanUi.discordSubmissions = Array.isArray(discordSubmissions) ? discordSubmissions : [];
+      const autoImportedIds = await autoImportOwnDiscordSubmissions(clanUi.activeClanId, clanUi.discordSubmissions);
+      if (autoImportedIds.size) {
+        clanUi.discordSubmissions = clanUi.discordSubmissions.filter((record) => !autoImportedIds.has(record.id));
+        const refreshedSharedDragons = await clanSync.getSharedDragons(clanUi.activeClanId);
+        clanUi.sharedDragons = Array.isArray(refreshedSharedDragons) ? refreshedSharedDragons : clanUi.sharedDragons;
+      }
       const localClanChanges = materializeClanSharedDragons(clanUi.activeClanId, clanUi.sharedDragons);
       if (localClanChanges && !document.querySelector("dialog[open]")) renderAll();
     } else {
@@ -3759,7 +3834,7 @@ function materializeClanSharedDragons(clanId, records) {
   const remoteKeys = new Set();
   let changed = false;
   const remoteRecords = Array.isArray(records)
-    ? records.filter((record) => record?.source_user_id && record.source_user_id !== clanUi.user?.id)
+    ? records.filter((record) => record?.source_user_id)
     : [];
 
   remoteRecords.forEach((record) => {
@@ -3871,9 +3946,7 @@ function ensureClanSharedAccount(username, accountName) {
 function mergeClanSharedDragon(existing, incoming, rawSummary) {
   const summary = rawSummary && typeof rawSummary === "object" ? rawSummary : {};
   const has = (key) => Object.prototype.hasOwnProperty.call(summary, key);
-  const shareKeys = existing.clanImported
-    ? [...new Set([...clanShareKeysForDragon(existing), incoming.clanShareKey].filter(Boolean))]
-    : clanShareKeysForDragon(existing);
+  const shareKeys = [...new Set([...clanShareKeysForDragon(existing), incoming.clanShareKey].filter(Boolean))];
   const useIncomingDetails = !existing.clanImported
     || new Date(incoming.clanShareUpdatedAt || 0).getTime() >= new Date(existing.clanShareUpdatedAt || 0).getTime();
   const next = {
@@ -4044,6 +4117,10 @@ function renderClans() {
         <div><dt>Identity</dt><dd>Discord verified</dd></div>
         <div><dt>Data default</dt><dd>Local only</dd></div>
       </dl>
+      <label class="clan-automation-toggle">
+        <input type="checkbox" data-clan-action="toggle-auto-import-own-discord-submissions"${state.settings.autoImportOwnDiscordSubmissions ? " checked" : ""}>
+        <span><strong>Auto-import my Discord bot submissions</strong><small>Only records submitted by this connected Discord account are imported. Dragon and brood-pouch entries are also synced to the clan library for your other tracker installs.</small></span>
+      </label>
       ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
       <div class="card-actions">
         <button class="tool-button" type="button" data-clan-action="refresh">Refresh</button>
@@ -4097,7 +4174,7 @@ function renderClans() {
         <div class="card-title"><h2>Discord Inbox</h2><p class="card-subtitle">Slash command submissions waiting for review</p></div>
         <span class="pill">${clanUi.discordSubmissions.length} pending</span>
       </div>
-      <p class="clan-copy">The Discord bot can collect dragon and location details from clan channels. Import only the records you want saved to this device.</p>
+      <p class="clan-copy">The Discord bot can collect dragon and location details from clan channels. Imported dragons and brood-pouch eggs are synced to the clan library so they carry to your other tracker installs.</p>
       <div class="clan-share-list">${discordSubmissionRows}</div>
     </section>
   `;
@@ -4213,6 +4290,10 @@ function discordSubmissionById(id) {
 }
 
 function importDiscordSubmission(record) {
+  if (CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record?.submission_type))) {
+    const existing = importedDragonForDiscordSubmission(record);
+    if (existing) return existing;
+  }
   if (record.submission_type === "dragon") return importDiscordDragonSubmission(record);
   if (record.submission_type === "map_pin") return importDiscordMapPinSubmission(record);
   if (record.submission_type === "upstat") return importDiscordUpstatSubmission(record);
@@ -4245,7 +4326,7 @@ function importDiscordDragonSubmission(record) {
     recessiveSkin: text(payload.recessiveSkin, 100),
     bloodline: text(payload.bloodline, 10),
     nestRole: normalizeNestRole(payload.nestRole),
-    tags: ["discord"],
+    tags: ["discord", discordSubmissionTag(record)],
     notes: [
       text(payload.notes, 600),
       `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
@@ -4330,7 +4411,7 @@ function importDiscordBroodPouchSubmission(record) {
     status: "Hatchie",
     skin: text(payload.skin, 100),
     recessiveSkin: text(payload.recessiveSkin, 100),
-    tags: ["discord", "egg"],
+    tags: ["discord", "egg", discordSubmissionTag(record)],
     notes: [
       text(payload.notes, 1000),
       `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
@@ -4443,14 +4524,30 @@ async function handleClanAction(event) {
       showToast("Share confirmations restored");
       return;
     }
+    if (action === "toggle-auto-import-own-discord-submissions") {
+      const enabled = Boolean(button.checked);
+      if (enabled && !connectedDiscordUserId()) {
+        button.checked = false;
+        throw new Error("Dragon Tracker could not read this Discord account ID. Sign out of clan sync, then connect Discord again.");
+      }
+      state.settings.autoImportOwnDiscordSubmissions = enabled;
+      saveState();
+      if (enabled) await refreshClanSync({ quiet: true });
+      renderClans();
+      showToast(enabled ? "Your Discord bot submissions will now import automatically." : "Automatic Discord imports paused.");
+      return;
+    }
     if (action === "import-discord-submission") {
       const record = discordSubmissionById(button.dataset.id);
       if (!record) throw new Error("That Discord submission is no longer available.");
-      importDiscordSubmission(record);
+      const imported = importDiscordSubmission(record);
+      await syncImportedDiscordDragon(clanUi.activeClanId, record, imported);
       await clanSync.resolveDiscordSubmission(record.id, "imported");
       await refreshClanSync({ quiet: true });
       renderAll();
-      showToast("Discord submission imported");
+      showToast(CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record.submission_type))
+        ? "Discord dragon imported and synced to your clan library"
+        : "Discord submission imported");
       return;
     }
     if (action === "ignore-discord-submission") {
@@ -4658,7 +4755,11 @@ async function shareDragonWithClan(dragon) {
 
 function isDragonSharedWithActiveClan(dragon) {
   if (!dragon || !canShareWithActiveClan()) return false;
-  return clanUi.sharedDragons.some((record) => record.source_user_id === clanUi.user?.id && record.source_local_id === dragon.id);
+  const shareKeys = clanShareKeysForDragon(dragon);
+  return clanUi.sharedDragons.some((record) => (
+    record.source_user_id === clanUi.user?.id
+    && (record.source_local_id === dragon.id || shareKeys.includes(clanSharedDragonKey(clanUi.activeClanId, record)))
+  ));
 }
 
 async function shareAccountWithClan(account) {
