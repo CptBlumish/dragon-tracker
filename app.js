@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.9";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.0";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -124,7 +124,7 @@ const MAP_REFERENCE_AREAS = [
   { id: "far-pond", region: "Corners", name: "Far Pond", files: ["farpnd.png"], button: [3.2, 5.1, 9, 4.5] }
 ];
 const DEFAULT_TAB = "home";
-const TAB_NAMES = ["home", "dragons", "players", "nesting", "brood-pouch", "skins", "upstats", "map", "clans", "settings"];
+const TAB_NAMES = ["home", "dragons", "players", "breeding", "skins", "map", "clans", "settings"];
 const ACTIVE_CLAN_STORAGE_KEY = "dragon-tracker.active-clan.v1";
 const CLAN_LIBRARY_SOURCE_FILTERS = [
   { value: "", label: "All shared dragons" },
@@ -138,6 +138,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Simplified navigation by grouping the Nesting Planner and Brood Pouch under Breeding, and Upstats under Dragons.",
+  "Moved elder tick controls onto Home and split Settings into General, Backup, Sync, and Diagnostics views.",
   "Added optional automatic import for your own Discord bot submissions, with imported dragons syncing across your tracker installs.",
   "Added breeder-focused Discord bot submissions and a Pure-only clan library filter.",
   "Made elder tick timers fully local so Steam is no longer required.",
@@ -393,6 +395,9 @@ const STARTER_SKINS = buildStarterSkins();
 
 let state = loadState();
 let currentTab = DEFAULT_TAB;
+let currentDragonView = "collection";
+let currentBreedingView = "planner";
+let currentSettingsView = "general";
 let toastTimer = null;
 let autoSyncTimer = null;
 let elderTickTimer = null;
@@ -562,7 +567,7 @@ function init() {
   startAutoSync();
   renderAll();
   startElderTickCountdown();
-  setTab(startupTab(), { replaceHash: true });
+  setTab(startupTab(), { replaceHash: true, preserveView: true });
   bindDesktopAuthCallbacks();
   bindBrowserAuthCallback();
   void refreshClanSync({ quiet: true });
@@ -1509,7 +1514,7 @@ function startElderTickCountdown() {
   elderTickTimer = setInterval(() => {
     renderElderTick();
     renderElderTickAccountList();
-    if (currentTab === "brood-pouch") renderBroodPouch();
+    if (currentTab === "breeding" && currentBreedingView === "brood-pouch") renderBroodPouch();
   }, 1000);
 }
 
@@ -1534,8 +1539,17 @@ function syncStateFromStorage() {
 }
 
 function bindEvents() {
-  els.tabs.forEach((tab) => tab.addEventListener("click", () => setTab(tab.dataset.tab, { updateHash: true })));
-  window.addEventListener("hashchange", () => setTab(startupTab(), { replaceHash: false }));
+  els.tabs.forEach((tab) => tab.addEventListener("click", () => {
+    const tabName = tab.dataset.tab;
+    if (tabName === "dragons") return setDragonView("collection", { updateHash: true });
+    if (tabName === "breeding") return setBreedingView("planner", { updateHash: true });
+    if (tabName === "settings") return setSettingsView("general", { updateHash: true });
+    setTab(tabName, { updateHash: true });
+  }));
+  window.addEventListener("hashchange", () => setTab(startupTab(), { replaceHash: false, preserveView: true }));
+  document.querySelectorAll("[data-dragon-view]").forEach((button) => button.addEventListener("click", () => setDragonView(button.dataset.dragonView, { updateHash: true })));
+  document.querySelectorAll("[data-breeding-view]").forEach((button) => button.addEventListener("click", () => setBreedingView(button.dataset.breedingView, { updateHash: true })));
+  document.querySelectorAll("[data-settings-view]").forEach((button) => button.addEventListener("click", () => setSettingsView(button.dataset.settingsView, { updateHash: true })));
   els.globalSearch?.addEventListener("input", renderGlobalSearch);
   els.globalSearchResults?.addEventListener("click", handleGlobalSearchAction);
   document.addEventListener("click", handleDocumentSearchClose);
@@ -1761,15 +1775,17 @@ function renderAll() {
 
 function renderCurrentTab() {
   if (currentTab === "home") renderHome();
-  if (currentTab === "dragons") renderDragons();
+  if (currentTab === "dragons") {
+    renderDragons();
+    renderUpstats();
+  }
   if (currentTab === "players") renderAccounts();
-  if (currentTab === "nesting") {
+  if (currentTab === "breeding") {
     renderNestingOptions();
     renderNesting();
+    renderBroodPouch();
   }
-  if (currentTab === "brood-pouch") renderBroodPouch();
   if (currentTab === "skins") renderSkins();
-  if (currentTab === "upstats") renderUpstats();
   if (currentTab === "map") renderMap();
   if (currentTab === "clans") renderClans();
   if (currentTab === "settings") renderBackup();
@@ -1880,7 +1896,7 @@ function globalSearchResults(query) {
 
   state.upstats.forEach((upstat) => {
     if (!includes(upstat.species, upstat.skin, upstat.status, upstat.notes)) return;
-    matches.push({ tab: "upstats", kind: "upstat", id: upstat.id, label: `${upstat.species} ${upstat.skin}`, detail: compactJoin([upstat.status, `${upstat.aPlusCount}/18 A+`]), query: upstat.skin });
+    matches.push({ tab: "dragons", kind: "upstat", id: upstat.id, label: `${upstat.species} ${upstat.skin}`, detail: compactJoin([upstat.status, `${upstat.aPlusCount}/18 A+`]), query: upstat.skin });
   });
 
   MAP_REFERENCE_AREAS.forEach((area) => {
@@ -1907,7 +1923,8 @@ function handleGlobalSearchAction(event) {
   els.globalSearch.value = "";
   els.globalSearchResults.hidden = true;
   els.globalSearchResults.innerHTML = "";
-  setTab(tab, { updateHash: true });
+  if (kind === "upstat") setDragonView("upstats", { updateHash: true });
+  else setTab(tab, { updateHash: true });
 
   if (tab === "dragons" && els.dragonSearch) {
     els.dragonSearch.value = query;
@@ -1923,7 +1940,7 @@ function handleGlobalSearchAction(event) {
     els.skinSearch.value = query;
     renderSkins();
   }
-  if (tab === "upstats" && els.upstatSearch) {
+  if (kind === "upstat" && els.upstatSearch) {
     els.upstatSearch.value = query;
     renderUpstats();
   }
@@ -2112,6 +2129,8 @@ function renderAccounts() {
 function renderHome() {
   if (!els.homeAccountList) return;
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect);
+  renderElderTick();
+  renderElderTickAccountList();
   if (!state.accounts.length) {
     renderAccountSpeciesMatrix([], els.homeAccountSpeciesMatrix);
     if (els.homePlayerSummary) els.homePlayerSummary.textContent = "Add a player to choose a personal home view.";
@@ -5510,9 +5529,12 @@ function elderTickAccountRemainingMs(accountId, now = Date.now()) {
 
 function renderElderTickAccountList() {
   if (!els.elderTickAccountList) return;
-  const accounts = [...state.accounts].sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+  const personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
+  const accounts = [...state.accounts]
+    .filter((account) => !personalPlayer || account.username === personalPlayer)
+    .sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
   if (!accounts.length) {
-    els.elderTickAccountList.innerHTML = `<p class="account-empty">Add accounts to track account-specific elder timers.</p>`;
+    els.elderTickAccountList.innerHTML = `<p class="account-empty">Add an account for your Home player to track its elder timer.</p>`;
     return;
   }
 
@@ -7427,21 +7449,123 @@ function downloadBlob(filename, content, type) {
 function startupTab() {
   const hash = window.location.hash.replace("#", "").trim();
   if (hash === "accounts") return "players";
-  if (hash === "backup") return "settings";
+  if (hash === "nesting") {
+    currentBreedingView = "planner";
+    return "breeding";
+  }
+  if (hash === "brood-pouch") {
+    currentBreedingView = "brood-pouch";
+    return "breeding";
+  }
+  if (hash === "upstats") {
+    currentDragonView = "upstats";
+    return "dragons";
+  }
+  if (hash === "dragons") {
+    currentDragonView = "collection";
+    return "dragons";
+  }
+  if (hash === "backup") {
+    currentSettingsView = "backup";
+    return "settings";
+  }
+  if (hash === "sync") {
+    currentSettingsView = "sync";
+    return "settings";
+  }
+  if (hash === "diagnostics") {
+    currentSettingsView = "diagnostics";
+    return "settings";
+  }
+  if (hash === "settings") {
+    currentSettingsView = "general";
+    return "settings";
+  }
   return TAB_NAMES.includes(hash) ? hash : DEFAULT_TAB;
+}
+
+function tabHash(tabName) {
+  if (tabName === "dragons") return currentDragonView === "upstats" ? "upstats" : "dragons";
+  if (tabName === "breeding") return currentBreedingView === "brood-pouch" ? "brood-pouch" : "nesting";
+  if (tabName === "settings") {
+    if (currentSettingsView === "backup") return "backup";
+    if (currentSettingsView === "sync") return "sync";
+    if (currentSettingsView === "diagnostics") return "diagnostics";
+  }
+  return tabName;
+}
+
+function syncWorkspaceView(kind, value) {
+  const viewKey = `${kind}View`;
+  const panelKey = `${kind}ViewPanel`;
+  document.querySelectorAll(`[data-${kind}-view]`).forEach((button) => {
+    const active = button.dataset[viewKey] === value;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll(`[data-${kind}-view-panel]`).forEach((panel) => {
+    const active = panel.dataset[panelKey] === value;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+}
+
+function setDragonView(view, options = {}) {
+  currentDragonView = view === "upstats" ? "upstats" : "collection";
+  syncWorkspaceView("dragon", currentDragonView);
+  if (currentTab !== "dragons") {
+    setTab("dragons", { ...options, preserveView: true });
+    return;
+  }
+  if (options.updateHash && window.location.hash !== `#${tabHash("dragons")}`) window.location.hash = tabHash("dragons");
+  renderDragons();
+  renderUpstats();
+}
+
+function setBreedingView(view, options = {}) {
+  currentBreedingView = view === "brood-pouch" ? "brood-pouch" : "planner";
+  syncWorkspaceView("breeding", currentBreedingView);
+  if (currentTab !== "breeding") {
+    setTab("breeding", { ...options, preserveView: true });
+    return;
+  }
+  if (options.updateHash && window.location.hash !== `#${tabHash("breeding")}`) window.location.hash = tabHash("breeding");
+  renderNestingOptions();
+  renderNesting();
+  renderBroodPouch();
+}
+
+function setSettingsView(view, options = {}) {
+  currentSettingsView = ["backup", "sync", "diagnostics"].includes(view) ? view : "general";
+  syncWorkspaceView("settings", currentSettingsView);
+  if (currentTab !== "settings") {
+    setTab("settings", { ...options, preserveView: true });
+    return;
+  }
+  if (options.updateHash && window.location.hash !== `#${tabHash("settings")}`) window.location.hash = tabHash("settings");
+  renderBackup();
 }
 
 function setTab(tabName, options = {}) {
   const nextTab = TAB_NAMES.includes(tabName) ? tabName : DEFAULT_TAB;
   if (currentTab === "map" && nextTab !== "map") cancelMapPinPlacement();
+  if (!options.preserveView) {
+    if (nextTab === "dragons") currentDragonView = "collection";
+    if (nextTab === "breeding") currentBreedingView = "planner";
+    if (nextTab === "settings") currentSettingsView = "general";
+  }
   currentTab = nextTab;
-  if (options.updateHash && window.location.hash !== `#${nextTab}`) {
-    window.location.hash = nextTab;
-  } else if (options.replaceHash && window.location.hash && window.location.hash !== `#${nextTab}`) {
-    history.replaceState(null, "", `#${nextTab}`);
+  const nextHash = tabHash(nextTab);
+  if (options.updateHash && window.location.hash !== `#${nextHash}`) {
+    window.location.hash = nextHash;
+  } else if (options.replaceHash && window.location.hash && window.location.hash !== `#${nextHash}`) {
+    history.replaceState(null, "", `#${nextHash}`);
   }
   els.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === nextTab));
   els.panels.forEach((panel) => panel.classList.toggle("is-active", panel.dataset.panel === nextTab));
+  syncWorkspaceView("dragon", currentDragonView);
+  syncWorkspaceView("breeding", currentBreedingView);
+  syncWorkspaceView("settings", currentSettingsView);
   renderCurrentTab();
   if (nextTab === "clans") void refreshClanSync({ quiet: true });
   if (nextTab === "settings") renderBackup();

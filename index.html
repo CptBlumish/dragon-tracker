@@ -52,10 +52,8 @@
       <button class="tab is-active" type="button" data-tab="home">Home</button>
       <button class="tab" type="button" data-tab="dragons">Dragons</button>
       <button class="tab" type="button" data-tab="players">Players</button>
-      <button class="tab" type="button" data-tab="nesting">Nesting Planner</button>
-      <button class="tab" type="button" data-tab="brood-pouch">Brood Pouch</button>
+      <button class="tab" type="button" data-tab="breeding">Breeding</button>
       <button class="tab" type="button" data-tab="skins">Skins</button>
-      <button class="tab" type="button" data-tab="upstats">Upstats</button>
       <button class="tab" type="button" data-tab="map">Map</button>
       <button class="tab" type="button" data-tab="clans">Clans</button>
       <button class="tab" type="button" data-tab="settings">Settings</button>
@@ -84,46 +82,91 @@
         </div>
         <div class="account-species-matrix home-account-species-matrix" id="homeAccountSpeciesMatrix"></div>
         <div class="account-list home-account-list" id="homeAccountList"></div>
+        <section class="home-daily-panel elder-tick-panel" aria-labelledby="homeElderTickHeading">
+          <div class="card-head">
+            <div class="card-title"><h2 id="homeElderTickHeading">Elder Tick</h2><p class="card-subtitle">Six-hour local reminder</p></div>
+            <span class="pill" id="elderTickState">Local Timer</span>
+          </div>
+          <div class="home-daily-content">
+            <div>
+              <p class="elder-tick-time" id="elderTickCountdown">Ready to start</p>
+              <p class="form-note" id="elderTickDescription">Start or reset this six-hour reminder when you log into the account in-game. It stays local and does not need Steam.</p>
+              <div class="button-row">
+                <button class="primary-button" type="button" id="elderTickResetBtn" disabled>Mark Tick Taken</button>
+                <button class="tool-button" type="button" id="elderTickForceResetBtn" disabled>Reset 6-Hour Timer</button>
+              </div>
+            </div>
+            <div class="elder-account-list" id="elderTickAccountList"></div>
+          </div>
+        </section>
       </section>
 
       <section class="tab-panel" id="dragons-panel" data-panel="dragons">
-        <div class="toolbar">
-          <div class="field search-field">
-            <label for="dragonSearch">Search</label>
-            <input id="dragonSearch" type="search" placeholder="Player, account, skin, server, tag">
-          </div>
-          <div class="field">
-            <label for="speciesFilter">Species</label>
-            <select id="speciesFilter"></select>
-          </div>
-          <div class="field">
-            <label for="statusFilter">Status</label>
-            <select id="statusFilter"></select>
-          </div>
-          <div class="field">
-            <label for="sortBy">Sort</label>
-            <select id="sortBy">
-              <option value="updated">Recently updated</option>
-              <option value="name">Account</option>
-              <option value="species">Species</option>
-              <option value="bloodline">Bloodline</option>
-              <option value="elder">Elder %</option>
-            </select>
-          </div>
-          <label class="toggle-field">
-            <input id="hideInactive" type="checkbox">
-            Grown only
-          </label>
-          <button class="primary-button" type="button" id="addDragonBtn">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            </span>
-            Add Dragon
-          </button>
+        <div class="view-tabs" role="tablist" aria-label="Dragon views">
+          <button class="view-tab is-active" type="button" role="tab" aria-selected="true" data-dragon-view="collection">Collection</button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-dragon-view="upstats">Upstats</button>
         </div>
-
-        <div class="stats-bar" id="statsBar"></div>
-        <div class="dragon-grid" id="dragonList"></div>
+        <div class="workspace-view is-active" data-dragon-view-panel="collection">
+          <div class="toolbar">
+            <div class="field search-field">
+              <label for="dragonSearch">Search</label>
+              <input id="dragonSearch" type="search" placeholder="Player, account, skin, server, tag">
+            </div>
+            <div class="field">
+              <label for="speciesFilter">Species</label>
+              <select id="speciesFilter"></select>
+            </div>
+            <div class="field">
+              <label for="statusFilter">Status</label>
+              <select id="statusFilter"></select>
+            </div>
+            <div class="field">
+              <label for="sortBy">Sort</label>
+              <select id="sortBy">
+                <option value="updated">Recently updated</option>
+                <option value="name">Account</option>
+                <option value="species">Species</option>
+                <option value="bloodline">Bloodline</option>
+                <option value="elder">Elder %</option>
+              </select>
+            </div>
+            <label class="toggle-field">
+              <input id="hideInactive" type="checkbox">
+              Grown only
+            </label>
+            <button class="primary-button" type="button" id="addDragonBtn">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              </span>
+              Add Dragon
+            </button>
+          </div>
+          <div class="stats-bar" id="statsBar"></div>
+          <div class="dragon-grid" id="dragonList"></div>
+        </div>
+        <div class="workspace-view" data-dragon-view-panel="upstats" hidden>
+          <div class="toolbar upstats-toolbar">
+            <div class="field search-field">
+              <label for="upstatSearch">Search</label>
+              <input id="upstatSearch" type="search" placeholder="Skin, species, account, notes">
+            </div>
+            <div class="field">
+              <label for="upstatSpeciesFilter">Species</label>
+              <select id="upstatSpeciesFilter"></select>
+            </div>
+            <div class="field">
+              <label for="upstatStatusFilter">Process</label>
+              <select id="upstatStatusFilter"></select>
+            </div>
+            <button class="primary-button" type="button" id="addUpstatBtn">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              </span>
+              Add Upstat
+            </button>
+          </div>
+          <div class="upstat-list" id="upstatList"></div>
+        </div>
       </section>
 
       <section class="tab-panel" id="players-panel" data-panel="players">
@@ -144,51 +187,56 @@
         <div class="account-list" id="accountList"></div>
       </section>
 
-      <section class="tab-panel" id="nesting-panel" data-panel="nesting">
-        <div class="toolbar nesting-toolbar">
-          <div class="field">
-            <label for="parentOne">Parent A</label>
-            <select id="parentOne"></select>
-          </div>
-          <div class="field">
-            <label for="parentTwo">Parent B</label>
-            <select id="parentTwo"></select>
-          </div>
-          <div class="field">
-            <label for="nestTargetSkin">Target skin</label>
-            <select id="nestTargetSkin"></select>
-          </div>
-          <div class="field">
-            <label for="nestTargetGrade">Target stat</label>
-            <select id="nestTargetGrade"></select>
-          </div>
-          <button class="primary-button" type="button" id="createEggBtn">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 3c4 3 7 7 7 11a7 7 0 0 1-14 0c0-4 3-8 7-11Z"/></svg>
-            </span>
-            Create Egg
-          </button>
-          <label class="toggle-field" title="Brood Watcher brooding can enable supercrits; use the in-game brooding tooltip for the current chance.">
-            <input id="broodWatcherBrooding" type="checkbox">
-            BW brooding
-          </label>
-          <label class="toggle-field" title="After creating the egg, record which brood it is currently on in the Brood Pouch.">
-            <input id="addEggToBroodPouch" type="checkbox">
-            Add egg to brood pouch
-          </label>
+      <section class="tab-panel" id="breeding-panel" data-panel="breeding">
+        <div class="view-tabs" role="tablist" aria-label="Breeding views">
+          <button class="view-tab is-active" type="button" role="tab" aria-selected="true" data-breeding-view="planner">Nesting Planner</button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-breeding-view="brood-pouch">Brood Pouch</button>
         </div>
-        <div id="nestingOutput" class="nesting-output"></div>
-      </section>
-
-      <section class="tab-panel" id="brood-pouch-panel" data-panel="brood-pouch">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Egg Tracking</p>
-            <h2>Brood Pouch</h2>
+        <div class="workspace-view is-active" data-breeding-view-panel="planner">
+          <div class="toolbar nesting-toolbar">
+            <div class="field">
+              <label for="parentOne">Parent A</label>
+              <select id="parentOne"></select>
+            </div>
+            <div class="field">
+              <label for="parentTwo">Parent B</label>
+              <select id="parentTwo"></select>
+            </div>
+            <div class="field">
+              <label for="nestTargetSkin">Target skin</label>
+              <select id="nestTargetSkin"></select>
+            </div>
+            <div class="field">
+              <label for="nestTargetGrade">Target stat</label>
+              <select id="nestTargetGrade"></select>
+            </div>
+            <button class="primary-button" type="button" id="createEggBtn">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 3c4 3 7 7 7 11a7 7 0 0 1-14 0c0-4 3-8 7-11Z"/></svg>
+              </span>
+              Create Egg
+            </button>
+            <label class="toggle-field" title="Brood Watcher brooding can enable supercrits; use the in-game brooding tooltip for the current chance.">
+              <input id="broodWatcherBrooding" type="checkbox">
+              BW brooding
+            </label>
+            <label class="toggle-field" title="After creating the egg, record which brood it is currently on in the Brood Pouch.">
+              <input id="addEggToBroodPouch" type="checkbox">
+              Add egg to brood pouch
+            </label>
           </div>
-          <p>Eggs added from the nesting planner stay here until you remove them.</p>
+          <div id="nestingOutput" class="nesting-output"></div>
         </div>
-        <div class="brood-pouch-list" id="broodPouchList"></div>
+        <div class="workspace-view" data-breeding-view-panel="brood-pouch" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Egg Tracking</p>
+              <h2>Brood Pouch</h2>
+            </div>
+            <p>Eggs added from the nesting planner stay here until you remove them.</p>
+          </div>
+          <div class="brood-pouch-list" id="broodPouchList"></div>
+        </div>
       </section>
 
       <section class="tab-panel" id="skins-panel" data-panel="skins">
@@ -225,30 +273,6 @@
           </div>
         </details>
         <div class="skin-list" id="skinList"></div>
-      </section>
-
-      <section class="tab-panel" id="upstats-panel" data-panel="upstats">
-        <div class="toolbar upstats-toolbar">
-          <div class="field search-field">
-            <label for="upstatSearch">Search</label>
-            <input id="upstatSearch" type="search" placeholder="Skin, species, account, notes">
-          </div>
-          <div class="field">
-            <label for="upstatSpeciesFilter">Species</label>
-            <select id="upstatSpeciesFilter"></select>
-          </div>
-          <div class="field">
-            <label for="upstatStatusFilter">Process</label>
-            <select id="upstatStatusFilter"></select>
-          </div>
-          <button class="primary-button" type="button" id="addUpstatBtn">
-            <span class="button-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            </span>
-            Add Upstat
-          </button>
-        </div>
-        <div class="upstat-list" id="upstatList"></div>
       </section>
 
       <section class="tab-panel" id="map-panel" data-panel="map">
@@ -323,79 +347,90 @@
       </section>
 
       <section class="tab-panel" id="settings-panel" data-panel="settings">
-        <div class="backup-grid">
-          <div class="backup-panel">
-            <h2>Tracker</h2>
-            <dl id="backupStats" class="details-list"></dl>
-          </div>
-          <div class="backup-panel">
-            <h2>Backup & Restore</h2>
-            <div class="button-row">
-              <button class="tool-button" type="button" data-action="export-json">Export JSON</button>
-              <button class="tool-button" type="button" data-action="import-json">Import JSON</button>
-              <button class="tool-button" type="button" data-action="import-genetics-png">Import PNG</button>
-              <button class="tool-button" type="button" data-action="export-csv">Export CSV</button>
-              <button class="tool-button" type="button" data-action="export-safe-json">Share-Safe Export</button>
-              <button class="tool-button" type="button" id="undoChangeBtn">Undo Last Change</button>
+        <div class="view-tabs" role="tablist" aria-label="Settings views">
+          <button class="view-tab is-active" type="button" role="tab" aria-selected="true" data-settings-view="general">General</button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-settings-view="backup">Backup</button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-settings-view="sync">Sync</button>
+          <button class="view-tab" type="button" role="tab" aria-selected="false" data-settings-view="diagnostics">Diagnostics</button>
+        </div>
+        <div class="workspace-view is-active" data-settings-view-panel="general">
+          <div class="backup-grid settings-general-grid">
+            <div class="backup-panel">
+              <h2>Tracker</h2>
+              <dl id="backupStats" class="details-list"></dl>
             </div>
-            <p class="form-note" id="backupHealthStatus">No backup exported this session.</p>
-          </div>
-          <div class="backup-panel personal-player-panel">
-            <h2>Home Player</h2>
-            <div class="field">
-              <label for="personalPlayerSelect">Personal player</label>
-              <select id="personalPlayerSelect"></select>
+            <div class="backup-panel personal-player-panel">
+              <h2>Home Player</h2>
+              <div class="field">
+                <label for="personalPlayerSelect">Personal player</label>
+                <select id="personalPlayerSelect"></select>
+              </div>
+              <p class="form-note" id="personalPlayerDescription">Choose which player owns this install. Home will only show that player's accounts.</p>
             </div>
-            <p class="form-note" id="personalPlayerDescription">Choose which player owns this install. Home will only show that player's accounts.</p>
-          </div>
-          <div class="backup-panel sync-settings-panel">
-            <div class="card-head">
-              <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Optional shared dragons and map pins</p></div>
-              <span class="pill" id="syncSettingsState">Local Only</span>
-            </div>
-            <p class="form-note" id="syncSettingsDescription">Your tracker stays on this device until you choose to connect and share something.</p>
-            <div class="button-row">
-              <button class="primary-button" type="button" id="openSyncSetupBtn">Set Up Sync Instructions</button>
-              <button class="tool-button" type="button" id="openSyncConfigBtn">Connect Sync</button>
-            </div>
-          </div>
-          <div class="backup-panel elder-tick-panel">
-            <div class="card-head">
-              <div class="card-title"><h2>Elder Tick</h2><p class="card-subtitle">Six-hour local reminder</p></div>
-              <span class="pill" id="elderTickState">Local Timer</span>
-            </div>
-            <p class="elder-tick-time" id="elderTickCountdown">Ready to start</p>
-            <p class="form-note" id="elderTickDescription">Start or reset this six-hour reminder when you log into the account in-game. It stays local and does not need Steam.</p>
-            <div class="button-row">
-              <button class="primary-button" type="button" id="elderTickResetBtn" disabled>Mark Tick Taken</button>
-              <button class="tool-button" type="button" id="elderTickForceResetBtn" disabled>Reset 6-Hour Timer</button>
-            </div>
-            <div class="elder-account-list" id="elderTickAccountList"></div>
-          </div>
-          <div class="backup-panel">
-            <h2>Setup Checklist</h2>
-            <div class="quality-list" id="setupChecklist"></div>
-          </div>
-          <div class="backup-panel">
-            <h2>Data Quality</h2>
-            <div class="quality-list" id="dataQualityList"></div>
-          </div>
-          <div class="backup-panel">
-            <h2>Recent Changes</h2>
-            <div class="quality-list" id="recentlyChangedList"></div>
-            <div class="button-row compact-actions">
-              <button class="tool-button" type="button" id="openChangelogBtn">View Changelog</button>
-            </div>
-          </div>
-          <div class="backup-panel danger-zone">
-            <h2>Reset</h2>
-            <div class="button-row">
-              <button class="danger-button" type="button" id="clearDragonsBtn">Clear dragons</button>
-              <button class="danger-button" type="button" id="factoryResetBtn">Factory reset</button>
+            <div class="backup-panel">
+              <h2>Version</h2>
+              <p class="form-note">Compare this version with the latest release before updating.</p>
+              <p class="settings-version" id="appVersionLabel">Version 1.3.0</p>
+              <div class="button-row compact-actions">
+                <button class="tool-button" type="button" id="openChangelogBtn">View Changelog</button>
+              </div>
             </div>
           </div>
         </div>
-        <div class="backup-version" id="appVersionLabel">Version 1.2.6</div>
+        <div class="workspace-view" data-settings-view-panel="backup" hidden>
+          <div class="backup-grid settings-backup-grid">
+            <div class="backup-panel full-span">
+              <h2>Backup &amp; Restore</h2>
+              <div class="button-row">
+                <button class="tool-button" type="button" data-action="export-json">Export JSON</button>
+                <button class="tool-button" type="button" data-action="import-json">Import JSON</button>
+                <button class="tool-button" type="button" data-action="import-genetics-png">Import PNG</button>
+                <button class="tool-button" type="button" data-action="export-csv">Export CSV</button>
+                <button class="tool-button" type="button" data-action="export-safe-json">Share-Safe Export</button>
+                <button class="tool-button" type="button" id="undoChangeBtn">Undo Last Change</button>
+              </div>
+              <p class="form-note" id="backupHealthStatus">No backup exported this session.</p>
+            </div>
+          </div>
+        </div>
+        <div class="workspace-view" data-settings-view-panel="sync" hidden>
+          <div class="backup-grid settings-sync-grid">
+            <div class="backup-panel sync-settings-panel">
+              <div class="card-head">
+                <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Optional shared dragons and map pins</p></div>
+                <span class="pill" id="syncSettingsState">Local Only</span>
+              </div>
+              <p class="form-note" id="syncSettingsDescription">Your tracker stays on this device until you choose to connect and share something.</p>
+              <div class="button-row">
+                <button class="primary-button" type="button" id="openSyncSetupBtn">Set Up Sync Instructions</button>
+                <button class="tool-button" type="button" id="openSyncConfigBtn">Connect Sync</button>
+              </div>
+            </div>
+            <div class="backup-panel">
+              <h2>Setup Checklist</h2>
+              <div class="quality-list" id="setupChecklist"></div>
+            </div>
+          </div>
+        </div>
+        <div class="workspace-view" data-settings-view-panel="diagnostics" hidden>
+          <div class="backup-grid settings-diagnostics-grid">
+            <div class="backup-panel">
+              <h2>Data Quality</h2>
+              <div class="quality-list" id="dataQualityList"></div>
+            </div>
+            <div class="backup-panel">
+              <h2>Recent Changes</h2>
+              <div class="quality-list" id="recentlyChangedList"></div>
+            </div>
+            <div class="backup-panel danger-zone">
+              <h2>Reset</h2>
+              <div class="button-row">
+                <button class="danger-button" type="button" id="clearDragonsBtn">Clear dragons</button>
+                <button class="danger-button" type="button" id="factoryResetBtn">Factory reset</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
   </div>

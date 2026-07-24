@@ -282,6 +282,46 @@ svg {
   color: var(--gold);
 }
 
+.view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 8, 8, 0.82);
+}
+
+.view-tab {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 900;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.view-tab:hover,
+.view-tab:focus-visible {
+  border-color: rgba(246, 217, 86, 0.6);
+  color: var(--ink);
+  outline: none;
+}
+
+.view-tab.is-active {
+  border-color: var(--ember);
+  background: linear-gradient(180deg, rgba(255, 106, 36, 0.22), rgba(8, 8, 8, 0.96));
+  color: var(--gold);
+}
+
+.workspace-view[hidden] {
+  display: none;
+}
+
 .tab-panel {
   display: none;
   position: relative;
@@ -345,6 +385,33 @@ svg {
 
 .home-account-species-matrix {
   margin-top: 14px;
+}
+
+.home-daily-panel {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.home-daily-content {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(340px, 1.15fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+.home-daily-panel .elder-tick-time {
+  margin: 0 0 8px;
+}
+
+.home-daily-panel .elder-account-list {
+  max-height: 300px;
+  margin: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .matrix-head,
@@ -2147,6 +2214,24 @@ input[type="checkbox"] {
   box-shadow: var(--shadow);
 }
 
+.settings-version {
+  margin: 14px 0;
+  color: var(--gold);
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.settings-general-grid,
+.settings-sync-grid,
+.settings-diagnostics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.settings-backup-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .quality-list {
   display: grid;
   gap: 8px;
@@ -2830,6 +2915,10 @@ legend {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .home-daily-content {
+    grid-template-columns: 1fr;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }
@@ -2871,6 +2960,10 @@ legend {
     text-align: center;
   }
 
+  .view-tabs {
+    overflow-x: auto;
+  }
+
   .tool-button,
   .primary-button,
   .danger-button {
@@ -2899,6 +2992,7 @@ legend {
   .skin-info-grid,
   .import-preview-grid,
   .elder-account-row,
+  .home-daily-content,
   .matrix-row,
   .stat-editor {
     grid-template-columns: 1fr;
