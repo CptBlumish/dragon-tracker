@@ -2209,7 +2209,7 @@ function renderAccountSpeciesMatrixCell(account, species, accountDragons) {
   const dragon = accountDragons.find((item) => item.species === species);
   if (dragon) {
     return `
-      <button class="matrix-cell is-filled" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin]))}">
+      <button class="matrix-cell is-filled${isElderDragon(dragon) ? " is-elder" : ""}" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin]))}">
         <strong class="matrix-cell-head">
           <span>${escapeHtml(statusShortLabel(dragon.status))}</span>
           <span class="matrix-sex ${sexClass(dragon.sex)}">${escapeHtml(sexShortLabel(dragon.sex))}</span>
@@ -2290,7 +2290,7 @@ function renderAccountCard(account) {
   const openSpecies = collectSpeciesNames().filter((species) => !ownedSpecies.has(species));
   const dragonRows = accountDragons.length
     ? accountDragons.map((dragon) => `
-      <div class="account-dragon-row${dragon.clanImported ? " is-clan-shared" : ""}">
+      <div class="account-dragon-row${dragon.clanImported ? " is-clan-shared" : ""}${isElderDragon(dragon) ? " is-elder" : ""}">
         <span>${escapeHtml(dragon.species || "Unknown species")}</span>
         <strong class="account-dragon-status">${escapeHtml(dragon.status || "Unknown")}</strong>
         ${dragon.clanImported
@@ -2397,7 +2397,7 @@ function renderAccountDetailDragon(dragon) {
   `).join("");
   const parentLabel = dragonParentLabel(dragon);
   return `
-    <article class="account-detail-dragon">
+    <article class="account-detail-dragon${isElderDragon(dragon) ? " is-elder" : ""}">
       <div class="account-detail-dragon-head">
         <div>
           <h4>${escapeHtml(dragon.species || "Unknown species")}</h4>
@@ -2441,7 +2441,7 @@ function renderDragonCard(dragon) {
   const tagMarkup = tags.length ? `<div class="skin-meta">${tags.join("")}</div>` : "";
 
   return `
-    <article class="dragon-card" data-id="${escapeAttr(dragon.id)}">
+    <article class="dragon-card${isElderDragon(dragon) ? " is-elder" : ""}" data-id="${escapeAttr(dragon.id)}">
       <div class="card-head">
         <div class="card-title">
           <h3>${escapeHtml(dragon.accountName || dragon.name)}</h3>
@@ -7468,6 +7468,10 @@ function dragonParentLabel(dragon) {
 
 function statusClass(status) {
   return `status-${String(status || "unknown").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+function isElderDragon(dragon) {
+  return dragon?.status === "Elder";
 }
 
 function compactJoin(values) {
