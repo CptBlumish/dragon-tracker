@@ -2,13 +2,24 @@ import "dotenv/config";
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Client, GatewayIntentBits, MessageFlags, PermissionFlagsBits } from "discord.js";
+import {
+  alertMenuMessage,
+  dashboardAction,
+  dashboardMessage,
+  fieldValue,
+  modalForAction,
+  splitValues,
+  upstatMenuMessage
+} from "./dashboard.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const TRACKER_REQUEST_ATTEMPTS = 2;
 const DEFAULT_BREEDER_ROLE_NAME = "Breeder";
 const BOT_LOG_PATH = join(process.env.LOCALAPPDATA || process.cwd(), "Dragon Tracker", "discord-bot.log");
 const BOT_LOG_MAX_BYTES = 2 * 1024 * 1024;
+const EGG_ALERT_DIGEST_WINDOW_MS = Math.max(15_000, Math.min(10 * 60_000, Number(process.env.EGG_ALERT_DIGEST_WINDOW_MS) || 60_000));
 const commandCooldowns = new Map();
+const eggAlertDigests = new Map();
 
 function writeBotLog(level, values) {
   const details = values.map((value) => {
@@ -323,37 +334,84 @@ async function recordEggMatchNotification(notificationSourceKey, status, failure
   }
 }
 
-function eggMatchDmMessage(matches) {
-  const first = matches[0] || {};
-  const requestDetails = [
-    first.requestSpecies,
-    first.requestSkin ? `Skin: ${first.requestSkin}` : "",
-    first.requestRecessiveSkin ? `Recessive: ${first.requestRecessiveSkin}` : "",
-    first.requestSex ? `Sex: ${first.requestSex}` : "",
-    first.requestGoal ? `Goal: ${first.requestGoal}` : ""
-  ].filter(Boolean).join(" | ");
-  const dragonLines = matches.slice(0, 8).map((match) => [
-    `- **${match.dragonName || "Submitted dragon"}**`,
-    [match.dragonSpecies, match.dragonSex].filter(Boolean).join(" | "),
-    match.dragonSkin ? `Skin: ${match.dragonSkin}` : "",
-    match.dragonRecessiveSkin ? `Res: ${match.dragonRecessiveSkin}` : ""
-  ].filter(Boolean).join(" | "));
-  if (matches.length > 8) dragonLines.push(`- Plus ${matches.length - 8} more matching submitted dragons.`);
-  const channelLink = first.discordGuildId && first.discordChannelId
-    ? `https://discord.com/channels/${first.discordGuildId}/${first.discordChannelId}`
-    : "";
-  return [
-    "**Dragon Tracker - Egg Request Match**",
-    `${first.requester || "A clan member"} requested: ${requestDetails || "a matching egg"}.`,
-    "Your matching submitted dragon(s):",
-    ...dragonLines,
-    first.requestNotes ? `Notes: ${first.requestNotes}` : "",
-    channelLink ? `Contact the requester in the clan channel: ${channelLink}` : ""
-  ].filter(Boolean).join("\n");
+function eggRequestKey(match) {
+  return clean(match?.notificationSourceKey, 160).split(":")[1] || clean(match?.notificationSourceKey, 160);
+}
+
+function eggMatchDigestMessage(matches) {
+  const requests = new Map();
+  for (const match of matches) {
+    const key = eggRequestKey(match);
+    const group = requests.get(key) || [];
+    group.push(match);
+    requests.set(key, group);
+  }
+
+  const lines = [
+    "**Dragon Tracker - Nesting Request Digest**",
+    `${requests.size} new request${requests.size === 1 ? "" : "s"} matched your submitted dragons.`
+  ];
+  const requestGroups = [...requests.values()];
+  requestGroups.slice(0, 8).forEach((group) => {
+    const first = group[0] || {};
+    const requestDetails = [
+      first.requestSpecies,
+      first.requestSkin ? `Skin: ${first.requestSkin}` : "",
+      first.requestRecessiveSkin ? `Res: ${first.requestRecessiveSkin}` : "",
+      first.requestSex ? `Sex: ${first.requestSex}` : "",
+      first.requestGoal ? `Goal: ${first.requestGoal}` : ""
+    ].filter(Boolean).join(" | ");
+    const dragonNames = [...new Set(group.map((match) => clean(match.dragonName, 80)).filter(Boolean))];
+    const shownNames = dragonNames.slice(0, 4).join(", ");
+    const extraNames = Math.max(0, dragonNames.length - 4);
+    lines.push(
+      `\n**${clean(first.requester, 100) || "A clan member"}**: ${requestDetails || "matching egg"}`,
+      `Matches: ${shownNames || `${group.length} submitted dragon${group.length === 1 ? "" : "s"}`}${extraNames ? `, plus ${extraNames} more` : ""}`
+    );
+    if (first.requestNotes) lines.push(`Notes: ${clean(first.requestNotes, 240)}`);
+    if (first.discordGuildId && first.discordChannelId) {
+      lines.push(`Request: https://discord.com/channels/${first.discordGuildId}/${first.discordChannelId}`);
+    }
+  });
+  if (requestGroups.length > 8) lines.push(`\nPlus ${requestGroups.length - 8} more matching request${requestGroups.length - 8 === 1 ? "" : "s"}.`);
+  return lines.join("\n").slice(0, 1_950);
 }
 
 function dmFailureStatus(error) {
   return Number(error?.code) === 50007 ? "blocked" : "failed";
+}
+
+async function flushEggMatchDigest(recipientId) {
+  const digest = eggAlertDigests.get(recipientId);
+  if (!digest) return "missing";
+  eggAlertDigests.delete(recipientId);
+  const matches = [...digest.matches.values()];
+  if (!matches.length) return "empty";
+  try {
+    const recipient = await client.users.fetch(recipientId);
+    await recipient.send({ content: eggMatchDigestMessage(matches), allowedMentions: { parse: [] } });
+    await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, "sent")));
+    return "sent";
+  } catch (error) {
+    const status = dmFailureStatus(error);
+    const reason = error instanceof Error ? error.message : "Discord could not deliver the direct message";
+    await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, status, reason)));
+    console.error(`Could not DM nesting-request digest to ${recipientId}: ${reason}`);
+    return status;
+  }
+}
+
+function queueEggMatchDigest(recipientId, matches) {
+  let digest = eggAlertDigests.get(recipientId);
+  if (!digest) {
+    digest = { matches: new Map(), timer: null };
+    digest.timer = setTimeout(() => {
+      void flushEggMatchDigest(recipientId);
+    }, EGG_ALERT_DIGEST_WINDOW_MS);
+    digest.timer.unref?.();
+    eggAlertDigests.set(recipientId, digest);
+  }
+  matches.forEach((match) => digest.matches.set(match.notificationSourceKey, match));
 }
 
 async function deliverEggMatchNotifications(submissionResult) {
@@ -363,9 +421,7 @@ async function deliverEggMatchNotifications(submissionResult) {
   const result = {
     matchingDragons: notifications.length,
     matchingOwners: 0,
-    deliveredOwners: 0,
-    blockedOwners: 0,
-    failedOwners: 0
+    queuedOwners: 0
   };
   const recipientGroups = new Map();
   for (const notification of notifications) {
@@ -376,25 +432,9 @@ async function deliverEggMatchNotifications(submissionResult) {
     recipientGroups.set(key, group);
   }
   result.matchingOwners = recipientGroups.size;
-
-  const deliveries = await mapWithConcurrency([...recipientGroups.entries()], 3, async ([recipientId, matches]) => {
-    try {
-      const recipient = await client.users.fetch(recipientId);
-      await recipient.send({ content: eggMatchDmMessage(matches), allowedMentions: { parse: [] } });
-      await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, "sent")));
-      return "sent";
-    } catch (error) {
-      const status = dmFailureStatus(error);
-      const reason = error instanceof Error ? error.message : "Discord could not deliver the direct message";
-      await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, status, reason)));
-      console.error(`Could not DM egg-request match alert to ${recipientId}: ${reason}`);
-      return status;
-    }
-  });
-  for (const status of deliveries) {
-    if (status === "sent") result.deliveredOwners += 1;
-    if (status === "blocked") result.blockedOwners += 1;
-    if (status === "failed") result.failedOwners += 1;
+  for (const [recipientId, matches] of recipientGroups) {
+    queueEggMatchDigest(recipientId, matches);
+    result.queuedOwners += 1;
   }
   return result;
 }
@@ -402,27 +442,10 @@ async function deliverEggMatchNotifications(submissionResult) {
 function eggMatchDeliveryMessage(delivery) {
   if (!delivery?.matchingDragons) return " No alert-eligible submitted dragons matched this request.";
   const matchLabel = `${delivery.matchingDragons} matching submitted dragon${delivery.matchingDragons === 1 ? "" : "s"}`;
-  if (delivery.deliveredOwners) {
-    return ` Found ${matchLabel} and sent DMs to ${delivery.deliveredOwners} owner${delivery.deliveredOwners === 1 ? "" : "s"}.`;
+  if (delivery.queuedOwners) {
+    return ` Found ${matchLabel}. ${delivery.queuedOwners} owner${delivery.queuedOwners === 1 ? "" : "s"} will receive one condensed DM within ${Math.ceil(EGG_ALERT_DIGEST_WINDOW_MS / 60_000)} minute${EGG_ALERT_DIGEST_WINDOW_MS > 60_000 ? "s" : ""}.`;
   }
-  if (delivery.blockedOwners) {
-    return ` Found ${matchLabel}, but Discord blocked the DM. The matching owner needs to allow direct messages from server members.`;
-  }
-  return ` Found ${matchLabel}, but the DM could not be delivered. Check the bot service log for the Discord error.`;
-}
-
-async function mapWithConcurrency(items, concurrency, worker) {
-  const results = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await worker(items[index]);
-    }
-  });
-  await Promise.all(workers);
-  return results;
+  return ` Found ${matchLabel}, but no eligible owner could be queued.`;
 }
 
 function eggRequestPayload(interaction) {
@@ -495,6 +518,269 @@ function notePayload(interaction) {
   };
 }
 
+function interactionDisplayName(interaction) {
+  return clean(interaction.member?.displayName || interaction.user.globalName || interaction.user.username, 100);
+}
+
+function modalPayload(interaction, action) {
+  if (action === "dragon") {
+    const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
+    const [sex, status] = splitValues(fieldValue(interaction, "profile"), 2);
+    const [skin, recessiveSkin, bloodline, nestRole] = splitValues(fieldValue(interaction, "genetics"), 4);
+    const name = clean(fieldValue(interaction, "name"), 80);
+    return {
+      name,
+      playerName: clean(playerName, 80) || interactionDisplayName(interaction),
+      accountName: clean(accountName, 80) || name,
+      species: clean(fieldValue(interaction, "species"), 80),
+      sex: clean(sex, 20) || "Unknown",
+      status: clean(status, 40) || "Hatchie",
+      skin: clean(skin, 100),
+      recessiveSkin: clean(recessiveSkin, 100),
+      bloodline: clean(bloodline, 10),
+      nestRole: clean(nestRole, 30) || "Unknown",
+      notes: ""
+    };
+  }
+  if (action === "egg") {
+    const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
+    const [sex, goal] = splitValues(fieldValue(interaction, "target"), 2);
+    return {
+      requester: clean(fieldValue(interaction, "requester"), 100),
+      species: clean(fieldValue(interaction, "species"), 80),
+      skin: clean(skin, 100),
+      recessiveSkin: clean(recessiveSkin, 100),
+      sex: clean(sex, 20),
+      goal: clean(goal, 120),
+      notes: clean(fieldValue(interaction, "notes"), 1000)
+    };
+  }
+  if (action === "find") {
+    const [sex, nestRole] = splitValues(fieldValue(interaction, "traits"), 2);
+    const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
+    return {
+      species: clean(fieldValue(interaction, "species"), 80),
+      skin: clean(fieldValue(interaction, "skin"), 100),
+      recessiveSkin: clean(fieldValue(interaction, "recessive"), 100),
+      sex: clean(sex, 20),
+      nestRole: clean(nestRole, 30),
+      playerName: clean(playerName, 80),
+      accountName: clean(accountName, 80),
+      limit: 10
+    };
+  }
+  if (action === "upstat-submit") {
+    const [accountName, notes] = splitValues(fieldValue(interaction, "details"), 2);
+    return {
+      species: clean(fieldValue(interaction, "species"), 80),
+      skin: clean(fieldValue(interaction, "skin"), 100),
+      aPlusCount: Math.max(0, Math.min(18, Number(fieldValue(interaction, "count")) || 0)),
+      status: clean(fieldValue(interaction, "status"), 40) || "In Progress",
+      accountName: clean(accountName, 80),
+      notes: clean(notes, 1000)
+    };
+  }
+  if (action === "upstat-check") {
+    return {
+      species: clean(fieldValue(interaction, "species"), 80),
+      skin: clean(fieldValue(interaction, "skin"), 100)
+    };
+  }
+  if (action === "brood") {
+    const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
+    const [sex, skin, recessiveSkin, dueAt, oddsSummary, notes] = splitValues(fieldValue(interaction, "details"), 6);
+    const name = clean(fieldValue(interaction, "name"), 80);
+    return {
+      name,
+      playerName: clean(playerName, 80) || interactionDisplayName(interaction),
+      accountName: clean(accountName, 80) || name,
+      species: clean(fieldValue(interaction, "species"), 80),
+      brood: clean(fieldValue(interaction, "brood"), 80),
+      sex: clean(sex, 20) || "Unknown",
+      skin: clean(skin, 100),
+      recessiveSkin: clean(recessiveSkin, 100),
+      dueAt: clean(dueAt, 80),
+      oddsSummary: clean(oddsSummary, 180),
+      notes: clean(notes, 1000)
+    };
+  }
+  if (action === "nest") {
+    const [breeder, requester] = splitValues(fieldValue(interaction, "people"), 2);
+    const [expectedSkin, broodWatcherBrooding, notes] = splitValues(fieldValue(interaction, "details"), 3);
+    return {
+      father: clean(fieldValue(interaction, "father"), 100),
+      mother: clean(fieldValue(interaction, "mother"), 100),
+      species: clean(fieldValue(interaction, "species"), 80),
+      breeder: clean(breeder, 100) || interactionDisplayName(interaction),
+      requester: clean(requester, 100),
+      expectedSkin: clean(expectedSkin, 120),
+      broodWatcherBrooding: ["yes", "true", "1", "y"].includes(clean(broodWatcherBrooding, 10).toLowerCase()),
+      notes: clean(notes, 1000)
+    };
+  }
+  if (action === "location") {
+    const [x, y] = splitValues(fieldValue(interaction, "position"), 2).map(Number);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
+      throw new Error("Map X and Y must both be percentages from 0 to 100.");
+    }
+    return {
+      label: clean(fieldValue(interaction, "label"), 80),
+      x,
+      y,
+      type: clean(fieldValue(interaction, "type"), 40) || "Location",
+      notes: clean(fieldValue(interaction, "notes"), 500)
+    };
+  }
+  throw new Error("That Dragon Tracker form is not supported.");
+}
+
+function modalCooldownRemaining(interaction, action) {
+  const commandName = action === "egg" ? "dt-eggrequest"
+    : action === "dragon" ? "dt-createdragon"
+      : action === "upstat-submit" ? "dt-upstat"
+        : action === "brood" ? "dt-broodpouch"
+          : action === "nest" ? "dt-currentnest"
+            : action === "location" ? "dt-location"
+              : "";
+  return commandName ? commandCooldownRemaining({
+    commandName,
+    guildId: interaction.guildId,
+    user: interaction.user
+  }) : 0;
+}
+
+async function handleDashboardButton(interaction) {
+  if (!interaction.isButton()) return false;
+  const action = dashboardAction(interaction.customId, "button");
+  if (!action) return false;
+  if (!isConfiguredGuild(interaction)) {
+    await interaction.reply({ content: "This Dragon Tracker bot is configured for a different clan server.", flags: MessageFlags.Ephemeral });
+    return true;
+  }
+  if (action === "dashboard") {
+    await interaction.update(dashboardMessage());
+    return true;
+  }
+  if (action === "upstat-menu") {
+    await interaction.update(upstatMenuMessage());
+    return true;
+  }
+  if (action === "alerts-menu") {
+    await interaction.update(alertMenuMessage());
+    return true;
+  }
+  if (action === "help") {
+    await interaction.reply({
+      content: [
+        "**Dragon Tracker help**",
+        "Add Dragon is limited to members with the Breeder role.",
+        "Request Egg posts the request and privately alerts opted-in owners whose submitted dragons match.",
+        "Find Dragon searches the shared clan library without importing another member's dragons into your local collection.",
+        "Use `|` only where a form label shows multiple values."
+      ].join("\n"),
+      flags: MessageFlags.Ephemeral
+    });
+    return true;
+  }
+  if (action.startsWith("alerts-")) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const setting = action === "alerts-enable" ? "Enabled" : action === "alerts-disable" ? "Disabled" : "Status";
+    const result = await updateEggMatchAlerts(interaction, setting);
+    await interaction.editReply(setting === "Status"
+      ? `Nesting match alerts are ${result?.enabled ? "enabled" : "disabled"}.`
+      : `Nesting match alerts are now ${result?.enabled ? "enabled" : "disabled"}.`);
+    return true;
+  }
+  const form = modalForAction(action, interactionDisplayName(interaction));
+  if (!form) return false;
+  await interaction.showModal(form);
+  return true;
+}
+
+async function handleDashboardModal(interaction) {
+  if (!interaction.isModalSubmit()) return false;
+  const action = dashboardAction(interaction.customId, "modal");
+  if (!action) return false;
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    if (!isConfiguredGuild(interaction)) throw new Error("This Dragon Tracker bot is configured for a different clan server.");
+    const cooldownRemaining = modalCooldownRemaining(interaction, action);
+    if (cooldownRemaining) {
+      await interaction.editReply(`Please wait ${Math.ceil(cooldownRemaining / 1000)} seconds before submitting that again.`);
+      return true;
+    }
+    const payload = modalPayload(interaction, action);
+    if (action === "dragon") {
+      if (!hasBreederAccess(interaction.member, interaction.memberPermissions)) {
+        await interaction.editReply("Only members with the Discord `Breeder` role can submit dragons.");
+        return true;
+      }
+      await submitToTracker(interaction, "dragon", payload);
+      await announceDragonSubmission(interaction.channel, payload, interactionDisplayName(interaction));
+      await interaction.editReply(`Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
+    }
+    if (action === "egg") {
+      const submissionResult = await submitToTracker(interaction, "egg_request", payload);
+      await announceEggRequest(interaction.channel, payload, interactionDisplayName(interaction));
+      const delivery = await deliverEggMatchNotifications(submissionResult);
+      await interaction.editReply(`Posted ${payload.requester}'s egg request.${eggMatchDeliveryMessage(delivery)}`);
+    }
+    if (action === "find") {
+      const result = await trackerRequest({
+        action: "dragon_search",
+        clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+        discord_guild_id: interaction.guildId || "",
+        ...payload
+      });
+      await interaction.editReply(dragonSearchMessage(result));
+    }
+    if (action === "upstat-submit") {
+      await submitToTracker(interaction, "upstat", payload);
+      await interaction.editReply(`Sent ${payload.species} ${payload.skin} upstat progress to the tracker.`);
+    }
+    if (action === "upstat-check") {
+      const result = await trackerRequest({
+        action: "upstat_lookup",
+        clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+        discord_guild_id: interaction.guildId || "",
+        ...payload
+      });
+      await interaction.editReply(upstatProgressMessage(result));
+    }
+    if (action === "brood") {
+      await submitToTracker(interaction, "brood_pouch", payload);
+      await announceTrackerUpdate(interaction.channel, "Brood Pouch", [
+        `**${payload.name}**`,
+        [payload.species, payload.sex].filter(Boolean).join(" | "),
+        `Brood: ${payload.brood}`,
+        payload.skin ? `Skin: ${payload.skin}` : "",
+        `Submitted by: ${interactionDisplayName(interaction)}`
+      ]);
+      await interaction.editReply(`Sent ${payload.name} on ${payload.brood} to the tracker.`);
+    }
+    if (action === "nest") {
+      await submitToTracker(interaction, "current_nest", payload);
+      await announceTrackerUpdate(interaction.channel, "Current Nest", [
+        `**${payload.father} x ${payload.mother}**`,
+        payload.species,
+        payload.expectedSkin ? `Target skin: ${payload.expectedSkin}` : "",
+        `Breeder: ${payload.breeder}`
+      ]);
+      await interaction.editReply(`Sent ${payload.father} x ${payload.mother} to the tracker.`);
+    }
+    if (action === "location") {
+      await submitToTracker(interaction, "map_pin", payload);
+      await interaction.editReply(`Sent ${payload.label} to the tracker.`);
+    }
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The tracker could not receive that submission.";
+    console.error(`Dashboard form ${action} failed: ${message}`);
+    await interaction.editReply(`Could not send to Dragon Tracker: ${message}`);
+    return true;
+  }
+}
+
 async function handleCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
   console.log(`Received /${interaction.commandName} from ${interaction.user.id} in ${interaction.guildId || "direct messages"}.`);
@@ -508,6 +794,11 @@ async function handleCommand(interaction) {
     const cooldownRemaining = commandCooldownRemaining(interaction);
     if (cooldownRemaining) {
       await interaction.editReply(`Please wait ${Math.ceil(cooldownRemaining / 1000)} second${cooldownRemaining > 1_000 ? "s" : ""} before submitting that again.`);
+      return;
+    }
+
+    if (interaction.commandName === "dt") {
+      await interaction.editReply(dashboardMessage());
       return;
     }
 
@@ -757,8 +1048,19 @@ client.once("clientReady", () => {
   if (optionalEnv("DRAGON_TRACKER_CLAN_ID")) console.log("Default Dragon Tracker clan configured.");
 });
 client.on("interactionCreate", (interaction) => {
-  void handleCommand(interaction).catch((error) => {
+  void (async () => {
+    if (await handleDashboardButton(interaction)) return;
+    if (await handleDashboardModal(interaction)) return;
+    await handleCommand(interaction);
+  })().catch(async (error) => {
     console.error(`Unhandled Discord interaction error: ${error instanceof Error ? error.message : "unknown error"}`);
+    const message = "Dragon Tracker could not complete that action. Please try once more.";
+    try {
+      if (interaction.deferred || interaction.replied) await interaction.editReply(message);
+      else if (interaction.isRepliable()) await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
+    } catch (_) {
+      // The interaction may have expired while Discord or the tracker was unavailable.
+    }
   });
 });
 client.on("error", (error) => {
@@ -767,5 +1069,16 @@ client.on("error", (error) => {
 client.on("messageCreate", (message) => {
   void handlePrefixMessage(message);
 });
+
+async function flushQueuedAlertsBeforeExit() {
+  const recipientIds = [...eggAlertDigests.keys()];
+  await Promise.all(recipientIds.map((recipientId) => flushEggMatchDigest(recipientId)));
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    void flushQueuedAlertsBeforeExit().finally(() => process.exit(0));
+  });
+}
 
 await client.login(requiredEnv("DISCORD_BOT_TOKEN"));

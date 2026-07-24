@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.4";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.5";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -417,6 +417,9 @@ const clanUi = {
   identityLinks: [],
   lastSignature: "",
   libraryFilters: { dragon: "", skin: "", recessive: "", sex: "", pure: "", source: "" },
+  loading: false,
+  lastLoadedAt: "",
+  lastRefreshError: "",
   members: [],
   memberships: [],
   sharedDragons: [],
@@ -3822,6 +3825,8 @@ async function autoImportOwnDiscordSubmissions(clanId, records) {
 }
 
 async function refreshClanSync(options = {}) {
+  clanUi.loading = true;
+  clanUi.lastRefreshError = "";
   if (!clanSync || !clanSync.isConfigured()) {
     clanUi.user = null;
     clanUi.identityLinks = [];
@@ -3831,6 +3836,7 @@ async function refreshClanSync(options = {}) {
     clanUi.sharedPins = [];
     clanUi.discordSubmissions = [];
     clanUi.activeClanId = "";
+    clanUi.loading = false;
     renderSyncStatusBadge();
     if (currentTab === "clans") renderClans();
     return;
@@ -3849,6 +3855,7 @@ async function refreshClanSync(options = {}) {
       clanUi.sharedPins = [];
       clanUi.discordSubmissions = [];
       clanUi.activeClanId = "";
+      clanUi.loading = false;
       renderSyncStatusBadge();
       if (currentTab === "clans") renderClans();
       return;
@@ -3874,12 +3881,13 @@ async function refreshClanSync(options = {}) {
         clanSync.getClanMapPins(clanUi.activeClanId),
         clanSync.getDiscordSubmissions?.(clanUi.activeClanId) || []
       ]);
-      if (sharedDragonsResult.status === "rejected") throw sharedDragonsResult.reason;
 
       clanUi.members = membersResult.status === "fulfilled" && Array.isArray(membersResult.value)
         ? membersResult.value
         : [];
-      clanUi.sharedDragons = Array.isArray(sharedDragonsResult.value) ? sharedDragonsResult.value : [];
+      clanUi.sharedDragons = sharedDragonsResult.status === "fulfilled" && Array.isArray(sharedDragonsResult.value)
+        ? sharedDragonsResult.value
+        : [];
       clanUi.sharedPins = sharedPinsResult.status === "fulfilled" && Array.isArray(sharedPinsResult.value)
         ? sharedPinsResult.value
         : [];
@@ -3887,10 +3895,14 @@ async function refreshClanSync(options = {}) {
         ? discordSubmissionsResult.value
         : [];
 
-      const optionalReadFailure = [membersResult, sharedPinsResult, discordSubmissionsResult]
+      const readFailure = [sharedDragonsResult, membersResult, sharedPinsResult, discordSubmissionsResult]
         .find((result) => result.status === "rejected");
-      if (optionalReadFailure) {
-        clanUi.error = "Shared dragons loaded, but one optional clan section could not refresh. Use Refresh to try it again.";
+      if (readFailure) {
+        const detail = clanFriendlyError(readFailure.reason);
+        clanUi.lastRefreshError = detail;
+        clanUi.error = sharedDragonsResult.status === "rejected"
+          ? `The clan library could not load: ${detail}`
+          : `The clan library loaded, but one section could not refresh: ${detail}`;
       }
 
       if (discordSubmissionsResult.status === "fulfilled") {
@@ -3926,6 +3938,8 @@ async function refreshClanSync(options = {}) {
     });
     const changed = signature !== clanUi.lastSignature;
     clanUi.lastSignature = signature;
+    clanUi.loading = false;
+    clanUi.lastLoadedAt = new Date().toISOString();
     if (currentTab === "clans" || (!options.quiet && changed)) renderClans();
     if (changed && currentTab === "map") renderMapPins();
     if (changed && currentTab === "dragons") renderDragons();
@@ -3934,6 +3948,8 @@ async function refreshClanSync(options = {}) {
     if (currentTab === "settings") renderBackup();
   } catch (error) {
     clanUi.error = clanFriendlyError(error);
+    clanUi.lastRefreshError = clanUi.error;
+    clanUi.loading = false;
     renderSyncStatusBadge();
     if (currentTab === "clans" || !options.quiet) renderClans();
   }
@@ -3983,17 +3999,34 @@ function removeClanImportedLocalCopies() {
 
 function renderClans() {
   if (!els.clanContent) return;
+  if (!els.clanContent.childElementCount) {
+    els.clanContent.innerHTML = `
+      <section class="clan-panel clan-sync-health">
+        <div class="card-head"><div class="card-title"><h2>Clan Library</h2><p class="card-subtitle">Loading the shared clan workspace</p></div><span class="pill">Loading</span></div>
+      </section>
+    `;
+  }
   try {
     normalizeClanUiForRender();
     renderClansContent();
   } catch (error) {
     console.error("Clan view render failed", error);
-    const detail = clanErrorMessage(error);
+    const detail = clanFriendlyError(error);
     clanUi.error = detail;
+    clanUi.lastRefreshError = detail;
     els.clanContent.innerHTML = `
-      <section class="clan-panel clan-identity-panel">
+      <section class="clan-panel clan-identity-panel clan-sync-health">
         <div class="card-head"><div class="card-title"><h2>Clan Library</h2><p class="card-subtitle">The shared data is still safe in your clan.</p></div><span class="pill">Refresh needed</span></div>
         <p class="clan-error">${escapeHtml(detail)}</p>
+        <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh">Refresh Clan Library</button></div>
+      </section>
+    `;
+  }
+  if (!els.clanContent.childElementCount) {
+    els.clanContent.innerHTML = `
+      <section class="clan-panel clan-sync-health">
+        <h2>Clan Library</h2>
+        <p class="clan-error">The clan view returned no content. Refresh the library to recover it.</p>
         <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh">Refresh Clan Library</button></div>
       </section>
     `;
@@ -4066,6 +4099,14 @@ function renderClansContent() {
 
   const currentClan = activeClan();
   const membership = activeClanMembership();
+  const loadStatus = clanUi.loading ? "Refreshing" : clanUi.lastRefreshError ? "Needs attention" : "Ready";
+  const loadSummary = clanUi.loading
+    ? "Reading clan membership and shared records."
+    : clanUi.lastRefreshError
+      ? clanUi.lastRefreshError
+      : clanUi.lastLoadedAt
+        ? `Last refreshed ${formatDate(clanUi.lastLoadedAt)}.`
+        : "Connected. Refresh to load the latest shared records.";
   const clanOptions = clanUi.memberships.map((item) => {
     const clan = clanMembershipClan(item);
     if (!clan) return "";
@@ -4121,6 +4162,19 @@ function renderClansContent() {
     : `<p class="account-empty">No pending Discord bot submissions for this clan.</p>`;
 
   els.clanContent.innerHTML = `
+    <section class="clan-panel clan-sync-health">
+      <div class="card-head">
+        <div class="card-title"><h2>Clan Library Status</h2><p class="card-subtitle">${escapeHtml(loadSummary)}</p></div>
+        <span class="pill">${escapeHtml(loadStatus)}</span>
+      </div>
+      <dl class="line-list">
+        <div><dt>Clan</dt><dd>${escapeHtml(currentClan?.name || "No active clan")}</dd></div>
+        <div><dt>Shared records</dt><dd>${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</dd></div>
+        <div><dt>Discord inbox</dt><dd>${clanUi.discordSubmissions.length} pending</dd></div>
+      </dl>
+      <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh"${clanUi.loading ? " disabled" : ""}>${clanUi.loading ? "Refreshing..." : "Refresh Clan Library"}</button></div>
+    </section>
+
     <section class="clan-panel clan-identity-panel">
       <div class="card-head">
         <div class="card-title"><h2>${escapeHtml(clanDisplayName(clanUi.user))}</h2><p class="card-subtitle">Discord identity connected</p></div>

@@ -39,6 +39,10 @@ function dragonCommand(name, description) {
 }
 
 export const commands = [
+  new SlashCommandBuilder()
+    .setName("dt")
+    .setDescription("Open the Dragon Tracker button dashboard."),
+
   dragonCommand("dt-dragon", "Submit a dragon to the Dragon Tracker clan inbox."),
   dragonCommand("dt-createdragon", "Submit a dragon to the Dragon Tracker clan inbox."),
 
@@ -140,5 +144,7 @@ export const commands = [
 ];
 
 export function commandJson() {
-  return commands.map((command) => command.toJSON());
+  return commands
+    .filter((command) => command.name === "dt")
+    .map((command) => command.toJSON());
 }
