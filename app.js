@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.0";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.2";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -564,7 +564,9 @@ const els = {
 init();
 
 function init() {
-  if (refreshAllDerivedRecords()) saveState({ skipHistory: true });
+  const removedLegacyClanCopies = removeClanImportedLocalCopies();
+  const derivedChanged = refreshAllDerivedRecords();
+  if (removedLegacyClanCopies || derivedChanged) saveState({ skipHistory: true });
   lastKnownStateText = localStorage.getItem(STORAGE_KEY) || "";
   renderAppVersion();
   buildStaticSelects();
@@ -3851,29 +3853,51 @@ async function refreshClanSync(options = {}) {
     reconcileActiveClan();
 
     if (clanUi.activeClanId) {
-      const [members, sharedDragons, sharedPins, discordSubmissions] = await Promise.all([
+      const [membersResult, sharedDragonsResult, sharedPinsResult, discordSubmissionsResult] = await Promise.allSettled([
         clanSync.getClanMembers(clanUi.activeClanId),
         clanSync.getSharedDragons(clanUi.activeClanId),
         clanSync.getClanMapPins(clanUi.activeClanId),
         clanSync.getDiscordSubmissions?.(clanUi.activeClanId) || []
       ]);
-      clanUi.members = Array.isArray(members) ? members : [];
-      clanUi.sharedDragons = Array.isArray(sharedDragons) ? sharedDragons : [];
-      clanUi.sharedPins = Array.isArray(sharedPins) ? sharedPins : [];
-      clanUi.discordSubmissions = Array.isArray(discordSubmissions) ? discordSubmissions : [];
-      const autoImportedIds = await autoImportOwnDiscordSubmissions(clanUi.activeClanId, clanUi.discordSubmissions);
-      if (autoImportedIds.size) {
-        clanUi.discordSubmissions = clanUi.discordSubmissions.filter((record) => !autoImportedIds.has(record.id));
-        const refreshedSharedDragons = await clanSync.getSharedDragons(clanUi.activeClanId);
-        clanUi.sharedDragons = Array.isArray(refreshedSharedDragons) ? refreshedSharedDragons : clanUi.sharedDragons;
+      if (sharedDragonsResult.status === "rejected") throw sharedDragonsResult.reason;
+
+      clanUi.members = membersResult.status === "fulfilled" && Array.isArray(membersResult.value)
+        ? membersResult.value
+        : [];
+      clanUi.sharedDragons = Array.isArray(sharedDragonsResult.value) ? sharedDragonsResult.value : [];
+      clanUi.sharedPins = sharedPinsResult.status === "fulfilled" && Array.isArray(sharedPinsResult.value)
+        ? sharedPinsResult.value
+        : [];
+      clanUi.discordSubmissions = discordSubmissionsResult.status === "fulfilled" && Array.isArray(discordSubmissionsResult.value)
+        ? discordSubmissionsResult.value
+        : [];
+
+      const optionalReadFailure = [membersResult, sharedPinsResult, discordSubmissionsResult]
+        .find((result) => result.status === "rejected");
+      if (optionalReadFailure) {
+        clanUi.error = "Shared dragons loaded, but one optional clan section could not refresh. Use Refresh to try it again.";
       }
-      const localClanChanges = materializeClanSharedDragons(clanUi.activeClanId, clanUi.sharedDragons);
-      if (localClanChanges && !document.querySelector("dialog[open]")) renderAll();
+
+      if (discordSubmissionsResult.status === "fulfilled") {
+        const autoImportedIds = await autoImportOwnDiscordSubmissions(clanUi.activeClanId, clanUi.discordSubmissions);
+        if (autoImportedIds.size) {
+          clanUi.discordSubmissions = clanUi.discordSubmissions.filter((record) => !autoImportedIds.has(record.id));
+          const refreshedSharedDragons = await clanSync.getSharedDragons(clanUi.activeClanId);
+          clanUi.sharedDragons = Array.isArray(refreshedSharedDragons) ? refreshedSharedDragons : clanUi.sharedDragons;
+        }
+      }
     } else {
       clanUi.members = [];
       clanUi.sharedDragons = [];
       clanUi.sharedPins = [];
       clanUi.discordSubmissions = [];
+    }
+
+    const removedLegacyClanCopies = removeClanImportedLocalCopies();
+    if (removedLegacyClanCopies) {
+      refreshAllDerivedRecords();
+      saveState({ skipHistory: true });
+      if (!document.querySelector("dialog[open]")) renderAll();
     }
 
     const signature = JSON.stringify({
@@ -3900,49 +3924,6 @@ async function refreshClanSync(options = {}) {
   }
 }
 
-function materializeClanSharedDragons(clanId, records) {
-  const remoteKeys = new Set();
-  let changed = false;
-  const remoteRecords = Array.isArray(records)
-    ? records.filter((record) => record?.source_user_id)
-    : [];
-
-  remoteRecords.forEach((record) => {
-    const shareKey = clanSharedDragonKey(clanId, record);
-    remoteKeys.add(shareKey);
-    const incoming = clanSharedDragonFromRecord(record, clanId, shareKey);
-    if (!incoming) return;
-
-    const account = ensureClanSharedAccount(incoming.username, incoming.accountName);
-    if (account.created) changed = true;
-    incoming.accountId = account.record.id;
-
-    const existing = state.dragons.find((dragon) => (
-      dragon.clanImported && clanShareKeysForDragon(dragon).includes(shareKey)
-    )) || state.dragons.find((dragon) => (
-      dragonIdentityKey(dragon) === dragonIdentityKey(incoming)
-      && (!dragon.clanImported || dragon.clanShareClanId === clanId)
-    ));
-
-    if (!existing) {
-      state.dragons.push(incoming);
-      changed = true;
-      return;
-    }
-
-    if (mergeClanSharedDragon(existing, incoming, record.summary)) changed = true;
-  });
-
-  if (removeMissingClanSharedDragons(clanId, remoteKeys)) changed = true;
-  if (!changed) return false;
-
-  state.accounts.sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
-  state.dragons.sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName) || sortText(a.species, b.species));
-  refreshAllDerivedRecords();
-  saveState();
-  return true;
-}
-
 function clanSharedDragonKey(clanId, record) {
   return `${text(clanId)}::${text(record?.source_user_id)}::${text(record?.source_local_id)}`;
 }
@@ -3954,123 +3935,34 @@ function clanShareKeysForDragon(dragon) {
   ].map(text).filter(Boolean))];
 }
 
-function clanSharedDragonFromRecord(record, clanId, shareKey) {
-  const summary = record?.summary && typeof record.summary === "object" ? record.summary : {};
-  const username = text(summary.playerName || summary.username || clanMemberName(record.source_user_id)) || "Clan member";
-  const accountName = text(summary.accountName || summary.displayName);
-  const species = canonicalSpeciesName(summary.species);
-  if (!accountName || !species) return null;
+function removeClanImportedLocalCopies() {
+  const importedDragonIds = new Set(state.dragons
+    .filter((dragon) => dragon.clanImported)
+    .map((dragon) => dragon.id));
+  const importedAccountIds = new Set(state.accounts
+    .filter((account) => account.clanImported)
+    .map((account) => account.id));
+  if (!importedDragonIds.size && !importedAccountIds.size) return false;
 
-  const timestamp = text(record.updated_at || summary.updatedAt) || new Date().toISOString();
-  return normalizeDragon({
-    id: uid("clan-dragon"),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    username,
-    accountName,
-    name: accountName,
-    species,
-    sex: summary.sex,
-    status: summary.status,
-    nestRole: summary.nestRole,
-    server: summary.server,
-    skin: summary.skin,
-    skinType: summary.skinType,
-    recessiveSkin: summary.recessiveSkin,
-    motherName: summary.motherName,
-    fatherName: summary.fatherName,
-    bloodline: summary.bloodline,
-    stats: summary.stats,
-    dominantMutation: summary.dominantMutation,
-    elderProgress: summary.elderProgress,
-    socialPoints: summary.socialPoints,
-    agilePoints: summary.agilePoints,
-    fastMutation: summary.fastMutation,
-    scavengerPoints: summary.scavengerPoints,
-    survivorMutation: summary.survivorMutation,
-    birthDate: summary.birthDate,
-    tags: Array.isArray(summary.tags) ? summary.tags : [],
-    clanImported: true,
-    clanShareKey: shareKey,
-    clanShareKeys: [shareKey],
-    clanShareClanId: clanId,
-    clanShareUpdatedAt: timestamp
-  });
-}
+  state.dragons = state.dragons.filter((dragon) => !importedDragonIds.has(dragon.id));
+  state.broodPouch = (state.broodPouch || []).filter((entry) => !importedDragonIds.has(entry.dragonId));
+  clearDragonParentReferences(importedDragonIds);
 
-function ensureClanSharedAccount(username, accountName) {
-  const existing = state.accounts.find((account) => (
-    accountIdentityKey(account.username, account.accountName) === accountIdentityKey(username, accountName)
-  ));
-  if (existing) return { record: existing, created: false };
-  const record = normalizeAccount({
-    id: uid("clan-account"),
-    username,
-    accountName,
-    clanImported: true
-  });
-  state.accounts.push(record);
-  return { record, created: true };
-}
-
-function mergeClanSharedDragon(existing, incoming, rawSummary) {
-  const summary = rawSummary && typeof rawSummary === "object" ? rawSummary : {};
-  const has = (key) => Object.prototype.hasOwnProperty.call(summary, key);
-  const shareKeys = [...new Set([...clanShareKeysForDragon(existing), incoming.clanShareKey].filter(Boolean))];
-  const useIncomingDetails = !existing.clanImported
-    || new Date(incoming.clanShareUpdatedAt || 0).getTime() >= new Date(existing.clanShareUpdatedAt || 0).getTime();
-  const next = {
-    ...existing,
-    accountId: useIncomingDetails ? incoming.accountId : existing.accountId,
-    username: useIncomingDetails ? incoming.username : existing.username,
-    accountName: useIncomingDetails ? incoming.accountName : existing.accountName,
-    name: useIncomingDetails ? incoming.accountName : existing.name,
-    updatedAt: useIncomingDetails ? incoming.updatedAt : existing.updatedAt,
-    clanImported: Boolean(existing.clanImported),
-    clanShareKey: existing.clanImported ? shareKeys[0] || "" : existing.clanShareKey,
-    clanShareKeys: shareKeys,
-    clanShareClanId: existing.clanImported ? incoming.clanShareClanId : existing.clanShareClanId,
-    clanShareUpdatedAt: existing.clanImported && useIncomingDetails ? incoming.clanShareUpdatedAt : existing.clanShareUpdatedAt
-  };
-  [
-    "species", "sex", "status", "nestRole", "server", "skin", "skinType", "recessiveSkin",
-    "motherName", "fatherName", "bloodline", "birthDate", "dominantMutation", "elderProgress",
-    "socialPoints", "agilePoints", "fastMutation", "scavengerPoints", "survivorMutation"
-  ].forEach((key) => {
-    if (useIncomingDetails && has(key)) next[key] = incoming[key];
-  });
-  if (useIncomingDetails && has("stats") && summary.stats && typeof summary.stats === "object") {
-    next.stats = { ...existing.stats, ...incoming.stats };
-  }
-  if (useIncomingDetails && has("tags") && Array.isArray(summary.tags)) next.tags = incoming.tags;
-
-  const normalized = normalizeDragon(next);
-  if (JSON.stringify(existing) === JSON.stringify(normalized)) return false;
-  Object.assign(existing, normalized);
-  return true;
-}
-
-function removeMissingClanSharedDragons(clanId, activeShareKeys) {
-  let changed = false;
-  const removed = state.dragons.filter((dragon) => {
-    if (!dragon.clanImported || dragon.clanShareClanId !== clanId) return false;
-    const currentKeys = clanShareKeysForDragon(dragon);
-    const remainingKeys = currentKeys.filter((key) => activeShareKeys.has(key));
-    if (!remainingKeys.length) return true;
-    if (remainingKeys.length !== currentKeys.length) {
-      dragon.clanShareKeys = remainingKeys;
-      dragon.clanShareKey = remainingKeys[0] || "";
-      changed = true;
-    }
-    return false;
-  });
-  if (!removed.length) return changed;
-
-  const removedIds = new Set(removed.map((dragon) => dragon.id));
-  state.dragons = state.dragons.filter((dragon) => !removedIds.has(dragon.id));
-  clearDragonParentReferences(removedIds);
   const accountIdsInUse = new Set(state.dragons.map((dragon) => dragon.accountId));
-  state.accounts = state.accounts.filter((account) => !account.clanImported || accountIdsInUse.has(account.id));
+  state.accounts = state.accounts.filter((account) => (
+    !importedAccountIds.has(account.id) || accountIdsInUse.has(account.id)
+  ));
+  state.accounts.forEach((account) => {
+    if (account.clanImported && accountIdsInUse.has(account.id)) account.clanImported = false;
+  });
+  if (state.settings?.elderTickAccounts) {
+    importedAccountIds.forEach((accountId) => {
+      if (!accountIdsInUse.has(accountId)) delete state.settings.elderTickAccounts[accountId];
+    });
+  }
+  if (state.settings?.personalPlayer && !state.accounts.some((account) => account.username === state.settings.personalPlayer)) {
+    state.settings.personalPlayer = "";
+  }
   return true;
 }
 
@@ -4226,7 +4118,7 @@ function renderClans() {
     </section>
 
     <section class="clan-panel clan-shared-panel">
-      <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members</p></div><span class="pill">${filteredSharedDragons.length} of ${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
+      <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members - kept separate from local Players and Dragons</p></div><span class="pill">${filteredSharedDragons.length} of ${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
       <form class="clan-library-search" data-clan-form="library-search">
         <div class="field"><label for="clanLibraryDragon">Dragon</label><select id="clanLibraryDragon" name="dragon">${dragonOptions}</select></div>
         <div class="field"><label for="clanLibrarySkin">Skin</label><select id="clanLibrarySkin" name="skin">${skinOptions}</select></div>
@@ -4662,9 +4554,9 @@ async function handleClanAction(event) {
       }
       if (!confirm(`Leave ${clan.name}?`)) return;
       await clanSync.leaveClan(clan.id);
-      if (removeMissingClanSharedDragons(clan.id, new Set())) {
+      if (removeClanImportedLocalCopies()) {
         refreshAllDerivedRecords();
-        saveState();
+        saveState({ skipHistory: true });
         renderAll();
       }
       clanUi.inviteCode = "";
