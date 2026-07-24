@@ -8,7 +8,15 @@ const packageJson = require("../package.json");
 let mainWindow = null;
 let manualUpdateCheck = false;
 let updateDownloadPromptOpen = false;
-let updateInstallPromptOpen = false;
+let updateStatus = {
+  phase: "idle",
+  version: "",
+  percent: 0,
+  transferred: 0,
+  total: 0,
+  bytesPerSecond: 0,
+  message: ""
+};
 let pendingAuthCallbacks = [];
 
 const AUTH_PROTOCOL = "dragontracker";
@@ -112,6 +120,16 @@ function setupSecureIpc() {
     if (!isSafeExternalUrl(url)) throw new Error("Only secure web links can be opened from Dragon Tracker.");
     return shell.openExternal(url);
   });
+
+  ipcMain.handle("dragon-tracker:get-update-status", () => ({ ...updateStatus }));
+
+  ipcMain.handle("dragon-tracker:install-update", () => {
+    if (updateStatus.phase !== "downloaded") {
+      throw new Error("No downloaded update is ready to install.");
+    }
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    return true;
+  });
 }
 
 function releaseUrl() {
@@ -154,6 +172,7 @@ function createWindow() {
   mainWindow.webContents.once("did-finish-load", () => {
     pendingAuthCallbacks.forEach((callback) => mainWindow?.webContents.send("dragon-tracker:auth-callback", callback));
     pendingAuthCallbacks = [];
+    mainWindow?.webContents.send("dragon-tracker:update-status", updateStatus);
   });
 
   mainWindow.on("closed", () => {
@@ -251,24 +270,74 @@ function showUpdateError(error) {
   });
 }
 
+function publishUpdateStatus(nextStatus) {
+  updateStatus = {
+    ...updateStatus,
+    ...nextStatus,
+    percent: Math.max(0, Math.min(100, Number(nextStatus.percent ?? updateStatus.percent) || 0)),
+    transferred: Math.max(0, Number(nextStatus.transferred ?? updateStatus.transferred) || 0),
+    total: Math.max(0, Number(nextStatus.total ?? updateStatus.total) || 0),
+    bytesPerSecond: Math.max(0, Number(nextStatus.bytesPerSecond ?? updateStatus.bytesPerSecond) || 0)
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("dragon-tracker:update-status", updateStatus);
+  }
+}
+
+function beginUpdateDownload(info) {
+  if (updateStatus.phase === "downloading" || updateStatus.phase === "downloaded") return;
+
+  manualUpdateCheck = false;
+  publishUpdateStatus({
+    phase: "downloading",
+    version: info?.version || updateStatus.version || "",
+    percent: 0,
+    transferred: 0,
+    total: 0,
+    bytesPerSecond: 0,
+    message: "Preparing download"
+  });
+
+  Promise.resolve(autoUpdater.downloadUpdate()).catch(reportUpdaterError);
+}
+
+function reportUpdaterError(error) {
+  const wasDownloading = updateStatus.phase === "downloading";
+  const wasAlreadyReported = updateStatus.phase === "error";
+  const shouldReport = manualUpdateCheck || wasDownloading;
+  if (shouldReport) {
+    publishUpdateStatus({
+      phase: "error",
+      bytesPerSecond: 0,
+      message: updateErrorDetail(error)
+    });
+  }
+  if (shouldReport && !wasAlreadyReported) showUpdateError(error);
+  manualUpdateCheck = false;
+}
+
 function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("update-available", async (info) => {
-    if (updateDownloadPromptOpen) return;
+    if (updateDownloadPromptOpen || updateStatus.phase === "downloading" || updateStatus.phase === "downloaded") return;
     updateDownloadPromptOpen = true;
-    const result = await showUpdateMessage({
-      type: "info",
-      buttons: ["Download", "Later"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "Dragon Tracker Update",
-      message: `Dragon Tracker ${info.version} is available.`,
-      detail: "Download it now? Your local tracker data stays on this machine."
-    });
-    updateDownloadPromptOpen = false;
-    if (result.response === 0) autoUpdater.downloadUpdate();
+    try {
+      const result = await showUpdateMessage({
+        type: "info",
+        buttons: ["Download", "Later"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Dragon Tracker Update",
+        message: `Dragon Tracker ${info.version} is available.`,
+        detail: "Download it now? Your local tracker data stays on this machine."
+      });
+      if (result.response === 0) beginUpdateDownload(info);
+    } finally {
+      updateDownloadPromptOpen = false;
+      manualUpdateCheck = false;
+    }
   });
 
   autoUpdater.on("update-not-available", () => {
@@ -282,30 +351,58 @@ function configureAutoUpdater() {
     });
   });
 
-  autoUpdater.on("update-downloaded", async (info) => {
-    if (updateInstallPromptOpen) return;
-    updateInstallPromptOpen = true;
-    const result = await showUpdateMessage({
-      type: "info",
-      buttons: ["Restart and Install", "Later"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "Dragon Tracker Update Ready",
-      message: `Dragon Tracker ${info.version} is ready to install.`,
-      detail: "Restart the app now to finish updating."
+  autoUpdater.on("download-progress", (progress) => {
+    publishUpdateStatus({
+      phase: "downloading",
+      percent: progress?.percent,
+      transferred: progress?.transferred,
+      total: progress?.total,
+      bytesPerSecond: progress?.bytesPerSecond,
+      message: "Downloading update"
     });
-    updateInstallPromptOpen = false;
-    if (result.response === 0) autoUpdater.quitAndInstall(false, true);
   });
 
-  autoUpdater.on("error", (error) => {
-    if (!manualUpdateCheck) return;
+  autoUpdater.on("update-downloaded", (info) => {
     manualUpdateCheck = false;
-    showUpdateError(error);
+    publishUpdateStatus({
+      phase: "downloaded",
+      version: info?.version || updateStatus.version || "",
+      percent: 100,
+      bytesPerSecond: 0,
+      message: "Update downloaded"
+    });
   });
+
+  autoUpdater.on("error", reportUpdaterError);
 }
 
 function checkForUpdates(manual = false) {
+  if (updateStatus.phase === "downloading") {
+    if (manual) {
+      showUpdateMessage({
+        type: "info",
+        buttons: ["OK"],
+        title: "Dragon Tracker Update",
+        message: "An update is already downloading.",
+        detail: "Use the download progress screen to follow it."
+      });
+    }
+    return;
+  }
+
+  if (updateStatus.phase === "downloaded") {
+    if (manual) {
+      showUpdateMessage({
+        type: "info",
+        buttons: ["OK"],
+        title: "Dragon Tracker Update Ready",
+        message: "An update is ready to install.",
+        detail: "Use the update progress screen to restart when you are ready."
+      });
+    }
+    return;
+  }
+
   manualUpdateCheck = manual;
   if (!app.isPackaged) {
     if (manual) {

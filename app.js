@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.3";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.4";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -406,6 +406,7 @@ let lastKnownStateText = "";
 let mapPinPlacementActive = false;
 let clanShareConfirmationResolve = null;
 let pendingImportState = null;
+let desktopUpdateStatus = null;
 const clanSync = window.DragonTrackerSyncClient ? new window.DragonTrackerSyncClient() : null;
 const clanUi = {
   activeClanId: localStorage.getItem(ACTIVE_CLAN_STORAGE_KEY) || "",
@@ -552,6 +553,15 @@ const els = {
   skinTurntableVideo: document.querySelector("#skinTurntableVideo"),
   changelogDialog: document.querySelector("#changelogDialog"),
   changelogContent: document.querySelector("#changelogContent"),
+  updateProgressDialog: document.querySelector("#updateProgressDialog"),
+  updateProgressTitle: document.querySelector("#updateProgressTitle"),
+  updateProgressPercent: document.querySelector("#updateProgressPercent"),
+  updateProgressVersion: document.querySelector("#updateProgressVersion"),
+  updateProgressBar: document.querySelector("#updateProgressBar"),
+  updateProgressBytes: document.querySelector("#updateProgressBytes"),
+  updateProgressSpeed: document.querySelector("#updateProgressSpeed"),
+  updateProgressDescription: document.querySelector("#updateProgressDescription"),
+  installDownloadedUpdateBtn: document.querySelector("#installDownloadedUpdateBtn"),
   speciesOptions: document.querySelector("#speciesOptions"),
   skinOptions: document.querySelector("#skinOptions"),
   accountOptions: document.querySelector("#accountOptions"),
@@ -571,6 +581,7 @@ function init() {
   renderAppVersion();
   buildStaticSelects();
   bindEvents();
+  bindDesktopUpdateStatus();
   startAutoSync();
   renderAll();
   startElderTickCountdown();
@@ -1728,6 +1739,7 @@ function bindEvents() {
   els.factoryResetBtn.addEventListener("click", factoryReset);
   els.undoChangeBtn?.addEventListener("click", undoLastChange);
   els.openChangelogBtn?.addEventListener("click", () => openChangelog({ manual: true }));
+  els.updateProgressDialog?.addEventListener("click", handleUpdateProgressAction);
   els.elderTickResetBtn?.addEventListener("click", handleElderTickReset);
   els.elderTickForceResetBtn?.addEventListener("click", handleElderTickForceReset);
   els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
@@ -5660,6 +5672,84 @@ function renderSyncStatusBadge() {
 function renderAppVersion() {
   if (!els.appVersionLabel) return;
   els.appVersionLabel.textContent = `Version ${APP_VERSION}`;
+}
+
+function bindDesktopUpdateStatus() {
+  const desktop = window.dragonTrackerDesktop;
+  if (!desktop?.getUpdateStatus) return;
+  desktop.onUpdateStatus?.(renderDesktopUpdateStatus);
+  desktop.getUpdateStatus()
+    .then(renderDesktopUpdateStatus)
+    .catch(() => {});
+}
+
+function renderDesktopUpdateStatus(status) {
+  if (!els.updateProgressDialog || !status || typeof status !== "object") return;
+  const phase = text(status.phase);
+  if (!phase || phase === "idle") return;
+
+  desktopUpdateStatus = status;
+  const isDownloading = phase === "downloading";
+  const isDownloaded = phase === "downloaded";
+  const isError = phase === "error";
+  const percent = isDownloaded ? 100 : Math.max(0, Math.min(100, Number(status.percent) || 0));
+  const transferred = Math.max(0, Number(status.transferred) || 0);
+  const total = Math.max(0, Number(status.total) || 0);
+  const bytesPerSecond = Math.max(0, Number(status.bytesPerSecond) || 0);
+
+  els.updateProgressTitle.textContent = isDownloaded
+    ? "Update ready to install"
+    : isError
+      ? "Update download stopped"
+      : "Downloading update";
+  els.updateProgressPercent.textContent = `${Math.round(percent)}%`;
+  els.updateProgressVersion.textContent = status.version ? `Dragon Tracker ${status.version}` : (status.message || "Preparing download");
+  els.updateProgressBar.value = percent;
+  els.updateProgressBytes.textContent = total
+    ? `${formatBytes(transferred)} of ${formatBytes(total)}`
+    : transferred
+      ? `${formatBytes(transferred)} downloaded`
+      : "Waiting for download size";
+  els.updateProgressSpeed.textContent = isDownloaded
+    ? "Ready to restart"
+    : isError
+      ? "Try checking for updates again later"
+      : bytesPerSecond
+        ? `${formatBytes(bytesPerSecond)}/s`
+        : "Starting download";
+  els.updateProgressDescription.textContent = isDownloaded
+    ? "The update is downloaded. Restart when you are ready; your local tracker data stays on this machine."
+    : isError
+      ? (status.message || "The update could not be downloaded. Your current Dragon Tracker installation is unchanged.")
+      : "Dragon Tracker will keep your local data while the update downloads.";
+  els.installDownloadedUpdateBtn.hidden = !isDownloaded;
+  els.installDownloadedUpdateBtn.disabled = false;
+  els.installDownloadedUpdateBtn.textContent = "Restart and Install";
+
+  const backgroundButton = els.updateProgressDialog.querySelector("[data-update-progress-action='hide']");
+  if (backgroundButton) backgroundButton.textContent = isError ? "Close" : isDownloaded ? "Later" : "Continue in Background";
+  if (!els.updateProgressDialog.open) showModal(els.updateProgressDialog);
+}
+
+async function handleUpdateProgressAction(event) {
+  const button = event.target.closest("[data-update-progress-action]");
+  if (!button) return;
+  const action = button.dataset.updateProgressAction;
+  if (action === "hide") {
+    closeModal("updateProgressDialog");
+    return;
+  }
+  if (action !== "install" || desktopUpdateStatus?.phase !== "downloaded") return;
+
+  button.disabled = true;
+  button.textContent = "Restarting...";
+  try {
+    await window.dragonTrackerDesktop?.installDownloadedUpdate?.();
+  } catch (_) {
+    button.disabled = false;
+    button.textContent = "Restart and Install";
+    showToast("The update is ready, but Dragon Tracker could not restart automatically.");
+  }
 }
 
 function maybeShowChangelog() {

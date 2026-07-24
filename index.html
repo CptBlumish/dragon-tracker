@@ -1061,6 +1061,31 @@
     </div>
   </dialog>
 
+  <dialog class="modal compact-modal update-progress-modal" id="updateProgressDialog" aria-labelledby="updateProgressTitle">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Dragon Tracker Update</p>
+        <h2 id="updateProgressTitle">Downloading update</h2>
+      </div>
+    </div>
+    <div class="update-progress-content">
+      <div class="update-progress-heading">
+        <strong id="updateProgressPercent">0%</strong>
+        <span id="updateProgressVersion">Preparing download</span>
+      </div>
+      <progress id="updateProgressBar" max="100" value="0" aria-label="Update download progress"></progress>
+      <div class="update-progress-details">
+        <span id="updateProgressBytes">Waiting for download size</span>
+        <span id="updateProgressSpeed">Starting download</span>
+      </div>
+      <p id="updateProgressDescription" class="form-note">Dragon Tracker will keep your local data while the update downloads.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="tool-button" type="button" data-update-progress-action="hide">Continue in Background</button>
+      <button class="primary-button" type="button" id="installDownloadedUpdateBtn" data-update-progress-action="install" hidden>Restart and Install</button>
+    </div>
+  </dialog>
+
   <input id="importFile" type="file" hidden accept=".json,application/json">
   <input id="geneticsImageFile" type="file" hidden accept="image/png,image/jpeg,image/webp,image/*">
   <datalist id="speciesOptions"></datalist>
@@ -1070,6 +1095,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="./sync-client.js?v=20260721-breeder-bot-pure-filter"></script>
-  <script src="./app.js?v=20260723-bio-turntables"></script>
+  <script src="./app.js?v=20260724-update-progress"></script>
 </body>
 </html>

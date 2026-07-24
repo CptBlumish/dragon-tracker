@@ -30,5 +30,17 @@ contextBridge.exposeInMainWorld("dragonTrackerDesktop", {
     const listener = (_event, url) => callback(url);
     ipcRenderer.on("dragon-tracker:auth-callback", listener);
     return () => ipcRenderer.removeListener("dragon-tracker:auth-callback", listener);
+  },
+  getUpdateStatus() {
+    return ipcRenderer.invoke("dragon-tracker:get-update-status");
+  },
+  installDownloadedUpdate() {
+    return ipcRenderer.invoke("dragon-tracker:install-update");
+  },
+  onUpdateStatus(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("dragon-tracker:update-status", listener);
+    return () => ipcRenderer.removeListener("dragon-tracker:update-status", listener);
   }
 });
