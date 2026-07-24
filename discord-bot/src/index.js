@@ -1,8 +1,36 @@
 import "dotenv/config";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { Client, GatewayIntentBits, PermissionFlagsBits } from "discord.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_BREEDER_ROLE_NAME = "Breeder";
+const BOT_LOG_PATH = join(process.env.LOCALAPPDATA || process.cwd(), "Dragon Tracker", "discord-bot.log");
+
+function writeBotLog(level, values) {
+  const details = values.map((value) => {
+    if (value instanceof Error) return value.stack || value.message;
+    if (typeof value === "string") return value;
+    try { return JSON.stringify(value); } catch (_) { return String(value); }
+  }).join(" ");
+  try {
+    mkdirSync(join(process.env.LOCALAPPDATA || process.cwd(), "Dragon Tracker"), { recursive: true });
+    appendFileSync(BOT_LOG_PATH, `[${new Date().toISOString()}] ${level}: ${details}\n`);
+  } catch (_) {
+    // Logging must never prevent the bot from acknowledging Discord commands.
+  }
+}
+
+const standardLog = console.log.bind(console);
+const standardError = console.error.bind(console);
+console.log = (...values) => {
+  standardLog(...values);
+  writeBotLog("INFO", values);
+};
+console.error = (...values) => {
+  standardError(...values);
+  writeBotLog("ERROR", values);
+};
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -314,6 +342,7 @@ function notePayload(interaction) {
 
 async function handleCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
+  console.log(`Received /${interaction.commandName} from ${interaction.user.id} in ${interaction.guildId || "direct messages"}.`);
   try {
     // Acknowledge every slash command immediately so Discord cannot expire it.
     await interaction.deferReply({ ephemeral: true });
@@ -544,6 +573,9 @@ client.on("interactionCreate", (interaction) => {
   void handleCommand(interaction).catch((error) => {
     console.error(`Unhandled Discord interaction error: ${error instanceof Error ? error.message : "unknown error"}`);
   });
+});
+client.on("error", (error) => {
+  console.error(`Discord client error: ${error instanceof Error ? error.message : "unknown error"}`);
 });
 client.on("messageCreate", (message) => {
   void handlePrefixMessage(message);
