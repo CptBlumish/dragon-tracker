@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.8";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.2.9";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -3702,6 +3702,12 @@ function isOwnDiscordSubmission(record, discordUserId = connectedDiscordUserId()
   return Boolean(discordUserId && text(record?.discord_user_id) === discordUserId);
 }
 
+function isAutomatedDiscordTestSubmission(record) {
+  const payload = record?.payload && typeof record.payload === "object" ? record.payload : {};
+  const values = [payload.name, payload.accountName, payload.notes].map(text).join(" ").toLowerCase();
+  return values.includes("[test]") || values.includes("automated test-bank");
+}
+
 async function syncImportedDiscordDragon(clanId, record, dragon) {
   if (!clanId || !dragon || !CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record?.submission_type))) return;
   await clanSync.shareDragon(clanId, discordSubmissionSourceId(record), clanDragonSummary(dragon));
@@ -3717,6 +3723,7 @@ async function autoImportOwnDiscordSubmissions(clanId, records) {
     ? records.filter((record) => (
       AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES.has(text(record?.submission_type))
       && isOwnDiscordSubmission(record, discordUserId)
+      && !isAutomatedDiscordTestSubmission(record)
     ))
     : [];
 
