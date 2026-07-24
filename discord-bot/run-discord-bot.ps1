@@ -11,10 +11,11 @@ function Write-RunnerLog([string]$Message) {
 }
 
 Set-Location -LiteralPath $botDirectory
+$nodePath = (Get-Command node.exe -ErrorAction Stop).Source
 
 while ($true) {
   Write-RunnerLog "Starting Dragon Tracker Discord bot."
-  & npm.cmd run start *>&1 | ForEach-Object { Write-RunnerLog $_.ToString() }
+  & $nodePath "src/index.js" *>&1 | ForEach-Object { Write-RunnerLog $_.ToString() }
   Write-RunnerLog "Bot stopped with exit code $LASTEXITCODE. Retrying in 15 seconds."
   Start-Sleep -Seconds 15
 }

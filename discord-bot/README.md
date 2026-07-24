@@ -33,6 +33,10 @@ npm run deploy
 npm start
 ```
 
+## Keeping the bot online on Windows
+
+The included `run-discord-bot.ps1` runner starts the bot directly with Node and automatically retries if it exits. When it is registered as the `Dragon Tracker Discord Bot` Scheduled Task, it runs hidden in the background after you sign in. Do not start or keep a separate `npm start` terminal open; closing that terminal stops only the manually started copy of the bot.
+
 ## Commands
 
 - `/dt-dragon` submits a dragon to the tracker inbox.
