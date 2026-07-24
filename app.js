@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.2";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.3";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -3695,7 +3695,8 @@ function clanMembershipClan(membership) {
 }
 
 function activeClanMembership() {
-  return clanUi.memberships.find((membership) => membership.clan_id === clanUi.activeClanId) || null;
+  const memberships = Array.isArray(clanUi.memberships) ? clanUi.memberships : [];
+  return memberships.find((membership) => membership?.clan_id === clanUi.activeClanId) || null;
 }
 
 function activeClan() {
@@ -3707,7 +3708,8 @@ function canShareWithActiveClan() {
 }
 
 function clanMemberName(userId) {
-  const member = clanUi.members.find((item) => item.user_id === userId);
+  const members = Array.isArray(clanUi.members) ? clanUi.members : [];
+  const member = members.find((item) => item?.user_id === userId);
   return member?.display_name || "Clan member";
 }
 
@@ -3730,8 +3732,9 @@ function clanFriendlyError(error) {
 }
 
 function reconcileActiveClan() {
-  const hasActive = clanUi.memberships.some((membership) => membership.clan_id === clanUi.activeClanId);
-  if (!hasActive) clanUi.activeClanId = clanUi.memberships[0]?.clan_id || "";
+  const memberships = Array.isArray(clanUi.memberships) ? clanUi.memberships : [];
+  const hasActive = memberships.some((membership) => membership?.clan_id === clanUi.activeClanId);
+  if (!hasActive) clanUi.activeClanId = memberships[0]?.clan_id || "";
   if (clanUi.activeClanId) localStorage.setItem(ACTIVE_CLAN_STORAGE_KEY, clanUi.activeClanId);
   else localStorage.removeItem(ACTIVE_CLAN_STORAGE_KEY);
 }
@@ -3968,12 +3971,48 @@ function removeClanImportedLocalCopies() {
 
 function renderClans() {
   if (!els.clanContent) return;
+  try {
+    normalizeClanUiForRender();
+    renderClansContent();
+  } catch (error) {
+    console.error("Clan view render failed", error);
+    const detail = clanErrorMessage(error);
+    clanUi.error = detail;
+    els.clanContent.innerHTML = `
+      <section class="clan-panel clan-identity-panel">
+        <div class="card-head"><div class="card-title"><h2>Clan Library</h2><p class="card-subtitle">The shared data is still safe in your clan.</p></div><span class="pill">Refresh needed</span></div>
+        <p class="clan-error">${escapeHtml(detail)}</p>
+        <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh">Refresh Clan Library</button></div>
+      </section>
+    `;
+  }
+}
+
+function normalizeClanUiForRender() {
+  clanUi.identityLinks = Array.isArray(clanUi.identityLinks) ? clanUi.identityLinks.filter(Boolean) : [];
+  clanUi.memberships = Array.isArray(clanUi.memberships) ? clanUi.memberships.filter(Boolean) : [];
+  clanUi.members = Array.isArray(clanUi.members) ? clanUi.members.filter(Boolean) : [];
+  clanUi.sharedDragons = Array.isArray(clanUi.sharedDragons) ? clanUi.sharedDragons.filter(Boolean) : [];
+  clanUi.sharedPins = Array.isArray(clanUi.sharedPins) ? clanUi.sharedPins.filter(Boolean) : [];
+  clanUi.discordSubmissions = Array.isArray(clanUi.discordSubmissions) ? clanUi.discordSubmissions.filter(Boolean) : [];
+  clanUi.libraryFilters = {
+    dragon: "",
+    skin: "",
+    recessive: "",
+    sex: "",
+    pure: "",
+    source: "",
+    ...(clanUi.libraryFilters && typeof clanUi.libraryFilters === "object" ? clanUi.libraryFilters : {})
+  };
+}
+
+function renderClansContent() {
+  if (!els.clanContent) return;
   if (!clanSync) {
     els.clanContent.innerHTML = `<section class="clan-panel empty-state"><h2>Secure sync is unavailable</h2><p>This build is missing the clan sync client.</p></section>`;
     return;
   }
 
-  const config = clanSync.getConfig();
   if (!clanSync.isConfigured()) {
     els.clanContent.innerHTML = `
       <section class="clan-panel clan-identity-panel">
@@ -4143,6 +4182,7 @@ function renderClans() {
 }
 
 function renderDiscordSubmissionRow(record) {
+  record = record && typeof record === "object" ? record : {};
   const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
   const type = text(record.submission_type);
   const title = type === "dragon"
@@ -4196,7 +4236,8 @@ function discordSubmissionTypeLabel(type) {
 }
 
 function clanLibraryFilterOptions(summaryKey, selectedValue, emptyLabel) {
-  const values = [...new Set(clanUi.sharedDragons
+  const sharedDragons = Array.isArray(clanUi.sharedDragons) ? clanUi.sharedDragons : [];
+  const values = [...new Set(sharedDragons
     .map((record) => text(record.summary?.[summaryKey], 100))
     .filter(Boolean))]
     .sort(sortText);
@@ -4206,9 +4247,12 @@ function clanLibraryFilterOptions(summaryKey, selectedValue, emptyLabel) {
 }
 
 function getFilteredClanSharedDragons() {
-  const filters = clanUi.libraryFilters;
+  const filters = clanUi.libraryFilters && typeof clanUi.libraryFilters === "object"
+    ? clanUi.libraryFilters
+    : {};
+  const sharedDragons = Array.isArray(clanUi.sharedDragons) ? clanUi.sharedDragons : [];
   const includes = (value, query) => !query || text(value).toLowerCase().includes(query.toLowerCase());
-  return clanUi.sharedDragons.filter((record) => {
+  return sharedDragons.filter((record) => {
     const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
     if (!matchesClanSourceFilter(record, summary, filters.source)) return false;
     if (filters.pure === "pure" && !isPureSkinPair(summary)) return false;
