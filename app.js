@@ -138,6 +138,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added player name aliases so alternate names can keep future dragons and accounts under one familiar player.",
   "Simplified navigation by grouping the Nesting Planner and Brood Pouch under Breeding, and Upstats under Dragons.",
   "Moved elder tick controls onto Home and split Settings into General, Backup, Sync, and Diagnostics views.",
   "Added optional automatic import for your own Discord bot submissions, with imported dragons syncing across your tracker installs.",
@@ -451,6 +452,10 @@ const els = {
   accountDetailDialog: document.querySelector("#accountDetailDialog"),
   accountDetailTitle: document.querySelector("#accountDetailTitle"),
   accountDetailContent: document.querySelector("#accountDetailContent"),
+  playerAliasPlayerSelect: document.querySelector("#playerAliasPlayerSelect"),
+  playerAliasesInput: document.querySelector("#playerAliasesInput"),
+  playerAliasDescription: document.querySelector("#playerAliasDescription"),
+  savePlayerAliasesBtn: document.querySelector("#savePlayerAliasesBtn"),
   dragonDialog: document.querySelector("#dragonDialog"),
   dragonForm: document.querySelector("#dragonForm"),
   dragonDialogTitle: document.querySelector("#dragonDialogTitle"),
@@ -648,6 +653,7 @@ function createDefaultState() {
       elderTickAccounts: {},
       favoriteMapAreas: [],
       personalPlayer: "",
+      playerAliases: {},
       lastBackupAt: ""
     }
   };
@@ -692,6 +698,7 @@ function normalizeState(input = {}) {
       elderTickAccounts: normalizeElderTickAccounts(input.settings?.elderTickAccounts, accounts),
       favoriteMapAreas: normalizeFavoriteMapAreas(input.settings?.favoriteMapAreas),
       personalPlayer: normalizePersonalPlayer(input.settings?.personalPlayer, accounts),
+      playerAliases: normalizePlayerAliases(input.settings?.playerAliases, accounts),
       lastBackupAt: normalizeOptionalIso(input.settings?.lastBackupAt)
     }
   };
@@ -711,6 +718,37 @@ function normalizePersonalPlayer(value, accounts = state?.accounts || []) {
   const selected = text(value);
   if (!selected) return "";
   return accounts.some((account) => account.username === selected) ? selected : "";
+}
+
+function playerNameKey(value) {
+  return text(value).toLowerCase();
+}
+
+function findDirectPlayerName(value, accounts = state?.accounts || []) {
+  const key = playerNameKey(value);
+  if (!key) return "";
+  return accounts.find((account) => playerNameKey(account.username) === key)?.username || "";
+}
+
+function resolvePlayerAlias(value, accounts = state?.accounts || [], aliases = state?.settings?.playerAliases || {}) {
+  const key = playerNameKey(value);
+  if (!key) return "";
+  return findDirectPlayerName(aliases?.[key], accounts);
+}
+
+function resolvePlayerName(value, accounts = state?.accounts || [], aliases = state?.settings?.playerAliases || {}) {
+  return resolvePlayerAlias(value, accounts, aliases) || findDirectPlayerName(value, accounts) || text(value);
+}
+
+function normalizePlayerAliases(value, accounts = []) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .map(([alias, player]) => {
+      const aliasKey = playerNameKey(alias);
+      const canonicalPlayer = findDirectPlayerName(player, accounts);
+      return [aliasKey, canonicalPlayer];
+    })
+    .filter(([aliasKey, player]) => aliasKey && player && aliasKey !== playerNameKey(player)));
 }
 
 function normalizeElderTickAccounts(value, accounts = []) {
@@ -839,6 +877,10 @@ function mergeImportedState(currentInput, incomingInput) {
       favoriteMapAreas: mergeUniqueStrings(current.settings?.favoriteMapAreas, incoming.settings?.favoriteMapAreas)
         .filter((areaId) => MAP_REFERENCE_AREAS.some((area) => area.id === areaId)),
       personalPlayer: normalizePersonalPlayer(current.settings?.personalPlayer || incoming.settings?.personalPlayer, accounts),
+      playerAliases: normalizePlayerAliases({
+        ...(incoming.settings?.playerAliases || {}),
+        ...(current.settings?.playerAliases || {})
+      }, accounts),
       lastBackupAt: newerTimestamp(current.settings?.lastBackupAt, incoming.settings?.lastBackupAt) || ""
     }
   });
@@ -1689,6 +1731,8 @@ function bindEvents() {
   els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
   els.homePersonalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
   els.personalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
+  els.playerAliasPlayerSelect?.addEventListener("change", renderPlayerAliasSettings);
+  els.savePlayerAliasesBtn?.addEventListener("click", savePlayerAliases);
 
   els.dragonList.addEventListener("click", handleDragonAction);
   els.homeAccountList?.addEventListener("click", handleAccountAction);
@@ -1958,9 +2002,7 @@ function handleDocumentSearchClose(event) {
 }
 
 function findExistingPlayerName(value) {
-  const key = text(value).toLowerCase();
-  if (!key) return "";
-  return collectPlayerNames().find((name) => name.toLowerCase() === key) || "";
+  return resolvePlayerName(value);
 }
 
 function renderDragonPlayerSelect(selectedPlayer = "") {
@@ -1968,7 +2010,7 @@ function renderDragonPlayerSelect(selectedPlayer = "") {
   if (!select) return;
 
   const players = collectPlayerNames();
-  const selected = text(selectedPlayer);
+  const selected = resolvePlayerName(selectedPlayer);
   fillSelect(select, ["", ...players]);
   if (select.options[0]) select.options[0].textContent = players.length ? "New player or select existing" : "New player";
   select.value = players.includes(selected) ? selected : "";
@@ -1976,12 +2018,14 @@ function renderDragonPlayerSelect(selectedPlayer = "") {
 }
 
 function activeDragonPlayerName() {
-  return text(document.querySelector("#dragonPlayerSelect")?.value) || text(document.querySelector("#dragonUsername")?.value);
+  return resolvePlayerName(
+    text(document.querySelector("#dragonPlayerSelect")?.value) || text(document.querySelector("#dragonUsername")?.value)
+  );
 }
 
 function renderAccountNameDatalist(username = "") {
   if (!els.accountOptions) return;
-  const playerName = text(username);
+  const playerName = resolvePlayerName(username);
   const accountNames = [...new Set(state.accounts
     .filter((account) => !playerName || account.username === playerName)
     .map((account) => account.accountName)
@@ -5316,6 +5360,7 @@ function renderBackup() {
   `;
   renderSyncSettings();
   renderPersonalPlayerSetting();
+  renderPlayerAliasSettings();
   renderElderTick();
   renderElderTickAccountList();
   renderBackupHealth();
@@ -5366,6 +5411,65 @@ function handlePersonalPlayerChange(event) {
   renderHome();
   renderPersonalPlayerSetting();
   showToast(nextPlayer ? `Home now shows ${nextPlayer}'s accounts` : "Home now shows all players");
+}
+
+function aliasesForPlayer(playerName) {
+  const canonicalPlayer = findDirectPlayerName(playerName);
+  if (!canonicalPlayer) return [];
+  return Object.entries(state.settings?.playerAliases || {})
+    .filter(([, target]) => playerNameKey(target) === playerNameKey(canonicalPlayer))
+    .map(([alias]) => alias)
+    .sort(sortText);
+}
+
+function renderPlayerAliasSettings() {
+  const select = els.playerAliasPlayerSelect;
+  const input = els.playerAliasesInput;
+  const saveButton = els.savePlayerAliasesBtn;
+  if (!select || !input || !saveButton) return;
+
+  const players = collectPlayerNames();
+  const selected = findDirectPlayerName(select.value)
+    || normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts)
+    || players[0]
+    || "";
+  fillSelect(select, ["", ...players]);
+  if (select.options[0]) select.options[0].textContent = players.length ? "Choose player" : "Add a player first";
+  select.value = selected;
+  input.disabled = !selected;
+  saveButton.disabled = !selected;
+  input.value = selected ? aliasesForPlayer(selected).join(", ") : "";
+
+  if (els.playerAliasDescription) {
+    els.playerAliasDescription.textContent = selected
+      ? `Future imports and entries using any alias below will be filed under ${selected}. Aliases ignore capitalization.`
+      : "Add a player before creating aliases.";
+  }
+}
+
+function savePlayerAliases() {
+  const player = findDirectPlayerName(els.playerAliasPlayerSelect?.value);
+  if (!player) {
+    alert("Choose a player first.");
+    return;
+  }
+
+  const aliases = [...new Set(text(els.playerAliasesInput?.value)
+    .split(/[;,\n]/)
+    .map((alias) => playerNameKey(alias))
+    .filter((alias) => alias && alias !== playerNameKey(player)))];
+  const nextAliases = { ...(state.settings?.playerAliases || {}) };
+  Object.entries(nextAliases).forEach(([alias, target]) => {
+    if (playerNameKey(target) === playerNameKey(player)) delete nextAliases[alias];
+  });
+  aliases.forEach((alias) => {
+    nextAliases[alias] = player;
+  });
+
+  state.settings.playerAliases = normalizePlayerAliases(nextAliases, state.accounts);
+  saveState({ reason: "Player aliases updated" });
+  renderAll();
+  showToast(aliases.length ? `${player}'s aliases saved` : `${player}'s aliases cleared`);
 }
 
 function renderSetupChecklist() {
@@ -5941,7 +6045,8 @@ function handleAccountSubmit(event) {
   event.preventDefault();
   const form = new FormData(els.accountForm);
   const id = text(form.get("id"));
-  const username = text(form.get("username"));
+  const rawUsername = text(form.get("username"));
+  const username = id ? rawUsername : resolvePlayerName(rawUsername);
   const accountName = text(form.get("accountName"));
   const dlc = Object.fromEntries(DLC_OPTIONS.map((option) => [option.key, form.has(`dlc-${option.key}`)]));
 
@@ -5961,6 +6066,7 @@ function handleAccountSubmit(event) {
   const account = upsertAccountRecord({
     id,
     username,
+    preserveUsername: Boolean(id),
     accountName,
     discord: form.get("discord"),
     steam: form.get("steam"),
@@ -5980,10 +6086,11 @@ function handleDragonSubmit(event) {
   const existing = dragonById(id);
   const selectedPlayer = text(document.querySelector("#dragonPlayerSelect")?.value);
   const typedPlayer = text(document.querySelector("#dragonUsername")?.value);
-  const existingTypedPlayer = findExistingPlayerName(typedPlayer);
-  const username = selectedPlayer || typedPlayer;
+  const aliasedPlayer = resolvePlayerAlias(typedPlayer);
+  const existingTypedPlayer = findDirectPlayerName(typedPlayer);
+  const username = selectedPlayer || aliasedPlayer || typedPlayer;
 
-  if (!selectedPlayer && existingTypedPlayer) {
+  if (!selectedPlayer && existingTypedPlayer && !aliasedPlayer) {
     alert(`${existingTypedPlayer} already exists. Select that player from the dropdown instead of typing it manually.`);
     return;
   }
@@ -7590,6 +7697,7 @@ function upsertAccountRecord(values) {
   const hasDlcData = Object.prototype.hasOwnProperty.call(values || {}, "dlc");
   const incoming = normalizeAccount({
     ...values,
+    username: values?.preserveUsername ? values?.username : resolvePlayerName(values?.username),
     updatedAt: now
   });
   const existing = accountById(incoming.id)
