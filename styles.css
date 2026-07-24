@@ -690,6 +690,31 @@ input[type="checkbox"] {
   font-size: 1.05rem;
 }
 
+.account-user-identity {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.account-user-identity p {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.account-user-identity p span {
+  color: var(--gold);
+}
+
+.account-user-identity p span:not(:last-child)::after {
+  content: ",";
+}
+
 .account-user-actions {
   display: flex;
   align-items: center;
@@ -2224,6 +2249,32 @@ input[type="checkbox"] {
   font-size: 1.45rem;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
+}
+
+.saved-aliases {
+  display: grid;
+  gap: 8px;
+  min-height: 50px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.saved-aliases > strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.saved-aliases > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.saved-aliases > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .settings-general-grid,

@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.5";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.6";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -138,6 +138,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Made saved player aliases visible in Settings and beside player names on Home and Players.",
   "Added player name aliases so alternate names can keep future dragons and accounts under one familiar player.",
   "Simplified navigation by grouping the Nesting Planner and Brood Pouch under Breeding, and Upstats under Dragons.",
   "Moved elder tick controls onto Home and split Settings into General, Backup, Sync, and Diagnostics views.",
@@ -458,6 +459,7 @@ const els = {
   accountDetailContent: document.querySelector("#accountDetailContent"),
   playerAliasPlayerSelect: document.querySelector("#playerAliasPlayerSelect"),
   playerAliasesInput: document.querySelector("#playerAliasesInput"),
+  playerAliasesSavedList: document.querySelector("#playerAliasesSavedList"),
   playerAliasDescription: document.querySelector("#playerAliasDescription"),
   savePlayerAliasesBtn: document.querySelector("#savePlayerAliasesBtn"),
   dragonDialog: document.querySelector("#dragonDialog"),
@@ -2246,10 +2248,14 @@ function renderAccountSections(accounts) {
   return [...byUser.entries()].map(([username, userAccounts]) => {
     const dragonCount = userAccounts.reduce((sum, account) => sum + dragonsForAccount(account.id).length, 0);
     const clanOnlyPlayer = userAccounts.every((account) => account.clanImported);
+    const savedAliases = aliasesForPlayer(username);
     return `
       <section class="account-user-section">
         <div class="account-user-head">
-          <h2>${escapeHtml(username)}</h2>
+          <div class="account-user-identity">
+            <h2>${escapeHtml(username)}</h2>
+            ${savedAliases.length ? `<p>Also recognized as: ${savedAliases.map((alias) => `<span>${escapeHtml(alias)}</span>`).join("")}</p>` : ""}
+          </div>
           <div class="account-user-actions">
             <span class="pill">${userAccounts.length} account${userAccounts.length === 1 ? "" : "s"} / ${dragonCount} dragon${dragonCount === 1 ? "" : "s"}</span>
             ${clanOnlyPlayer ? `<span class="small-pill">Clan shared</span>` : `
@@ -5440,7 +5446,19 @@ function renderPlayerAliasSettings() {
   select.value = selected;
   input.disabled = !selected;
   saveButton.disabled = !selected;
-  input.value = selected ? aliasesForPlayer(selected).join(", ") : "";
+  const savedAliases = selected ? aliasesForPlayer(selected) : [];
+  input.value = savedAliases.join(", ");
+
+  if (els.playerAliasesSavedList) {
+    els.playerAliasesSavedList.innerHTML = selected
+      ? `
+        <strong>Saved aliases for ${escapeHtml(selected)}</strong>
+        ${savedAliases.length
+          ? `<div>${savedAliases.map((alias) => `<span class="small-pill">${escapeHtml(alias)}</span>`).join("")}</div>`
+          : `<p>No aliases saved for this player.</p>`}
+      `
+      : `<p>Choose a player to see their saved aliases.</p>`;
+  }
 
   if (els.playerAliasDescription) {
     els.playerAliasDescription.textContent = selected
