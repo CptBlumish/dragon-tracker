@@ -15,6 +15,7 @@ export const STATUS_CHOICES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder
 export const BLOODLINE_CHOICES = ["F", "E", "D", "C", "B", "A"];
 export const NEST_ROLE_CHOICES = ["Unknown", "Breeder", "Pure", "Ultra Pure"];
 export const UPSTAT_STATUS_CHOICES = ["Not Started", "In Progress", "Partial A+", "Near 18A+", "18A+ Complete"];
+export const EGG_MATCH_ALERT_CHOICES = ["Enabled", "Disabled", "Status"];
 
 function addChoices(option, values) {
   return option.addChoices(...values.map((value) => ({ name: value, value })));
@@ -72,6 +73,11 @@ export const commands = [
     .addStringOption((option) => addChoices(option.setName("sex").setDescription("Wanted sex").setRequired(false), SEX_CHOICES))
     .addStringOption((option) => option.setName("goal").setDescription("Pure, ultra, upstat, mutation, etc.").setRequired(false).setMaxLength(120))
     .addStringOption((option) => option.setName("notes").setDescription("Request notes").setRequired(false).setMaxLength(1000)),
+
+  new SlashCommandBuilder()
+    .setName("dt-alerts")
+    .setDescription("Control private egg-request match alerts for your submitted dragons.")
+    .addStringOption((option) => addChoices(option.setName("setting").setDescription("Alert preference").setRequired(true), EGG_MATCH_ALERT_CHOICES)),
 
   new SlashCommandBuilder()
     .setName("dt-upstat")

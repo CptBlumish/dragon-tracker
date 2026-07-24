@@ -38,6 +38,7 @@ npm start
 - `/dt-dragon` submits a dragon to the tracker inbox.
 - `/dt-createdragon` submits a dragon using the breeder-friendly command name. Its optional `Nest role` is a Dragon Tracker setting, not a Discord server role. The Discord server's `Breeder` role controls who can submit dragons; successful submissions are posted publicly for clan members to view.
 - `/dt-eggrequest` posts an egg request in the channel for breeders and saves it to the tracker inbox.
+- `/dt-alerts` lets a user opt in or out of private DMs when their bot-submitted dragons match a later egg request. Alerts are off by default.
 - `/dt-upstat` submits skin upstat progress.
 - `/dt-broodpouch` submits an egg stored in a brood pouch or brood vault.
 - `/dt-currentnest` submits a current nest note.
@@ -46,3 +47,11 @@ npm start
 - `/dt-help` shows a short help message.
 
 Prefix commands such as `!createdragon`, `!eggrequest`, `!upstat`, `!broodpouch`, `!broodvault`, and `!currentnest` are optional. To enable them, set `ENABLE_PREFIX_COMMANDS=true` and enable the Discord Message Content Intent for the bot. Slash commands are preferred because they need fewer Discord permissions.
+
+## Egg-request match alert privacy
+
+- Alerts are off until the dragon owner runs `/dt-alerts` with `Enabled`.
+- The bot only checks dragons submitted through this bot for the same clan. It does not scan Discord messages, Steam accounts, or private local tracker data.
+- A requester is never alerted about their own submitted dragons.
+- One request produces at most one DM per matching dragon owner, even when several of their dragons match.
+- The bot records only the minimum delivery state needed to prevent repeat alerts for the same request and dragon. It never stores Discord credentials, Steam credentials, or DM contents.

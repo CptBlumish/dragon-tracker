@@ -156,6 +156,92 @@ async function announceEggRequest(channel, payload, submittedBy) {
   });
 }
 
+async function updateEggMatchAlerts(interaction, setting) {
+  return trackerRequest({
+    action: "egg_match_alerts",
+    clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+    discord_user_id: interaction.user.id,
+    discord_username: interaction.member?.displayName || interaction.user.globalName || interaction.user.username,
+    setting
+  });
+}
+
+async function recordEggMatchNotification(notificationSourceKey, status, failureReason = "") {
+  try {
+    await trackerRequest({
+      action: "record_egg_match_notification",
+      clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+      notification_source_key: notificationSourceKey,
+      status,
+      failure_reason: clean(failureReason, 200)
+    });
+  } catch (error) {
+    console.error(`Could not record egg match notification ${notificationSourceKey}: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+}
+
+function eggMatchDmMessage(matches) {
+  const first = matches[0] || {};
+  const requestDetails = [
+    first.requestSpecies,
+    first.requestSkin ? `Skin: ${first.requestSkin}` : "",
+    first.requestRecessiveSkin ? `Recessive: ${first.requestRecessiveSkin}` : "",
+    first.requestSex ? `Sex: ${first.requestSex}` : "",
+    first.requestGoal ? `Goal: ${first.requestGoal}` : ""
+  ].filter(Boolean).join(" | ");
+  const dragonLines = matches.slice(0, 8).map((match) => [
+    `- **${match.dragonName || "Submitted dragon"}**`,
+    [match.dragonSpecies, match.dragonSex].filter(Boolean).join(" | "),
+    match.dragonSkin ? `Skin: ${match.dragonSkin}` : "",
+    match.dragonRecessiveSkin ? `Res: ${match.dragonRecessiveSkin}` : ""
+  ].filter(Boolean).join(" | "));
+  if (matches.length > 8) dragonLines.push(`- Plus ${matches.length - 8} more matching submitted dragons.`);
+  const channelLink = first.discordGuildId && first.discordChannelId
+    ? `https://discord.com/channels/${first.discordGuildId}/${first.discordChannelId}`
+    : "";
+  return [
+    "**Dragon Tracker - Egg Request Match**",
+    `${first.requester || "A clan member"} requested: ${requestDetails || "a matching egg"}.`,
+    "Your matching submitted dragon(s):",
+    ...dragonLines,
+    first.requestNotes ? `Notes: ${first.requestNotes}` : "",
+    channelLink ? `Contact the requester in the clan channel: ${channelLink}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function dmFailureStatus(error) {
+  return Number(error?.code) === 50007 ? "blocked" : "failed";
+}
+
+async function deliverEggMatchNotifications(submissionResult) {
+  const notifications = Array.isArray(submissionResult?.eggMatchNotifications)
+    ? submissionResult.eggMatchNotifications.filter((item) => item?.notificationSourceKey && item?.recipientDiscordUserId)
+    : [];
+  const recipientGroups = new Map();
+  for (const notification of notifications) {
+    const key = clean(notification.recipientDiscordUserId, 40);
+    if (!key) continue;
+    const group = recipientGroups.get(key) || [];
+    group.push(notification);
+    recipientGroups.set(key, group);
+  }
+
+  let sent = 0;
+  for (const [recipientId, matches] of recipientGroups) {
+    try {
+      const recipient = await client.users.fetch(recipientId);
+      await recipient.send({ content: eggMatchDmMessage(matches), allowedMentions: { parse: [] } });
+      await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, "sent")));
+      sent += 1;
+    } catch (error) {
+      const status = dmFailureStatus(error);
+      const reason = error instanceof Error ? error.message : "Discord could not deliver the direct message";
+      await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, status, reason)));
+    }
+  }
+  return sent;
+}
+
 function eggRequestPayload(interaction) {
   return {
     requester: clean(interaction.options.getString("requester", true), 100),
@@ -238,6 +324,7 @@ async function handleCommand(interaction) {
         "`/dt-dragon` sends a dragon record to the clan inbox.",
         "`/dt-createdragon` is the same dragon helper with a clearer breeder name.",
         "`/dt-eggrequest` posts an egg request for breeders and saves it to the tracker inbox.",
+        "`/dt-alerts` controls opt-in private egg-request match alerts for your submitted dragons.",
         "`/dt-upstat` sends upstat progress.",
         "`/dt-upstat-progress` checks submitted progress for a species and skin.",
         "`/dt-broodpouch` sends an egg in a brood pouch or brood vault.",
@@ -260,11 +347,26 @@ async function handleCommand(interaction) {
       await interaction.editReply(`Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
       return;
     }
+    if (interaction.commandName === "dt-alerts") {
+      const setting = clean(interaction.options.getString("setting", true), 20);
+      const result = await updateEggMatchAlerts(interaction, setting);
+      if (setting.toLowerCase() === "status") {
+        await interaction.editReply(result?.enabled
+          ? "Egg-request match alerts are enabled for your dragons submitted through this bot."
+          : "Egg-request match alerts are off. Use `/dt-alerts` with `Enabled` to opt in.");
+      } else {
+        await interaction.editReply(result?.enabled
+          ? "Egg-request match alerts are now enabled. You will receive a private DM only when one of your bot-submitted dragons matches a future request."
+          : "Egg-request match alerts are now disabled. No new match DMs will be sent to you.");
+      }
+      return;
+    }
     if (interaction.commandName === "dt-eggrequest") {
       const payload = eggRequestPayload(interaction);
-      await submitToTracker(interaction, "egg_request", payload);
+      const submissionResult = await submitToTracker(interaction, "egg_request", payload);
       await announceEggRequest(interaction.channel, payload, interaction.member?.displayName || interaction.user.username);
-      await interaction.editReply(`Posted ${payload.requester}'s egg request for breeders and saved it to the Dragon Tracker Discord Inbox.`);
+      const notifiedOwners = await deliverEggMatchNotifications(submissionResult);
+      await interaction.editReply(`Posted ${payload.requester}'s egg request for breeders and saved it to the Dragon Tracker Discord Inbox.${notifiedOwners ? ` Sent private match alerts to ${notifiedOwners} opted-in dragon owner${notifiedOwners === 1 ? "" : "s"}.` : ""}`);
       return;
     }
     if (interaction.commandName === "dt-upstat") {
@@ -342,8 +444,9 @@ async function submitPrefixMessage(message, type, payload) {
     user: message.author,
     member: message.member
   };
-  await submitToTracker(interactionLike, type, payload);
+  const result = await submitToTracker(interactionLike, type, payload);
   await message.reply(`Sent to the Dragon Tracker Discord Inbox.`);
+  return result;
 }
 
 async function handlePrefixMessage(message) {
@@ -382,8 +485,9 @@ async function handlePrefixMessage(message) {
         goal: prefixValue(args, "goal"),
         notes: prefixValue(args, "notes", "note")
       };
-      await submitPrefixMessage(message, "egg_request", payload);
+      const submissionResult = await submitPrefixMessage(message, "egg_request", payload);
       await announceEggRequest(message.channel, payload, message.member?.displayName || message.author.username);
+      await deliverEggMatchNotifications(submissionResult);
     }
     if (command === "upstat") {
       await submitPrefixMessage(message, "upstat", {

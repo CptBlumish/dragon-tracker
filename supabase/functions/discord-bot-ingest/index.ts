@@ -87,6 +87,206 @@ async function lookupUpstatProgress(database: ReturnType<typeof serviceClient>, 
   };
 }
 
+function payloadRecord(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function isEggRequestMatch(requestPayload: Record<string, unknown>, dragonPayload: Record<string, unknown>) {
+  const requestSpecies = normalizedLookupValue(requestPayload.species, 80);
+  const dragonSpecies = normalizedLookupValue(dragonPayload.species, 80);
+  if (!requestSpecies || requestSpecies !== dragonSpecies) return false;
+
+  const requestedSkin = normalizedLookupValue(requestPayload.skin, 100);
+  if (requestedSkin && requestedSkin !== normalizedLookupValue(dragonPayload.skin, 100)) return false;
+
+  const requestedRecessive = normalizedLookupValue(requestPayload.recessiveSkin, 100);
+  if (requestedRecessive && requestedRecessive !== normalizedLookupValue(dragonPayload.recessiveSkin, 100)) return false;
+
+  const requestedSex = normalizedLookupValue(requestPayload.sex, 20);
+  if (requestedSex && requestedSex !== "unknown" && requestedSex !== normalizedLookupValue(dragonPayload.sex, 20)) return false;
+
+  const goal = normalizedLookupValue(requestPayload.goal, 120);
+  const nestRole = normalizedLookupValue(dragonPayload.nestRole, 30);
+  if (goal.includes("ultra") && nestRole !== "ultra pure") return false;
+  if (!goal.includes("ultra") && goal.includes("pure") && !["pure", "ultra pure"].includes(nestRole)) return false;
+
+  return true;
+}
+
+async function eggMatchAlertPreference(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
+  const discordUserId = clean(input.discord_user_id, 40);
+  if (!discordUserId) throw new Error("A Discord user id is required");
+  const setting = normalizedLookupValue(input.setting, 20);
+  const sourceKey = `egg-alert-pref:${discordUserId}`;
+
+  if (setting === "status") {
+    const { data, error } = await database
+      .from("discord_bot_submissions")
+      .select("payload")
+      .eq("clan_id", clanId)
+      .eq("source_key", sourceKey)
+      .maybeSingle();
+    if (error) throw error;
+    return { enabled: Boolean(payloadRecord(data?.payload).enabled) };
+  }
+
+  if (setting !== "enabled" && setting !== "disabled") throw new Error("Alert setting must be Enabled, Disabled, or Status");
+  const { data, error } = await database
+    .from("discord_bot_submissions")
+    .upsert({
+      clan_id: clanId,
+      source_key: sourceKey,
+      discord_user_id: discordUserId,
+      discord_username: clean(input.discord_username, 100),
+      submission_type: "note",
+      payload: {
+        kind: "egg_match_alert_preference",
+        enabled: setting === "enabled"
+      },
+      status: "ignored"
+    }, { onConflict: "clan_id,source_key" })
+    .select("payload")
+    .single();
+  if (error) throw error;
+  return { enabled: Boolean(payloadRecord(data?.payload).enabled) };
+}
+
+async function createEggMatchNotifications(
+  database: ReturnType<typeof serviceClient>,
+  clanId: string,
+  eggRequestSubmissionId: string,
+  sourceKey: string
+) {
+  const { data: eggRequest, error: requestError } = await database
+    .from("discord_bot_submissions")
+    .select("id,discord_user_id,discord_guild_id,discord_channel_id,payload")
+    .eq("id", eggRequestSubmissionId)
+    .eq("clan_id", clanId)
+    .eq("source_key", sourceKey)
+    .eq("submission_type", "egg_request")
+    .single();
+  if (requestError) throw requestError;
+
+  const { data: preferences, error: preferenceError } = await database
+    .from("discord_bot_submissions")
+    .select("discord_user_id,payload")
+    .eq("clan_id", clanId)
+    .eq("submission_type", "note")
+    .eq("status", "ignored")
+    .like("source_key", "egg-alert-pref:%")
+    .limit(1000);
+  if (preferenceError) throw preferenceError;
+  const optedInUserIds = new Set((preferences ?? [])
+    .filter((row) => payloadRecord(row.payload).kind === "egg_match_alert_preference" && Boolean(payloadRecord(row.payload).enabled))
+    .map((row) => clean(row.discord_user_id, 40))
+    .filter(Boolean));
+  if (!optedInUserIds.size) return [];
+
+  const { data: dragons, error: dragonError } = await database
+    .from("discord_bot_submissions")
+    .select("id,discord_user_id,discord_username,payload")
+    .eq("clan_id", clanId)
+    .eq("submission_type", "dragon")
+    .neq("status", "ignored")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (dragonError) throw dragonError;
+
+  const requestPayload = payloadRecord(eggRequest.payload);
+  const requesterId = clean(eggRequest.discord_user_id, 40);
+  const notifications: Array<Record<string, unknown>> = [];
+  for (const dragon of dragons ?? []) {
+    const recipientDiscordUserId = clean(dragon.discord_user_id, 40);
+    if (!recipientDiscordUserId || recipientDiscordUserId === requesterId || !optedInUserIds.has(recipientDiscordUserId)) continue;
+    const dragonPayload = payloadRecord(dragon.payload);
+    if (!isEggRequestMatch(requestPayload, dragonPayload)) continue;
+
+    const notificationSourceKey = `egg-match:${eggRequest.id}:${dragon.id}`;
+    const { data: existingNotification, error: existingNotificationError } = await database
+      .from("discord_bot_submissions")
+      .select("id")
+      .eq("clan_id", clanId)
+      .eq("source_key", notificationSourceKey)
+      .maybeSingle();
+    if (existingNotificationError) throw existingNotificationError;
+    if (existingNotification) continue;
+
+    const { error: notificationError } = await database
+      .from("discord_bot_submissions")
+      .insert({
+        clan_id: clanId,
+        source_key: notificationSourceKey,
+        discord_user_id: recipientDiscordUserId,
+        discord_username: clean(dragon.discord_username, 100) || "Discord user",
+        submission_type: "note",
+        payload: {
+          kind: "egg_match_notification",
+          status: "pending",
+          eggRequestSubmissionId: eggRequest.id,
+          dragonSubmissionId: dragon.id
+        },
+        status: "ignored"
+      });
+    if (notificationError) {
+      if (notificationError.code === "23505") continue;
+      throw notificationError;
+    }
+    notifications.push({
+      notificationSourceKey,
+      recipientDiscordUserId,
+      recipientUsername: clean(dragon.discord_username, 100),
+      dragonName: clean(dragonPayload.name || dragonPayload.accountName, 80) || "Submitted dragon",
+      dragonSpecies: clean(dragonPayload.species, 80),
+      dragonSkin: clean(dragonPayload.skin, 100),
+      dragonRecessiveSkin: clean(dragonPayload.recessiveSkin, 100),
+      dragonSex: clean(dragonPayload.sex, 20),
+      requester: clean(requestPayload.requester, 100),
+      requestSpecies: clean(requestPayload.species, 80),
+      requestSkin: clean(requestPayload.skin, 100),
+      requestRecessiveSkin: clean(requestPayload.recessiveSkin, 100),
+      requestSex: clean(requestPayload.sex, 20),
+      requestGoal: clean(requestPayload.goal, 120),
+      requestNotes: clean(requestPayload.notes, 1000),
+      discordGuildId: clean(eggRequest.discord_guild_id, 40),
+      discordChannelId: clean(eggRequest.discord_channel_id, 40)
+    });
+  }
+  return notifications;
+}
+
+async function recordEggMatchNotification(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
+  const notificationSourceKey = clean(input.notification_source_key, 160);
+  if (!notificationSourceKey.startsWith("egg-match:")) throw new Error("A valid notification key is required");
+  const status = normalizedLookupValue(input.status, 20);
+  if (!["sent", "blocked", "failed"].includes(status)) throw new Error("Unsupported notification status");
+
+  const { data: existing, error: existingError } = await database
+    .from("discord_bot_submissions")
+    .select("payload")
+    .eq("clan_id", clanId)
+    .eq("source_key", notificationSourceKey)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  const existingPayload = payloadRecord(existing?.payload);
+  if (existingPayload.kind !== "egg_match_notification") throw new Error("Egg match notification not found");
+
+  const { error } = await database
+    .from("discord_bot_submissions")
+    .update({
+      payload: {
+        ...existingPayload,
+        status,
+        failureReason: status === "sent" ? "" : clean(input.failure_reason, 200),
+        sentAt: status === "sent" ? new Date().toISOString() : "",
+        updatedAt: new Date().toISOString()
+      }
+    })
+    .eq("clan_id", clanId)
+    .eq("source_key", notificationSourceKey);
+  if (error) throw error;
+  return { ok: true };
+}
+
 function normalizePayload(type: SubmissionType, input: Record<string, unknown>) {
   if (type === "dragon") {
     return {
@@ -191,8 +391,15 @@ Deno.serve(async (request) => {
     if (!hasBearerToken(request, INGEST_SECRET)) return json({ error: "Unauthorized" }, 401);
     const clanId = requireUuid(input.clan_id);
     const database = serviceClient();
-    if (clean(input.action, 40) === "upstat_lookup") {
+    const action = clean(input.action, 40);
+    if (action === "upstat_lookup") {
       return json(await lookupUpstatProgress(database, clanId, input));
+    }
+    if (action === "egg_match_alerts") {
+      return json(await eggMatchAlertPreference(database, clanId, input));
+    }
+    if (action === "record_egg_match_notification") {
+      return json(await recordEggMatchNotification(database, clanId, input));
     }
 
     const type = normalizeType(input.type);
@@ -200,7 +407,7 @@ Deno.serve(async (request) => {
     if (!sourceKey) throw new Error("source_key is required");
 
     const payload = normalizePayload(type, input.payload && typeof input.payload === "object" ? input.payload : {});
-    const { error } = await database.from("discord_bot_submissions").upsert({
+    const { data: submission, error } = await database.from("discord_bot_submissions").upsert({
       clan_id: clanId,
       source_key: sourceKey,
       discord_guild_id: clean(input.discord_guild_id, 40),
@@ -210,10 +417,13 @@ Deno.serve(async (request) => {
       submission_type: type,
       payload,
       status: "pending"
-    }, { onConflict: "clan_id,source_key" });
+    }, { onConflict: "clan_id,source_key" }).select("id").single();
 
     if (error) throw error;
-    return json({ ok: true });
+    const eggMatchNotifications = type === "egg_request"
+      ? await createEggMatchNotifications(database, clanId, submission.id, sourceKey)
+      : [];
+    return json({ ok: true, eggMatchNotifications });
   } catch (error) {
     console.error("discord-bot-ingest failed", error);
     return json({ error: error instanceof Error ? error.message : "Discord bot submission failed" }, 400);
