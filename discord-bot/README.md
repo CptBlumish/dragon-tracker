@@ -35,7 +35,7 @@ npm run deploy
 
 ## Keeping the bot online on Windows
 
-`install-discord-bot-task.ps1` creates or refreshes the `Dragon Tracker Discord Bot` Scheduled Task. It starts the bot directly with Node after sign-in, keeps the window hidden, and asks Windows to restart it after a failure. `run-discord-bot.ps1` is available only as a manual troubleshooting runner. Do not start or keep a separate `npm start` terminal open; it can create a second bot connection with the same token.
+`install-discord-bot-task.ps1` creates or refreshes the `Dragon Tracker Discord Bot` Scheduled Task. It starts Node through a hidden Windows Script Host runner after sign-in and asks Windows to restart it after a failure. Do not start or keep a separate `npm start` terminal open; it can create a second bot connection with the same token.
 
 The task writes service-only diagnostics to `%LOCALAPPDATA%\Dragon Tracker\discord-bot.log`. The current log rotates once it reaches 2 MB, so ordinary command traffic does not leave an unbounded file behind.
 

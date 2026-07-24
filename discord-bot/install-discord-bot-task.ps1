@@ -3,14 +3,24 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$node = Get-Command node -ErrorAction Stop
+$node = Get-Command node.exe -ErrorAction Stop
 $botPath = Join-Path $PSScriptRoot "src\index.js"
+$hiddenRunnerPath = Join-Path $PSScriptRoot "run-discord-bot-hidden.vbs"
+$scriptHost = Join-Path $env:WINDIR "System32\wscript.exe"
 
 if (-not (Test-Path -LiteralPath $botPath)) {
   throw "Could not find $botPath"
 }
 
-$action = New-ScheduledTaskAction -Execute $node.Source -Argument ('"{0}"' -f $botPath) -WorkingDirectory $PSScriptRoot
+if (-not (Test-Path -LiteralPath $hiddenRunnerPath)) {
+  throw "Could not find $hiddenRunnerPath"
+}
+
+if (-not (Test-Path -LiteralPath $scriptHost)) {
+  throw "Could not find Windows Script Host at $scriptHost"
+}
+
+$action = New-ScheduledTaskAction -Execute $scriptHost -Argument ('"{0}" "{1}"' -f $hiddenRunnerPath, $node.Source) -WorkingDirectory $PSScriptRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
@@ -32,4 +42,4 @@ Register-ScheduledTask `
   -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 
-Write-Host "Dragon Tracker Discord bot service installed and started."
+Write-Host "Dragon Tracker Discord bot service installed and started without a console window."
