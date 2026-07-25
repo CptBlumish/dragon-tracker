@@ -374,10 +374,11 @@
                 <select id="playerAliasPlayerSelect"></select>
               </div>
               <div class="field">
-                <label for="playerAliasesInput">Aliases</label>
-                <input id="playerAliasesInput" type="text" autocomplete="off" placeholder="Example: cpt_blumish">
+                <label for="playerAliasesInput">Aliases (comma-separated)</label>
+                <input id="playerAliasesInput" type="text" autocomplete="off" placeholder="Example: cpt_blumish, captainblumish">
               </div>
               <div class="saved-aliases" id="playerAliasesSavedList" aria-live="polite"></div>
+              <p class="alias-save-status" id="playerAliasStatus" role="status" hidden></p>
               <p class="form-note" id="playerAliasDescription">Aliases keep alternate player names attached to one player.</p>
               <div class="button-row">
                 <button class="tool-button" type="button" id="savePlayerAliasesBtn">Save Aliases</button>
@@ -386,7 +387,7 @@
             <div class="backup-panel">
               <h2>Version</h2>
               <p class="form-note">Compare this version with the latest release before updating.</p>
-              <p class="settings-version" id="appVersionLabel">Version 1.3.3</p>
+              <p class="settings-version" id="appVersionLabel">Version 1.3.8</p>
               <div class="button-row compact-actions">
                 <button class="tool-button" type="button" id="openChangelogBtn">View Changelog</button>
               </div>
@@ -1096,6 +1097,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="./sync-client.js?v=20260721-breeder-bot-pure-filter"></script>
-  <script src="./app.js?v=20260725-clan-library-fix"></script>
+  <script src="./app.js?v=20260725-alias-feedback"></script>
 </body>
 </html>

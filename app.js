@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.7";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.8";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -138,6 +138,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Improved player alias saving with immediate list updates and clear duplicate or primary-name feedback.",
   "Fixed Clan Library rendering so refreshed shared dragons and Discord submissions display correctly.",
   "Made saved player aliases visible in Settings and beside player names on Home and Players.",
   "Added player name aliases so alternate names can keep future dragons and accounts under one familiar player.",
@@ -461,6 +462,7 @@ const els = {
   playerAliasPlayerSelect: document.querySelector("#playerAliasPlayerSelect"),
   playerAliasesInput: document.querySelector("#playerAliasesInput"),
   playerAliasesSavedList: document.querySelector("#playerAliasesSavedList"),
+  playerAliasStatus: document.querySelector("#playerAliasStatus"),
   playerAliasDescription: document.querySelector("#playerAliasDescription"),
   savePlayerAliasesBtn: document.querySelector("#savePlayerAliasesBtn"),
   dragonDialog: document.querySelector("#dragonDialog"),
@@ -1751,7 +1753,11 @@ function bindEvents() {
   els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
   els.homePersonalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
   els.personalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
-  els.playerAliasPlayerSelect?.addEventListener("change", renderPlayerAliasSettings);
+  els.playerAliasPlayerSelect?.addEventListener("change", () => {
+    setPlayerAliasStatus("");
+    renderPlayerAliasSettings();
+  });
+  els.playerAliasesInput?.addEventListener("keydown", handlePlayerAliasInputKeydown);
   els.savePlayerAliasesBtn?.addEventListener("click", savePlayerAliases);
 
   els.dragonList.addEventListener("click", handleDragonAction);
@@ -5431,14 +5437,15 @@ function aliasesForPlayer(playerName) {
     .sort(sortText);
 }
 
-function renderPlayerAliasSettings() {
+function renderPlayerAliasSettings(preferredPlayer = "") {
   const select = els.playerAliasPlayerSelect;
   const input = els.playerAliasesInput;
   const saveButton = els.savePlayerAliasesBtn;
   if (!select || !input || !saveButton) return;
 
   const players = collectPlayerNames();
-  const selected = findDirectPlayerName(select.value)
+  const selected = findDirectPlayerName(preferredPlayer)
+    || findDirectPlayerName(select.value)
     || normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts)
     || players[0]
     || "";
@@ -5468,6 +5475,44 @@ function renderPlayerAliasSettings() {
   }
 }
 
+function parsePlayerAliasInput(value, player) {
+  const primaryKey = playerNameKey(player);
+  const seen = new Set();
+  const aliases = [];
+  let duplicateCount = 0;
+  let primaryNameCount = 0;
+
+  text(value).split(/[;,\n]/).forEach((rawAlias) => {
+    const alias = playerNameKey(rawAlias);
+    if (!alias) return;
+    if (alias === primaryKey) {
+      primaryNameCount += 1;
+      return;
+    }
+    if (seen.has(alias)) {
+      duplicateCount += 1;
+      return;
+    }
+    seen.add(alias);
+    aliases.push(alias);
+  });
+
+  return { aliases, duplicateCount, primaryNameCount };
+}
+
+function setPlayerAliasStatus(message, tone = "") {
+  if (!els.playerAliasStatus) return;
+  els.playerAliasStatus.textContent = text(message);
+  els.playerAliasStatus.dataset.tone = tone;
+  els.playerAliasStatus.hidden = !text(message);
+}
+
+function handlePlayerAliasInputKeydown(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+  event.preventDefault();
+  savePlayerAliases();
+}
+
 function savePlayerAliases() {
   const player = findDirectPlayerName(els.playerAliasPlayerSelect?.value);
   if (!player) {
@@ -5475,10 +5520,11 @@ function savePlayerAliases() {
     return;
   }
 
-  const aliases = [...new Set(text(els.playerAliasesInput?.value)
-    .split(/[;,\n]/)
-    .map((alias) => playerNameKey(alias))
-    .filter((alias) => alias && alias !== playerNameKey(player)))];
+  const previousAliases = aliasesForPlayer(player);
+  const { aliases, duplicateCount, primaryNameCount } = parsePlayerAliasInput(
+    els.playerAliasesInput?.value,
+    player
+  );
   const nextAliases = { ...(state.settings?.playerAliases || {}) };
   Object.entries(nextAliases).forEach(([alias, target]) => {
     if (playerNameKey(target) === playerNameKey(player)) delete nextAliases[alias];
@@ -5490,7 +5536,31 @@ function savePlayerAliases() {
   state.settings.playerAliases = normalizePlayerAliases(nextAliases, state.accounts);
   saveState({ reason: "Player aliases updated" });
   renderAll();
-  showToast(aliases.length ? `${player}'s aliases saved` : `${player}'s aliases cleared`);
+  renderPlayerAliasSettings(player);
+
+  const savedAliases = aliasesForPlayer(player);
+  const addedCount = savedAliases.filter((alias) => !previousAliases.includes(alias)).length;
+  const removedCount = previousAliases.filter((alias) => !savedAliases.includes(alias)).length;
+  const notices = [];
+  if (primaryNameCount) notices.push(`${player} is already the primary player name`);
+  if (duplicateCount) notices.push("duplicate capitalization was combined");
+
+  if (!addedCount && !removedCount) {
+    const message = notices.length
+      ? `No new aliases were needed: ${notices.join("; ")}.`
+      : "No alias changes were found.";
+    setPlayerAliasStatus(message, "info");
+    showToast("Aliases already up to date");
+    return;
+  }
+
+  const changes = [
+    addedCount ? `${addedCount} added` : "",
+    removedCount ? `${removedCount} removed` : ""
+  ].filter(Boolean).join(", ");
+  const message = `Saved ${savedAliases.length} alias${savedAliases.length === 1 ? "" : "es"} for ${player} (${changes})${notices.length ? `. ${notices.join("; ")}.` : "."}`;
+  setPlayerAliasStatus(message, "success");
+  showToast(`${player}'s aliases updated`);
 }
 
 function renderSetupChecklist() {
