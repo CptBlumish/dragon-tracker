@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.8";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.9";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -138,6 +138,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Fixed Continue in Background so update progress stays dismissed while the download continues.",
+  "Discord submissions now enter local Players and Dragons only for their matching connected Discord user; other members see them only in the Clan Library.",
   "Improved player alias saving with immediate list updates and clear duplicate or primary-name feedback.",
   "Fixed Clan Library rendering so refreshed shared dragons and Discord submissions display correctly.",
   "Made saved player aliases visible in Settings and beside player names on Home and Players.",
@@ -410,6 +412,7 @@ let mapPinPlacementActive = false;
 let clanShareConfirmationResolve = null;
 let pendingImportState = null;
 let desktopUpdateStatus = null;
+let updateProgressBackgrounded = false;
 const clanSync = window.DragonTrackerSyncClient ? new window.DragonTrackerSyncClient() : null;
 const clanUi = {
   activeClanId: localStorage.getItem(ACTIVE_CLAN_STORAGE_KEY) || "",
@@ -3810,7 +3813,7 @@ async function syncImportedDiscordDragon(clanId, record, dragon) {
 }
 
 async function autoImportOwnDiscordSubmissions(clanId, records) {
-  if (!state.settings.autoImportOwnDiscordSubmissions || !clanId) return new Set();
+  if (!clanId) return new Set();
   const discordUserId = connectedDiscordUserId();
   if (!discordUserId) return new Set();
 
@@ -4196,11 +4199,8 @@ function renderClansContent() {
       <dl class="line-list">
         <div><dt>Identity</dt><dd>Discord verified</dd></div>
         <div><dt>Data default</dt><dd>Local only</dd></div>
+        <div><dt>Discord submissions</dt><dd>Your submissions import locally; other members' submissions stay in the Clan Library.</dd></div>
       </dl>
-      <label class="clan-automation-toggle">
-        <input type="checkbox" data-clan-action="toggle-auto-import-own-discord-submissions"${state.settings.autoImportOwnDiscordSubmissions ? " checked" : ""}>
-        <span><strong>Auto-import my Discord bot submissions</strong><small>Only records submitted by this connected Discord account are imported. Dragon and brood-pouch entries are also synced to the clan library for your other tracker installs.</small></span>
-      </label>
       ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
       <div class="card-actions">
         <button class="tool-button" type="button" data-clan-action="refresh">Refresh</button>
@@ -4290,7 +4290,8 @@ function renderDiscordSubmissionRow(record) {
             : type === "current_nest"
               ? compactJoin([payload.species, payload.expectedSkin, payload.broodWatcherBrooding ? "BW brooding" : "", payload.breeder, payload.requester])
               : text(payload.notes, 160);
-  const canImport = ["dragon", "map_pin", "upstat", "brood_pouch"].includes(type);
+  const belongsToConnectedUser = isOwnDiscordSubmission(record);
+  const canImport = belongsToConnectedUser && ["dragon", "map_pin", "upstat", "brood_pouch"].includes(type);
   return `
     <article class="clan-share-row discord-submission-row">
       <strong>${escapeHtml(title)}</strong>
@@ -4298,7 +4299,9 @@ function renderDiscordSubmissionRow(record) {
       <small>${escapeHtml(discordSubmissionTypeLabel(type))} from ${escapeHtml(record.discord_username || "Discord user")} - ${escapeHtml(formatDateTime(record.created_at))}</small>
       <div class="clan-share-row-actions">
         ${canImport ? `<button class="primary-button" type="button" data-clan-action="import-discord-submission" data-id="${escapeAttr(record.id)}">Import</button>` : ""}
-        <button class="tool-button" type="button" data-clan-action="ignore-discord-submission" data-id="${escapeAttr(record.id)}">Ignore</button>
+        ${belongsToConnectedUser
+          ? `<button class="tool-button" type="button" data-clan-action="ignore-discord-submission" data-id="${escapeAttr(record.id)}">Ignore</button>`
+          : `<span class="small-pill">Clan only</span>`}
       </div>
     </article>
   `;
@@ -4609,22 +4612,10 @@ async function handleClanAction(event) {
       showToast("Share confirmations restored");
       return;
     }
-    if (action === "toggle-auto-import-own-discord-submissions") {
-      const enabled = Boolean(button.checked);
-      if (enabled && !connectedDiscordUserId()) {
-        button.checked = false;
-        throw new Error("Dragon Tracker could not read this Discord account ID. Sign out of clan sync, then connect Discord again.");
-      }
-      state.settings.autoImportOwnDiscordSubmissions = enabled;
-      saveState();
-      if (enabled) await refreshClanSync({ quiet: true });
-      renderClans();
-      showToast(enabled ? "Your Discord bot submissions will now import automatically." : "Automatic Discord imports paused.");
-      return;
-    }
     if (action === "import-discord-submission") {
       const record = discordSubmissionById(button.dataset.id);
       if (!record) throw new Error("That Discord submission is no longer available.");
+      if (!isOwnDiscordSubmission(record)) throw new Error("Only submissions from your connected Discord account can enter your local tracker.");
       const imported = importDiscordSubmission(record);
       await syncImportedDiscordDragon(clanUi.activeClanId, record, imported);
       await clanSync.resolveDiscordSubmission(record.id, "imported");
@@ -4638,6 +4629,7 @@ async function handleClanAction(event) {
     if (action === "ignore-discord-submission") {
       const record = discordSubmissionById(button.dataset.id);
       if (!record) throw new Error("That Discord submission is no longer available.");
+      if (!isOwnDiscordSubmission(record)) throw new Error("Other members' submissions stay available in the Clan Library.");
       await clanSync.resolveDiscordSubmission(record.id, "ignored");
       await refreshClanSync({ quiet: true });
       renderClans();
@@ -5831,6 +5823,13 @@ function renderDesktopUpdateStatus(status) {
   const phase = text(status.phase);
   if (!phase || phase === "idle") return;
 
+  const previousPhase = text(desktopUpdateStatus?.phase);
+  if (phase === "downloading" && previousPhase !== "downloading") {
+    updateProgressBackgrounded = false;
+  }
+  if ((phase === "downloaded" || phase === "error") && previousPhase !== phase) {
+    updateProgressBackgrounded = false;
+  }
   desktopUpdateStatus = status;
   const isDownloading = phase === "downloading";
   const isDownloaded = phase === "downloaded";
@@ -5871,7 +5870,7 @@ function renderDesktopUpdateStatus(status) {
 
   const backgroundButton = els.updateProgressDialog.querySelector("[data-update-progress-action='hide']");
   if (backgroundButton) backgroundButton.textContent = isError ? "Close" : isDownloaded ? "Later" : "Continue in Background";
-  if (!els.updateProgressDialog.open) showModal(els.updateProgressDialog);
+  if (!updateProgressBackgrounded && !els.updateProgressDialog.open) showModal(els.updateProgressDialog);
 }
 
 async function handleUpdateProgressAction(event) {
@@ -5879,7 +5878,11 @@ async function handleUpdateProgressAction(event) {
   if (!button) return;
   const action = button.dataset.updateProgressAction;
   if (action === "hide") {
+    updateProgressBackgrounded = true;
     closeModal("updateProgressDialog");
+    if (desktopUpdateStatus?.phase === "downloading") {
+      showToast("The update will keep downloading in the background.");
+    }
     return;
   }
   if (action !== "install" || desktopUpdateStatus?.phase !== "downloaded") return;
