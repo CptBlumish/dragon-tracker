@@ -90,9 +90,9 @@ The normal **Share to Clan** button does not require a Discord bot. A bot is opt
 2. Use the included slash commands for dragon creation, egg requests, upstat progress, brood pouch eggs, current nests, map pins, and notes.
 3. Register a Supabase Edge Function as the Discord Interactions Endpoint. The function must verify Discord's `X-Signature-Ed25519` and `X-Signature-Timestamp` headers before handling every request.
 4. Store `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, and any Supabase service-role credential as Supabase secrets. Do not place them in Dragon Tracker, a backup, GitHub source, or a Discord message.
-5. Insert bot submissions as pending shared-dragon proposals. A clan owner or admin should approve a submission before it becomes visible to the clan. Never use a bot submission to overwrite someone else's local dragon or store account details, credentials, private notes, or backup data.
+5. Insert bot submissions as pending clan records with the Discord submitter's numeric user ID. Dragon Tracker imports a record locally only for the tracker signed into that same Discord ID. Other members see a read-only Clan Library copy.
 
-Bot submissions remain pending until a tracker user imports or ignores them from **Clans > Discord Inbox**. They should never overwrite someone else's local dragon or store account details, credentials, private notes, or backup data.
+Bot ownership must never be inferred from a Discord display name, player alias, or account name. Submissions should never overwrite someone else's local dragon or store credentials, private notes, or backup data.
 
 ## Release Checklist
 

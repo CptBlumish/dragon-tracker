@@ -1,6 +1,6 @@
 # Discord Bot Link
 
-Dragon Tracker can receive clan submissions from a Discord bot. The bot does not directly edit a user's local tracker. It sends sanitized records to Supabase, then clan members import or ignore them from **Clans > Discord Inbox**.
+Dragon Tracker can receive clan submissions from a Discord bot. The bot sends sanitized records to Supabase. A submission enters local Players and Dragons only when its Discord user ID matches the Discord account connected to that tracker; everyone else sees it only in **Clans > Discord Inbox** or the shared Clan Library.
 
 ## Architecture
 
@@ -8,7 +8,8 @@ Dragon Tracker can receive clan submissions from a Discord bot. The bot does not
 2. The bot sends the submission to `supabase/functions/discord-bot-ingest`.
 3. The Edge Function checks `DRAGON_TRACKER_BOT_INGEST_SECRET`.
 4. Supabase stores the record in `discord_bot_submissions`.
-5. Dragon Tracker users signed into the matching clan can import or ignore the pending item.
+5. Dragon Tracker compares the submitter's immutable Discord user ID with the connected tracker identity.
+6. Matching submissions import into that user's local tracker. Other clan members receive a read-only Clan Library view and cannot import or ignore someone else's record.
 
 ## Required Setup
 
@@ -59,3 +60,4 @@ Optional prefix aliases are available for servers that prefer typed commands: `!
 - Never put the Supabase service-role key in the bot.
 - Never put Discord bot tokens in Dragon Tracker.
 - Do not use this bot to collect Steam passwords, Discord passwords, or account passwords.
+- Never use a display name, player alias, or account name to decide who owns a Discord submission.
