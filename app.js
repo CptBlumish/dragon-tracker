@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.6";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.7";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -138,6 +138,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Fixed Clan Library rendering so refreshed shared dragons and Discord submissions display correctly.",
   "Made saved player aliases visible in Settings and beside player names on Home and Players.",
   "Added player name aliases so alternate names can keep future dragons and accounts under one familiar player.",
   "Simplified navigation by grouping the Nesting Planner and Brood Pouch under Breeding, and Upstats under Dragons.",
@@ -4111,7 +4112,7 @@ function renderClansContent() {
     : clanUi.lastRefreshError
       ? clanUi.lastRefreshError
       : clanUi.lastLoadedAt
-        ? `Last refreshed ${formatDate(clanUi.lastLoadedAt)}.`
+        ? `Last refreshed ${formatDateTime(clanUi.lastLoadedAt)}.`
         : "Connected. Refresh to load the latest shared records.";
   const clanOptions = clanUi.memberships.map((item) => {
     const clan = clanMembershipClan(item);
@@ -4288,7 +4289,7 @@ function renderDiscordSubmissionRow(record) {
     <article class="clan-share-row discord-submission-row">
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(detail || "No extra details")}</span>
-      <small>${escapeHtml(discordSubmissionTypeLabel(type))} from ${escapeHtml(record.discord_username || "Discord user")} - ${formatDate(record.created_at)}</small>
+      <small>${escapeHtml(discordSubmissionTypeLabel(type))} from ${escapeHtml(record.discord_username || "Discord user")} - ${escapeHtml(formatDateTime(record.created_at))}</small>
       <div class="clan-share-row-actions">
         ${canImport ? `<button class="primary-button" type="button" data-clan-action="import-discord-submission" data-id="${escapeAttr(record.id)}">Import</button>` : ""}
         <button class="tool-button" type="button" data-clan-action="ignore-discord-submission" data-id="${escapeAttr(record.id)}">Ignore</button>
