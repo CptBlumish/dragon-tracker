@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.9";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.10";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -138,6 +138,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added a share-safe HTML roster chart that opens offline in any browser without Dragon Tracker or Discord.",
   "Fixed Continue in Background so update progress stays dismissed while the download continues.",
   "Discord submissions now enter local Players and Dragons only for their matching connected Discord user; other members see them only in the Clan Library.",
   "Improved player alias saving with immediate list updates and clear duplicate or primary-name feedback.",
@@ -1735,6 +1736,9 @@ function bindEvents() {
   });
   document.querySelectorAll("[data-action='export-csv']").forEach((button) => {
     button.addEventListener("click", exportCsv);
+  });
+  document.querySelectorAll("[data-action='export-share-chart']").forEach((button) => {
+    button.addEventListener("click", exportShareChart);
   });
   document.querySelectorAll("[data-action='import-json']").forEach((button) => {
     button.addEventListener("click", () => els.importFile.click());
@@ -7164,6 +7168,186 @@ function exportCsv() {
 
   downloadBlob(`day-of-dragons-dragons-${dateStamp()}.csv`, [headers.join(","), ...rows].join("\n"), "text/csv");
   showToast("CSV exported");
+}
+
+function exportShareChart() {
+  if (!state.dragons.length) {
+    alert("Add at least one dragon before exporting a share chart.");
+    return;
+  }
+  downloadBlob(
+    `dragon-tracker-roster-${dateStamp()}.html`,
+    buildShareChartHtml(),
+    "text/html;charset=utf-8"
+  );
+  showToast("Share chart exported");
+}
+
+function buildShareChartHtml() {
+  const dragons = [...state.dragons].sort((a, b) => (
+    sortText(a.username, b.username)
+    || sortText(a.accountName || a.name, b.accountName || b.name)
+    || sortText(a.species, b.species)
+  ));
+  const grouped = new Map();
+  dragons.forEach((dragon) => {
+    const player = text(dragon.username) || "Unknown Player";
+    if (!grouped.has(player)) grouped.set(player, []);
+    grouped.get(player).push(dragon);
+  });
+
+  const accountCount = new Set(dragons.map((dragon) => accountIdentityKey(
+    dragon.username || "Unknown Player",
+    dragon.accountName || dragon.name || "Unnamed Account"
+  ))).size;
+  const elderCount = dragons.filter(isElderDragon).length;
+  const pureCount = dragons.filter((dragon) => sameShareChartSkin(dragon.skin, dragon.recessiveSkin)).length;
+  const completeCount = dragons.filter((dragon) => shareChartStatSummary(dragon).complete).length;
+  const generatedAt = new Date().toLocaleString();
+
+  const playerSections = [...grouped.entries()].map(([player, playerDragons]) => {
+    const playerAccounts = new Set(playerDragons.map((dragon) => text(dragon.accountName || dragon.name) || "Unnamed Account")).size;
+    const rows = playerDragons.map((dragon) => {
+      const statSummary = shareChartStatSummary(dragon);
+      const elderClass = isElderDragon(dragon) ? " elder-row" : "";
+      const pureBadge = sameShareChartSkin(dragon.skin, dragon.recessiveSkin) ? `<span class="badge pure">Pure</span>` : "";
+      const statusBadge = isElderDragon(dragon) ? `<span class="badge elder">Elder</span>` : escapeHtml(dragon.status || "Unknown");
+      return `
+        <tr class="${elderClass.trim()}">
+          <td data-label="Account"><strong>${escapeHtml(dragon.accountName || dragon.name || "Unnamed Account")}</strong></td>
+          <td data-label="Species">${escapeHtml(dragon.species || "Unknown")}</td>
+          <td data-label="Sex">${escapeHtml(dragon.sex || "Unknown")}</td>
+          <td data-label="Stage">${statusBadge}</td>
+          <td data-label="Skin">${escapeHtml(dragon.skin || "Unknown")} ${pureBadge}</td>
+          <td data-label="Recessive">${escapeHtml(dragon.recessiveSkin || "Unknown")}</td>
+          <td data-label="Nest role">${escapeHtml(dragon.nestRole || "Unknown")}</td>
+          <td data-label="Mutation points">${shareChartMutationHtml(dragon)}</td>
+          <td data-label="Bloodline">${escapeHtml(normalizeBloodlineGrade(dragon.bloodline))}</td>
+          <td data-label="Stats">${shareChartStatsHtml(dragon, statSummary)}</td>
+        </tr>`;
+    }).join("");
+    return `
+      <section class="player-section">
+        <div class="section-heading">
+          <h2>${escapeHtml(player)}</h2>
+          <span>${playerAccounts} account${playerAccounts === 1 ? "" : "s"} &middot; ${playerDragons.length} dragon${playerDragons.length === 1 ? "" : "s"}</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Account</th><th>Species</th><th>Sex</th><th>Stage</th><th>Skin</th><th>Recessive</th><th>Nest role</th><th>Mutation points</th><th>Bloodline</th><th>Stats</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </section>`;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dragon Tracker Roster</title>
+  <style>
+    :root { color-scheme: dark; --ink:#f8f3e8; --muted:#bdb3a3; --line:#4b4138; --panel:#161412; --orange:#ff6b24; --gold:#f3cf58; --green:#79e7a5; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#0b0a09; color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    main { width:min(1500px,calc(100% - 32px)); margin:0 auto; padding:40px 0 64px; }
+    .report-head { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; border-bottom:1px solid var(--line); padding-bottom:22px; }
+    h1,h2,p { margin:0; }
+    h1 { color:var(--orange); font-size:clamp(2rem,5vw,4rem); line-height:.95; }
+    .report-head p,.section-heading span,.privacy { color:var(--muted); }
+    .summary { display:grid; grid-template-columns:repeat(6,minmax(120px,1fr)); gap:10px; margin:20px 0 30px; }
+    .summary div { min-height:86px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+    .summary strong { display:block; color:var(--gold); font-size:1.65rem; }
+    .summary span { color:var(--muted); font-size:.83rem; text-transform:uppercase; }
+    .player-section { margin-top:28px; }
+    .section-heading { display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:9px; }
+    .section-heading h2 { color:var(--orange); }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+    table { width:100%; border-collapse:collapse; min-width:1160px; }
+    th,td { padding:11px 10px; border-bottom:1px solid #302a25; text-align:left; vertical-align:top; }
+    th { color:var(--gold); background:#211b17; font-size:.75rem; text-transform:uppercase; white-space:nowrap; }
+    tbody tr:last-child td { border-bottom:0; }
+    tbody tr:hover { background:#1e1915; }
+    .elder-row { background:linear-gradient(90deg,rgba(243,207,88,.19),rgba(255,248,184,.07),rgba(243,207,88,.15)); }
+    .badge { display:inline-block; margin-left:5px; padding:1px 6px; border:1px solid currentColor; border-radius:999px; font-size:.7rem; font-weight:700; white-space:nowrap; }
+    .badge.elder { color:var(--gold); }
+    .badge.pure { color:var(--green); }
+    .mutations { color:var(--muted); font-size:.82rem; }
+    details { min-width:130px; }
+    summary { color:var(--gold); cursor:pointer; font-weight:700; }
+    .stat-grid { display:grid; grid-template-columns:1fr auto; gap:3px 12px; min-width:260px; margin-top:8px; color:var(--muted); font-size:.8rem; }
+    .stat-grid b { color:var(--ink); }
+    .privacy { margin-top:32px; padding-top:18px; border-top:1px solid var(--line); font-size:.82rem; }
+    @media (max-width:900px) { .summary { grid-template-columns:repeat(3,1fr); } .report-head { align-items:flex-start; flex-direction:column; } }
+    @media (max-width:620px) {
+      main { width:min(100% - 20px,1500px); padding-top:24px; }
+      .summary { grid-template-columns:repeat(2,1fr); }
+      .section-heading { align-items:flex-start; flex-direction:column; }
+      .table-wrap { border:0; background:transparent; overflow:visible; }
+      table,tbody,tr,td { display:block; min-width:0; width:100%; }
+      thead { display:none; }
+      tr { margin-bottom:10px; border:1px solid var(--line); border-radius:6px; background:var(--panel); overflow:hidden; }
+      td { display:grid; grid-template-columns:112px 1fr; gap:10px; border-bottom:1px solid #302a25; }
+      td::before { content:attr(data-label); color:var(--gold); font-size:.72rem; font-weight:700; text-transform:uppercase; }
+    }
+    @media print { :root { color-scheme:light; } body { background:#fff; color:#111; } main { width:100%; padding:0; } .report-head p,.section-heading span,.privacy,.mutations { color:#555; } .summary div,.table-wrap { background:#fff; border-color:#999; } th { background:#eee; color:#111; } th,td { border-color:#bbb; } .elder-row { background:#fff6cc; } details[open] summary { margin-bottom:5px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="report-head">
+      <div><h1>Dragon Tracker Roster</h1><p>Generated ${escapeHtml(generatedAt)}</p></div>
+      <p>Offline browser chart &middot; Version ${escapeHtml(APP_VERSION)}</p>
+    </header>
+    <section class="summary" aria-label="Roster summary">
+      <div><strong>${grouped.size}</strong><span>Players</span></div>
+      <div><strong>${accountCount}</strong><span>Accounts</span></div>
+      <div><strong>${dragons.length}</strong><span>Dragons</span></div>
+      <div><strong>${elderCount}</strong><span>Elders</span></div>
+      <div><strong>${pureCount}</strong><span>Pure skin pairs</span></div>
+      <div><strong>${completeCount}</strong><span>18A+ dragons</span></div>
+    </section>
+    ${playerSections}
+    <p class="privacy">Share-safe roster: notes, tags, server details, locations, Discord and Steam identifiers, DLC ownership, and sync settings are not included.</p>
+  </main>
+</body>
+</html>`;
+}
+
+function sameShareChartSkin(skin, recessiveSkin) {
+  const first = text(skin).trim().toLowerCase();
+  const second = text(recessiveSkin).trim().toLowerCase();
+  return Boolean(first && second && first !== "unknown" && first === second);
+}
+
+function shareChartStatSummary(dragon) {
+  const grades = STAT_FIELDS.map((field) => normalizeGrade(dragon.stats?.[field.key]));
+  const known = grades.filter((grade) => grade !== "Unknown").length;
+  const aPlus = grades.filter((grade) => gradeScore(grade) >= gradeScore("A+")).length;
+  return { known, aPlus, complete: aPlus === STAT_FIELDS.length };
+}
+
+function shareChartStatsHtml(dragon, summary = shareChartStatSummary(dragon)) {
+  const label = summary.complete ? "18A+ Complete" : `${summary.aPlus}/18 A+`;
+  const rows = STAT_FIELDS.map((field) => `
+    <span>${escapeHtml(field.label)}</span><b>${escapeHtml(normalizeGrade(dragon.stats?.[field.key]))}</b>
+  `).join("");
+  return `<details><summary>${escapeHtml(label)}</summary><div class="stat-grid">${rows}</div></details>`;
+}
+
+function shareChartMutationHtml(dragon) {
+  const total = Math.max(1, Number(dragon.mutationPoints) || estimateMutationPoints(dragon.status, "", dragon.elderProgress));
+  const allocation = normalizeMutationAllocation({ ...dragon, mutationPoints: total });
+  const parts = [];
+  if (allocation.socialPoints) parts.push(`${allocation.socialPoints} Social`);
+  if (allocation.dominantMutation) parts.push("Dominant");
+  if (allocation.agilePoints) parts.push(`${allocation.agilePoints} Agile`);
+  if (allocation.fastMutation) parts.push("Fast");
+  if (allocation.scavengerPoints) parts.push(`${allocation.scavengerPoints} Scavenger`);
+  if (allocation.survivorMutation) parts.push("Survivor");
+  if (allocation.remainingMutationPoints) parts.push(`${allocation.remainingMutationPoints} unspent`);
+  return `<strong>${total}</strong><div class="mutations">${escapeHtml(parts.join(" / ") || "Unallocated")}</div>`;
 }
 
 function importJson() {
