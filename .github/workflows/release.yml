@@ -51,10 +51,15 @@ jobs:
       - name: Build desktop app
         run: ${{ matrix.script }}
 
+      - name: Build browser edition
+        if: runner.os == 'Windows'
+        run: npm run build:browser
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: dragon-tracker-${{ matrix.name }}
+          compression-level: 0
           path: |
             dist/*.exe
             dist/*.dmg
@@ -76,4 +81,3 @@ jobs:
             dist/*.deb
             dist/*.yml
             dist/*.blockmap
-

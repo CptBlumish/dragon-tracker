@@ -9,8 +9,10 @@ Download the newest version from [GitHub Releases](https://github.com/CptBlumish
 - Windows users should download `Dragon-Tracker-Setup.exe`.
 - macOS users should download the `.dmg` or `.zip`.
 - Linux users should download the `.AppImage` or `.deb`.
+- Browser users should download `Dragon-Tracker-Browser-<version>.zip`, extract it, and follow `README-BROWSER.txt`.
 
 The desktop app can check for updates from the Help menu. The current app version is shown on the Settings tab.
+The browser edition is released as a separate ZIP and does not install Electron or add desktop shortcuts.
 
 ## What It Tracks
 
