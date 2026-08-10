@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.10";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.12";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -13,8 +13,12 @@ const DEFAULT_SPECIES = [
   { name: "Inferno Ravager", className: "", element: "Fire", diet: "Carnivore" },
   { name: "Bio", className: "2", element: "Bioluminescence", diet: "Nectarivore" },
   { name: "Blitz Striker", className: "", element: "Lightning", diet: "Carnivore" },
-  { name: "Brood Watcher", className: "6", element: "None", diet: "Herbivore" }
+  { name: "Brood Watcher", className: "6", element: "None", diet: "Herbivore" },
+  { name: "Mimikor", className: "", element: "", diet: "", upcoming: true },
+  { name: "Singe Crest", className: "", element: "", diet: "", upcoming: true },
+  { name: "Feathered Zygovo", className: "", element: "", diet: "", upcoming: true }
 ];
+const UPCOMING_SPECIES = new Set(DEFAULT_SPECIES.filter((species) => species.upcoming).map((species) => species.name));
 
 const SEXES = ["Unknown", "Female", "Male"];
 const STATUSES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder"];
@@ -138,6 +142,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added a primary account preference beneath the primary player and placed that account first on Home.",
+  "Prepared roster, skin, and Discord species selectors for Mimikor, Singe Crest, and Feathered Zygovo.",
   "Added a share-safe HTML roster chart that opens offline in any browser without Dragon Tracker or Discord.",
   "Fixed Continue in Background so update progress stays dismissed while the download continues.",
   "Discord submissions now enter local Players and Dragons only for their matching connected Discord user; other members see them only in the Clan Library.",
@@ -275,7 +281,14 @@ const SPECIES_ALIASES = new Map([
   ["bioluminescent dragon", "Bio"],
   ["biolumen", "Bio"],
   ["biolumin", "Bio"],
-  ["bio", "Bio"]
+  ["bio", "Bio"],
+  ["mimikor", "Mimikor"],
+  ["singe crest", "Singe Crest"],
+  ["singecrest", "Singe Crest"],
+  ["singecreat", "Singe Crest"],
+  ["feathered zygovo", "Feathered Zygovo"],
+  ["micro feathered zygovo", "Feathered Zygovo"],
+  ["feathered micro zygovo", "Feathered Zygovo"]
 ]);
 
 const SHARED_DISCORD_SKINS = [
@@ -372,6 +385,18 @@ const SPECIES_SKIN_GROUPS = [
       ["Broken", "Rare", "Spawnable"],
       ["Severed", "Exotic", "Brood Watcher Emote Pack spawnable"]
     ]
+  },
+  {
+    species: "Mimikor",
+    skins: []
+  },
+  {
+    species: "Singe Crest",
+    skins: []
+  },
+  {
+    species: "Feathered Zygovo",
+    skins: []
   }
 ];
 
@@ -453,6 +478,7 @@ const els = {
   homeAddAccountBtn: document.querySelector("#homeAddAccountBtn"),
   homePlayerSummary: document.querySelector("#homePlayerSummary"),
   homePersonalPlayerSelect: document.querySelector("#homePersonalPlayerSelect"),
+  homePrimaryAccountSelect: document.querySelector("#homePrimaryAccountSelect"),
   accountSearch: document.querySelector("#accountSearch"),
   accountList: document.querySelector("#accountList"),
   accountSpeciesMatrix: document.querySelector("#accountSpeciesMatrix"),
@@ -548,6 +574,7 @@ const els = {
   backupStats: document.querySelector("#backupStats"),
   backupHealthStatus: document.querySelector("#backupHealthStatus"),
   personalPlayerSelect: document.querySelector("#personalPlayerSelect"),
+  primaryAccountSelect: document.querySelector("#primaryAccountSelect"),
   personalPlayerDescription: document.querySelector("#personalPlayerDescription"),
   setupChecklist: document.querySelector("#setupChecklist"),
   dataQualityList: document.querySelector("#dataQualityList"),
@@ -678,6 +705,7 @@ function createDefaultState() {
       elderTickAccounts: {},
       favoriteMapAreas: [],
       personalPlayer: "",
+      primaryAccountId: "",
       playerAliases: {},
       lastBackupAt: ""
     }
@@ -703,6 +731,7 @@ function normalizeState(input = {}) {
     ? input.broodPouch.map(normalizeBroodPouchEntry).filter((entry) => dragonIds.has(entry.dragonId))
     : [];
 
+  const personalPlayer = normalizePersonalPlayer(input.settings?.personalPlayer, accounts);
   return {
     version: 1,
     createdAt: input.createdAt || base.createdAt,
@@ -722,7 +751,8 @@ function normalizeState(input = {}) {
       elderTickStartedAt: normalizeElderTickStartedAt(input.settings?.elderTickStartedAt),
       elderTickAccounts: normalizeElderTickAccounts(input.settings?.elderTickAccounts, accounts),
       favoriteMapAreas: normalizeFavoriteMapAreas(input.settings?.favoriteMapAreas),
-      personalPlayer: normalizePersonalPlayer(input.settings?.personalPlayer, accounts),
+      personalPlayer,
+      primaryAccountId: normalizePrimaryAccountId(input.settings?.primaryAccountId, personalPlayer, accounts),
       playerAliases: normalizePlayerAliases(input.settings?.playerAliases, accounts),
       lastBackupAt: normalizeOptionalIso(input.settings?.lastBackupAt)
     }
@@ -880,6 +910,13 @@ function mergeImportedState(currentInput, incomingInput) {
 
   remapDragonParentIds(dragons, dragonIdMap);
   attachAccountsToDragons(dragons, accounts);
+  const personalPlayer = normalizePersonalPlayer(current.settings?.personalPlayer || incoming.settings?.personalPlayer, accounts);
+  const incomingPrimaryAccountId = accountIdMap.get(incoming.settings?.primaryAccountId) || incoming.settings?.primaryAccountId;
+  const primaryAccountId = normalizePrimaryAccountId(
+    current.settings?.primaryAccountId || incomingPrimaryAccountId,
+    personalPlayer,
+    accounts
+  );
 
   return normalizeState({
     version: 1,
@@ -901,7 +938,8 @@ function mergeImportedState(currentInput, incomingInput) {
       elderTickAccounts: mergeElderTickAccounts(current.settings?.elderTickAccounts, incoming.settings?.elderTickAccounts),
       favoriteMapAreas: mergeUniqueStrings(current.settings?.favoriteMapAreas, incoming.settings?.favoriteMapAreas)
         .filter((areaId) => MAP_REFERENCE_AREAS.some((area) => area.id === areaId)),
-      personalPlayer: normalizePersonalPlayer(current.settings?.personalPlayer || incoming.settings?.personalPlayer, accounts),
+      personalPlayer,
+      primaryAccountId,
       playerAliases: normalizePlayerAliases({
         ...(incoming.settings?.playerAliases || {}),
         ...(current.settings?.playerAliases || {})
@@ -1759,7 +1797,9 @@ function bindEvents() {
   els.elderTickForceResetBtn?.addEventListener("click", handleElderTickForceReset);
   els.elderTickAccountList?.addEventListener("click", handleElderTickAccountAction);
   els.homePersonalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
+  els.homePrimaryAccountSelect?.addEventListener("change", handlePrimaryAccountChange);
   els.personalPlayerSelect?.addEventListener("change", handlePersonalPlayerChange);
+  els.primaryAccountSelect?.addEventListener("change", handlePrimaryAccountChange);
   els.playerAliasPlayerSelect?.addEventListener("change", () => {
     setPlayerAliasStatus("");
     renderPlayerAliasSettings();
@@ -1963,7 +2003,7 @@ function globalSearchResults(query) {
 
   state.accounts.forEach((account) => {
     if (!includes(account.username, account.accountName, account.discord, account.steam)) return;
-    matches.push({ tab: "home", kind: "account", id: account.id, label: compactJoin([account.username, account.accountName]), detail: `${dragonsForAccount(account.id).length}/7 dragons`, query: account.accountName });
+    matches.push({ tab: "home", kind: "account", id: account.id, label: compactJoin([account.username, account.accountName]), detail: `${dragonsForAccount(account.id).length}/${collectSpeciesNames().length} dragons`, query: account.accountName });
   });
 
   state.skins.forEach((skin) => {
@@ -2206,6 +2246,7 @@ function renderAccounts() {
 function renderHome() {
   if (!els.homeAccountList) return;
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect);
+  renderPrimaryAccountSelect(els.homePrimaryAccountSelect);
   renderElderTick();
   renderElderTickAccountList();
   if (!state.accounts.length) {
@@ -2221,21 +2262,27 @@ function renderHome() {
   }
 
   const personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
-  if (personalPlayer !== (state.settings?.personalPlayer || "")) {
+  const primaryAccountId = normalizePrimaryAccountId(state.settings?.primaryAccountId, personalPlayer, state.accounts);
+  if (personalPlayer !== (state.settings?.personalPlayer || "") || primaryAccountId !== (state.settings?.primaryAccountId || "")) {
     state.settings.personalPlayer = personalPlayer;
+    state.settings.primaryAccountId = primaryAccountId;
     saveState({ skipHistory: true });
   }
 
   const accounts = [...state.accounts]
     .filter((account) => !personalPlayer || account.username === personalPlayer)
-    .sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+    .sort((a, b) => Number(b.id === primaryAccountId) - Number(a.id === primaryAccountId)
+      || sortText(a.username, b.username)
+      || sortText(a.accountName, b.accountName));
+  const primaryAccount = accounts.find((account) => account.id === primaryAccountId);
 
   if (els.homePlayerSummary) {
     els.homePlayerSummary.textContent = personalPlayer
-      ? `Showing ${personalPlayer}'s accounts`
+      ? `Showing ${personalPlayer}'s accounts${primaryAccount ? `. Primary: ${primaryAccount.accountName}` : ""}`
       : "Showing all players. Set a personal player in Settings.";
   }
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect, personalPlayer);
+  renderPrimaryAccountSelect(els.homePrimaryAccountSelect, primaryAccountId, personalPlayer);
 
   if (!accounts.length) {
     renderAccountSpeciesMatrix([], els.homeAccountSpeciesMatrix);
@@ -2294,6 +2341,7 @@ function renderAccountSpeciesMatrix(accounts, target = els.accountSpeciesMatrix)
   }
 
   const speciesNames = collectSpeciesNames();
+  target.style.setProperty("--species-columns", String(speciesNames.length));
   target.innerHTML = `
     <div class="matrix-head">
       <span>Account</span>
@@ -2410,12 +2458,12 @@ function renderAccountCard(account) {
     : `<p class="account-empty">No dragons on this account yet.</p>`;
 
   return `
-    <article class="account-card" data-id="${escapeAttr(account.id)}" tabindex="0" aria-label="Open details for ${escapeAttr(account.accountName)}">
+    <article class="account-card${isPrimaryAccount(account) ? " is-primary-account" : ""}" data-id="${escapeAttr(account.id)}" tabindex="0" aria-label="Open details for ${escapeAttr(account.accountName)}">
       <div class="card-head">
         <div class="card-title">
           <h3>${escapeHtml(account.accountName)}</h3>
         </div>
-        <div class="account-card-badges"><span class="pill">${accountDragons.length}/7</span>${account.clanImported ? `<span class="small-pill">Clan shared</span>` : ""}</div>
+        <div class="account-card-badges">${isPrimaryAccount(account) ? `<span class="small-pill">Primary account</span>` : ""}<span class="pill">${accountDragons.length}/${collectSpeciesNames().length}</span>${account.clanImported ? `<span class="small-pill">Clan shared</span>` : ""}</div>
       </div>
       <dl class="line-list">
         <div><dt>Open slots</dt><dd>${escapeHtml(openSpecies.length ? openSpecies.join(", ") : "Full roster")}</dd></div>
@@ -2482,7 +2530,7 @@ function openAccountDetailDialog(id) {
       <section class="account-detail-section">
         <h3>Roster</h3>
         <dl class="account-detail-list">
-          <div><dt>Dragons</dt><dd>${dragons.length}/7</dd></div>
+          <div><dt>Dragons</dt><dd>${dragons.length}/${collectSpeciesNames().length}</dd></div>
           <div><dt>Open species</dt><dd>${escapeHtml(openSpecies.length ? openSpecies.join(", ") : "Full roster")}</dd></div>
           <div><dt>Created</dt><dd>${escapeHtml(formatDateTime(account.createdAt))}</dd></div>
           <div><dt>Updated</dt><dd>${escapeHtml(formatDateTime(account.updatedAt))}</dd></div>
@@ -3395,8 +3443,14 @@ function renderSkins() {
         .includes(query);
     })
     .sort((a, b) => sortText(a.species, b.species) || sortText(a.type, b.type) || sortText(a.name, b.name));
+  const showPendingSpecies = !query
+    && ["All types", "All rarities"].includes(type)
+    && !mutationsOnly;
+  const pendingSpecies = showPendingSpecies
+    ? [...UPCOMING_SPECIES].filter((name) => !species || species === "All species" || species === name)
+    : [];
 
-  if (!skins.length) {
+  if (!skins.length && !pendingSpecies.length) {
     els.skinList.innerHTML = `
       <div class="empty-state">
         <h2>No matching skins</h2>
@@ -3407,17 +3461,21 @@ function renderSkins() {
   }
 
   const grouped = groupBySpecies(skins);
+  pendingSpecies.forEach((name) => {
+    if (!grouped.some(([speciesName]) => speciesName === name)) grouped.push([name, []]);
+  });
+  grouped.sort(([a], [b]) => sortText(a === "All" ? "" : a, b === "All" ? "" : b));
   els.skinList.innerHTML = grouped.map(([speciesName, speciesSkins]) => `
     <section class="skin-species-section" aria-label="${escapeAttr(speciesName)} skins">
       ${speciesName === "All" ? "" : `
         <div class="skin-species-head">
           <h2>${escapeHtml(speciesName)}</h2>
-          <span class="pill skin-count-pill">${speciesSkins.length} ${speciesSkins.length === 1 ? "skin" : "skins"}</span>
+          <span class="pill skin-count-pill">${UPCOMING_SPECIES.has(speciesName) && !speciesSkins.length ? "Upcoming" : `${speciesSkins.length} ${speciesSkins.length === 1 ? "skin" : "skins"}`}</span>
         </div>
       `}
-      <div class="skin-species-grid">
-        ${speciesSkins.map(renderSkinCard).join("")}
-      </div>
+      ${speciesSkins.length
+        ? `<div class="skin-species-grid">${speciesSkins.map(renderSkinCard).join("")}</div>`
+        : `<p class="skin-species-pending">Official skin list pending the game update.</p>`}
     </section>
   `).join("");
 }
@@ -3748,6 +3806,24 @@ function clanMemberName(userId) {
   return member?.display_name || "Clan member";
 }
 
+function normalizePrimaryAccountId(value, personalPlayer, accounts = state?.accounts || []) {
+  const accountId = text(value);
+  const player = normalizePersonalPlayer(personalPlayer, accounts);
+  if (!accountId || !player) return "";
+  return accounts.some((account) => account.id === accountId && account.username === player) ? accountId : "";
+}
+
+function reconcilePrimaryHomeSettings() {
+  if (!state?.settings) return;
+  const personalPlayer = normalizePersonalPlayer(state.settings.personalPlayer, state.accounts);
+  state.settings.personalPlayer = personalPlayer;
+  state.settings.primaryAccountId = normalizePrimaryAccountId(
+    state.settings.primaryAccountId,
+    personalPlayer,
+    state.accounts
+  );
+}
+
 function clanDisplayName(user) {
   return text(user?.user_metadata?.global_name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.user_metadata?.preferred_username || "Tracker Member") || "Tracker Member";
 }
@@ -4011,9 +4087,7 @@ function removeClanImportedLocalCopies() {
       if (!accountIdsInUse.has(accountId)) delete state.settings.elderTickAccounts[accountId];
     });
   }
-  if (state.settings?.personalPlayer && !state.accounts.some((account) => account.username === state.settings.personalPlayer)) {
-    state.settings.personalPlayer = "";
-  }
+  reconcilePrimaryHomeSettings();
   return true;
 }
 
@@ -5397,11 +5471,15 @@ function renderBackupHealth() {
 
 function renderPersonalPlayerSetting() {
   const selected = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
+  const primaryAccountId = normalizePrimaryAccountId(state.settings?.primaryAccountId, selected, state.accounts);
   renderPersonalPlayerSelect(els.personalPlayerSelect, selected);
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect, selected);
+  renderPrimaryAccountSelect(els.primaryAccountSelect, primaryAccountId, selected);
+  renderPrimaryAccountSelect(els.homePrimaryAccountSelect, primaryAccountId, selected);
   if (els.personalPlayerDescription) {
+    const primaryAccount = accountById(primaryAccountId);
     els.personalPlayerDescription.textContent = selected
-      ? `Home is focused on ${selected}'s accounts. Players still shows every player.`
+      ? `Home is focused on ${selected}'s accounts${primaryAccount ? `, with ${primaryAccount.accountName} shown first` : ""}. Players still shows every player.`
       : "Choose which player owns this install. Home will show all players until one is selected.";
   }
 }
@@ -5414,10 +5492,31 @@ function renderPersonalPlayerSelect(select, selected = normalizePersonalPlayer(s
   select.value = selected;
 }
 
+function renderPrimaryAccountSelect(
+  select,
+  selected = state.settings?.primaryAccountId || "",
+  personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts)
+) {
+  if (!select) return;
+  const accounts = state.accounts
+    .filter((account) => account.username === personalPlayer)
+    .sort((a, b) => sortText(a.accountName, b.accountName));
+  const emptyLabel = personalPlayer
+    ? (accounts.length ? "No primary account" : "No accounts for this player")
+    : "Select a primary player first";
+  select.innerHTML = [
+    `<option value="">${emptyLabel}</option>`,
+    ...accounts.map((account) => `<option value="${escapeAttr(account.id)}">${escapeHtml(account.accountName)}</option>`)
+  ].join("");
+  select.disabled = !personalPlayer || !accounts.length;
+  select.value = normalizePrimaryAccountId(selected, personalPlayer, state.accounts);
+}
+
 function handlePersonalPlayerChange(event) {
   const source = event?.currentTarget || els.personalPlayerSelect || els.homePersonalPlayerSelect;
   const nextPlayer = normalizePersonalPlayer(source?.value, state.accounts);
   state.settings.personalPlayer = nextPlayer;
+  state.settings.primaryAccountId = normalizePrimaryAccountId(state.settings?.primaryAccountId, nextPlayer, state.accounts);
   saveState({ reason: "Home player changed" });
   renderHome();
   renderPersonalPlayerSetting();
@@ -5469,6 +5568,24 @@ function renderPlayerAliasSettings(preferredPlayer = "") {
       ? `Future imports and entries using any alias below will be filed under ${selected}. Aliases ignore capitalization.`
       : "Add a player before creating aliases.";
   }
+}
+
+function handlePrimaryAccountChange(event) {
+  const source = event?.currentTarget || els.primaryAccountSelect || els.homePrimaryAccountSelect;
+  const personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
+  const primaryAccountId = normalizePrimaryAccountId(source?.value, personalPlayer, state.accounts);
+  state.settings.primaryAccountId = primaryAccountId;
+  saveState({ reason: "Primary account changed" });
+  renderHome();
+  renderPersonalPlayerSetting();
+  const account = accountById(primaryAccountId);
+  showToast(account ? `${account.accountName} is now the primary account` : "Primary account cleared");
+}
+
+function isPrimaryAccount(account) {
+  if (!account) return false;
+  const personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
+  return account.id === normalizePrimaryAccountId(state.settings?.primaryAccountId, personalPlayer, state.accounts);
 }
 
 function parsePlayerAliasInput(value, player) {
@@ -6249,6 +6366,7 @@ function handleAccountSubmit(event) {
     dlc
   });
 
+  reconcilePrimaryHomeSettings();
   saveState();
   closeModal("accountDialog");
   renderAll();
@@ -6615,7 +6733,6 @@ function deletePlayer(username) {
   const dragonText = dragonCount === 1 ? "1 dragon" : `${dragonCount} dragons`;
   if (!confirm(`Delete player ${playerName}, ${accountText}, and ${dragonText}?`)) return;
   deleteAccountsByIds(accountIds);
-  if (state.settings?.personalPlayer === playerName) state.settings.personalPlayer = "";
   showToast(`${playerName} deleted`);
 }
 
@@ -6626,9 +6743,7 @@ function deleteAccountsByIds(accountIds) {
     .map((dragon) => dragon.id));
 
   state.accounts = state.accounts.filter((account) => !accountIdSet.has(account.id));
-  if (state.settings?.personalPlayer && !state.accounts.some((account) => account.username === state.settings.personalPlayer)) {
-    state.settings.personalPlayer = "";
-  }
+  reconcilePrimaryHomeSettings();
   state.dragons = state.dragons.filter((dragon) => !removedDragonIds.has(dragon.id));
   state.broodPouch = (state.broodPouch || []).filter((entry) => !removedDragonIds.has(entry.dragonId));
   if (state.settings?.elderTickAccounts) {

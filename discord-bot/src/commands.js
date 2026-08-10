@@ -7,7 +7,10 @@ export const SPECIES_CHOICES = [
   "Inferno Ravager",
   "Bio",
   "Blitz Striker",
-  "Brood Watcher"
+  "Brood Watcher",
+  "Mimikor",
+  "Singe Crest",
+  "Feathered Zygovo"
 ];
 
 export const SEX_CHOICES = ["Female", "Male", "Unknown"];

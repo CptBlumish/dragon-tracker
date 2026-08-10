@@ -75,8 +75,12 @@
           </div>
           <div class="home-toolbar-actions">
             <div class="field home-player-field">
-              <label for="homePersonalPlayerSelect">Home player</label>
+              <label for="homePersonalPlayerSelect">Primary player</label>
               <select id="homePersonalPlayerSelect"></select>
+            </div>
+            <div class="field home-player-field">
+              <label for="homePrimaryAccountSelect">Primary account</label>
+              <select id="homePrimaryAccountSelect"></select>
             </div>
             <button class="primary-button" type="button" id="homeAddAccountBtn">
               <span class="button-icon" aria-hidden="true">
@@ -366,12 +370,16 @@
               <dl id="backupStats" class="details-list"></dl>
             </div>
             <div class="backup-panel personal-player-panel">
-              <h2>Home Player</h2>
+              <h2>Primary Home View</h2>
               <div class="field">
-                <label for="personalPlayerSelect">Personal player</label>
+                <label for="personalPlayerSelect">Primary player</label>
                 <select id="personalPlayerSelect"></select>
               </div>
-              <p class="form-note" id="personalPlayerDescription">Choose which player owns this install. Home will only show that player's accounts.</p>
+              <div class="field">
+                <label for="primaryAccountSelect">Primary account</label>
+                <select id="primaryAccountSelect"></select>
+              </div>
+              <p class="form-note" id="personalPlayerDescription">Choose which player owns this install, then select the account to show first on Home.</p>
             </div>
             <div class="backup-panel personal-player-panel">
               <h2>Player Name Aliases</h2>
@@ -393,7 +401,7 @@
             <div class="backup-panel">
               <h2>Version</h2>
               <p class="form-note">Compare this version with the latest release before updating.</p>
-              <p class="settings-version" id="appVersionLabel">Version 1.3.11</p>
+              <p class="settings-version" id="appVersionLabel">Version 1.3.12</p>
               <div class="button-row compact-actions">
                 <button class="tool-button" type="button" id="openChangelogBtn">View Changelog</button>
               </div>
