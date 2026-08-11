@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.15";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.16";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -151,6 +151,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Pure is now assigned automatically whenever a dragon's visible and recessive skins match, without requiring recorded parents.",
   "Added daytime elder crystal colors to dragon surfaces while keeping exact elder percentages inside dragon details.",
   "Replaced Ultra Pure with Fighter; Fighter dragons keep Social at zero while legacy Ultra Pure records become Pure.",
   "Fixed primary account selection for aliased and imported players, and kept the primary account first in account views.",
@@ -3395,16 +3396,7 @@ function inferNestRole(dragon) {
 }
 
 function pureSkinForDragon(dragon) {
-  const pureSkin = matchingDominantRecessiveSkin(dragon);
-  const pureKey = canonicalSkinName(pureSkin);
-  if (!pureKey) return "";
-
-  const mother = dragonById(dragon.motherId);
-  const father = dragonById(dragon.fatherId);
-  if (!mother || !father) return "";
-  if (!dragonVisibleSkinMatches(mother, pureKey) || !dragonVisibleSkinMatches(father, pureKey)) return "";
-
-  return pureSkin;
+  return matchingDominantRecessiveSkin(dragon);
 }
 
 function hasPureSkin(dragon, skinKey) {
@@ -3417,11 +3409,6 @@ function matchingDominantRecessiveSkin(dragon) {
   const recessive = canonicalSkinName(dragon.recessiveSkin);
   if (!primary || primary === "unknown" || !recessive || recessive === "unknown" || primary !== recessive) return "";
   return text(dragon.skin);
-}
-
-function dragonVisibleSkinMatches(dragon, skinKey) {
-  if (!dragon || !skinKey) return false;
-  return canonicalSkinName(dragon.skin) === skinKey;
 }
 
 function renderSkins() {
