@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.13";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.14";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -142,6 +142,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Fixed primary account selection for aliased and imported players, and kept the primary account first in account views.",
   "Added Singe Crest turntables for Leumelan, Melanistic, and the three currently unnamed C1-C3 concept skins.",
   "Added a primary account preference beneath the primary player and placed that account first on Home.",
   "Prepared roster, skin, and Discord species selectors for Mimikor, Singe Crest, and Feathered Zygovo.",
@@ -780,9 +781,7 @@ function normalizeOptionalIso(value) {
 }
 
 function normalizePersonalPlayer(value, accounts = state?.accounts || []) {
-  const selected = text(value);
-  if (!selected) return "";
-  return accounts.some((account) => account.username === selected) ? selected : "";
+  return findDirectPlayerName(value, accounts);
 }
 
 function playerNameKey(value) {
@@ -835,7 +834,7 @@ function normalizeAccount(account) {
   const username = text(account.username || account.userName || account.user || account.player);
   const accountName = text(account.accountName || account.account || account.name);
   return {
-    id: account.id || uid("account"),
+    id: text(account.id) || uid("account"),
     createdAt: account.createdAt || now,
     updatedAt: account.updatedAt || now,
     username: username || "Unknown Player",
@@ -2279,12 +2278,12 @@ function renderHome() {
     saveState({ skipHistory: true });
   }
 
-  const accounts = [...state.accounts]
-    .filter((account) => !personalPlayer || account.username === personalPlayer)
-    .sort((a, b) => Number(b.id === primaryAccountId) - Number(a.id === primaryAccountId)
-      || sortText(a.username, b.username)
-      || sortText(a.accountName, b.accountName));
-  const primaryAccount = accounts.find((account) => account.id === primaryAccountId);
+  const personalPlayerKey = playerNameKey(personalPlayer);
+  const accounts = sortAccountsPrimaryFirst(
+    state.accounts.filter((account) => !personalPlayer || playerNameKey(account.username) === personalPlayerKey),
+    primaryAccountId
+  );
+  const primaryAccount = accounts.find((account) => text(account.id) === primaryAccountId);
 
   if (els.homePlayerSummary) {
     els.homePlayerSummary.textContent = personalPlayer
@@ -2311,7 +2310,7 @@ function renderHome() {
 
 function renderAccountSections(accounts) {
   const byUser = new Map();
-  accounts.forEach((account) => {
+  sortAccountsPrimaryFirst(accounts).forEach((account) => {
     if (!byUser.has(account.username)) byUser.set(account.username, []);
     byUser.get(account.username).push(account);
   });
@@ -2426,7 +2425,7 @@ function missingDlcForSpecies(account, species) {
 
 function getFilteredAccounts() {
   const query = els.accountSearch.value.trim().toLowerCase();
-  const accounts = [...state.accounts].sort((a, b) => sortText(a.username, b.username) || sortText(a.accountName, b.accountName));
+  const accounts = sortAccountsPrimaryFirst(state.accounts);
   if (!query) return accounts;
 
   return accounts.filter((account) => {
@@ -3820,7 +3819,19 @@ function normalizePrimaryAccountId(value, personalPlayer, accounts = state?.acco
   const accountId = text(value);
   const player = normalizePersonalPlayer(personalPlayer, accounts);
   if (!accountId || !player) return "";
-  return accounts.some((account) => account.id === accountId && account.username === player) ? accountId : "";
+  const playerKey = playerNameKey(player);
+  return accounts.some((account) => text(account.id) === accountId && playerNameKey(account.username) === playerKey)
+    ? accountId
+    : "";
+}
+
+function sortAccountsPrimaryFirst(accounts, primaryAccountId = state?.settings?.primaryAccountId || "") {
+  const primaryId = text(primaryAccountId);
+  return [...accounts].sort((a, b) => (
+    Number(text(b.id) === primaryId) - Number(text(a.id) === primaryId)
+    || sortText(a.username, b.username)
+    || sortText(a.accountName, b.accountName)
+  ));
 }
 
 function reconcilePrimaryHomeSettings() {
@@ -5508,15 +5519,16 @@ function renderPrimaryAccountSelect(
   personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts)
 ) {
   if (!select) return;
+  const personalPlayerKey = playerNameKey(personalPlayer);
   const accounts = state.accounts
-    .filter((account) => account.username === personalPlayer)
+    .filter((account) => playerNameKey(account.username) === personalPlayerKey)
     .sort((a, b) => sortText(a.accountName, b.accountName));
   const emptyLabel = personalPlayer
     ? (accounts.length ? "No primary account" : "No accounts for this player")
     : "Select a primary player first";
   select.innerHTML = [
     `<option value="">${emptyLabel}</option>`,
-    ...accounts.map((account) => `<option value="${escapeAttr(account.id)}">${escapeHtml(account.accountName)}</option>`)
+    ...accounts.map((account) => `<option value="${escapeAttr(text(account.id))}">${escapeHtml(account.accountName)}</option>`)
   ].join("");
   select.disabled = !personalPlayer || !accounts.length;
   select.value = normalizePrimaryAccountId(selected, personalPlayer, state.accounts);
@@ -5595,7 +5607,7 @@ function handlePrimaryAccountChange(event) {
 function isPrimaryAccount(account) {
   if (!account) return false;
   const personalPlayer = normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts);
-  return account.id === normalizePrimaryAccountId(state.settings?.primaryAccountId, personalPlayer, state.accounts);
+  return text(account.id) === normalizePrimaryAccountId(state.settings?.primaryAccountId, personalPlayer, state.accounts);
 }
 
 function parsePlayerAliasInput(value, player) {
@@ -8217,11 +8229,13 @@ function updateDragonsForAccount(account, previous = account) {
 }
 
 function accountById(id) {
-  return state.accounts.find((account) => account.id === id);
+  const accountId = text(id);
+  return state.accounts.find((account) => text(account.id) === accountId);
 }
 
 function dragonsForAccount(accountId) {
-  return state.dragons.filter((dragon) => dragon.accountId === accountId);
+  const id = text(accountId);
+  return state.dragons.filter((dragon) => text(dragon.accountId) === id);
 }
 
 function resolveDragonFormAccount(options = {}) {
