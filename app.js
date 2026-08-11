@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.12";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.13";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -142,6 +142,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added Singe Crest turntables for Leumelan, Melanistic, and the three currently unnamed C1-C3 concept skins.",
   "Added a primary account preference beneath the primary player and placed that account first on Home.",
   "Prepared roster, skin, and Discord species selectors for Mimikor, Singe Crest, and Feathered Zygovo.",
   "Added a share-safe HTML roster chart that opens offline in any browser without Dragon Tracker or Discord.",
@@ -273,7 +274,12 @@ const SKIN_TURNTABLES = new Map([
   ["Brood Watcher::fractured", "brood-watcher/fractured.mp4"],
   ["Brood Watcher::leucistic", "brood-watcher/leucistic.mp4"],
   ["Brood Watcher::melanistic", "brood-watcher/melanistic.mp4"],
-  ["Brood Watcher::severed", "brood-watcher/severed.mp4"]
+  ["Brood Watcher::severed", "brood-watcher/severed.mp4"],
+  ["Singe Crest::leumelan", "singe-crest/leumelan.mp4"],
+  ["Singe Crest::melanistic", "singe-crest/melanistic.mp4"],
+  ["Singe Crest::unnamed concept c1", "singe-crest/concept-c1.mp4"],
+  ["Singe Crest::unnamed concept c2", "singe-crest/concept-c2.mp4"],
+  ["Singe Crest::unnamed concept c3", "singe-crest/concept-c3.mp4"]
 ]);
 const SPECIES_ALIASES = new Map([
   ["shadow scale", "Shadow Scale"],
@@ -392,7 +398,11 @@ const SPECIES_SKIN_GROUPS = [
   },
   {
     species: "Singe Crest",
-    skins: []
+    skins: [
+      ["Unnamed Concept C1", "Unknown", "Official Singe Crest concept; final name and classification pending"],
+      ["Unnamed Concept C2", "Unknown", "Official Singe Crest concept; final name and classification pending"],
+      ["Unnamed Concept C3", "Unknown", "Official Singe Crest concept; final name and classification pending"]
+    ]
   },
   {
     species: "Feathered Zygovo",
