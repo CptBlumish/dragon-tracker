@@ -524,6 +524,80 @@ svg {
   color: #fff0a6;
 }
 
+.crystal-green {
+  --elder-crystal: #62d875;
+  --elder-crystal-rgb: 98, 216, 117;
+}
+
+.crystal-cyan {
+  --elder-crystal: #5de2e7;
+  --elder-crystal-rgb: 93, 226, 231;
+}
+
+.crystal-blue {
+  --elder-crystal: #5d91ff;
+  --elder-crystal-rgb: 93, 145, 255;
+}
+
+.crystal-magenta {
+  --elder-crystal: #ef65dc;
+  --elder-crystal-rgb: 239, 101, 220;
+}
+
+.crystal-red {
+  --elder-crystal: #ff655b;
+  --elder-crystal-rgb: 255, 101, 91;
+}
+
+.crystal-yellow {
+  --elder-crystal: #f6d956;
+  --elder-crystal-rgb: 246, 217, 86;
+}
+
+.has-elder-crystal {
+  border-left: 3px solid var(--elder-crystal) !important;
+  box-shadow: inset 5px 0 18px rgba(var(--elder-crystal-rgb), 0.12), var(--shadow);
+}
+
+.matrix-cell.has-elder-crystal {
+  box-shadow: inset 4px 0 12px rgba(var(--elder-crystal-rgb), 0.16);
+}
+
+.elder-crystal-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 26px;
+  gap: 6px;
+  border: 1px solid rgba(var(--elder-crystal-rgb), 0.72);
+  border-radius: 999px;
+  background: rgba(var(--elder-crystal-rgb), 0.11);
+  padding: 3px 8px;
+  color: var(--elder-crystal);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.elder-crystal-gem {
+  display: block;
+  width: 10px;
+  height: 13px;
+  background: var(--elder-crystal);
+  clip-path: polygon(50% 0, 100% 28%, 82% 82%, 50% 100%, 18% 82%, 0 28%);
+  box-shadow: 0 0 10px rgba(var(--elder-crystal-rgb), 0.78);
+}
+
+.dragon-card-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
 .matrix-cell.is-open {
   color: var(--muted);
 }
@@ -800,6 +874,17 @@ input[type="checkbox"] {
   grid-column: 2;
   grid-row: 1;
   justify-self: end;
+}
+
+.account-dragon-row > .elder-crystal-badge {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.account-dragon-row > .elder-crystal-badge > span:last-child {
+  color: var(--elder-crystal);
+  font-size: 0.72rem;
 }
 
 .account-dragon-actions {

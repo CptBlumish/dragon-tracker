@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.14";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.15";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -45,15 +45,24 @@ const MUTATION_POINTS_BY_STATUS = {
   "4th Pointed": 4,
   Elder: 7
 };
-const SOCIAL_LOCK_NEST_ROLES = new Set(["Breeder", "Pure", "Ultra Pure"]);
+const SOCIAL_LOCK_NEST_ROLES = new Set(["Breeder", "Pure"]);
+const SOCIAL_ZERO_NEST_ROLES = new Set(["Fighter"]);
 const SOCIAL_POINTS_MAX = 3;
 const AGILE_POINTS_MAX = 3;
 const SCAVENGER_POINTS_MAX = 3;
-const NEST_ROLES = ["Unknown", "Breeder", "Pure", "Ultra Pure"];
+const NEST_ROLES = ["Unknown", "Fighter", "Breeder", "Pure"];
 const NEST_ROLE_ALIASES = new Map([
-  ["ultra", "Ultra Pure"],
-  ["ultra pure", "Ultra Pure"]
+  ["ultra", "Pure"],
+  ["ultra pure", "Pure"]
 ]);
+const ELDER_CRYSTAL_STAGES = [
+  { key: "green", label: "Green", max: 15 },
+  { key: "cyan", label: "Cyan", max: 30 },
+  { key: "blue", label: "Blue", max: 45 },
+  { key: "magenta", label: "Magenta", max: 60 },
+  { key: "red", label: "Red", max: 75 },
+  { key: "yellow", label: "Yellow", max: 100 }
+];
 const DLC_OPTIONS = [
   { key: "patreonLt15", label: "LT15" },
   { key: "patreonLt100", label: "LT100" },
@@ -142,6 +151,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added daytime elder crystal colors to dragon surfaces while keeping exact elder percentages inside dragon details.",
+  "Replaced Ultra Pure with Fighter; Fighter dragons keep Social at zero while legacy Ultra Pure records become Pure.",
   "Fixed primary account selection for aliased and imported players, and kept the primary account first in account views.",
   "Added Singe Crest turntables for Leumelan, Melanistic, and the three currently unnamed C1-C3 concept skins.",
   "Added a primary account preference beneath the primary player and placed that account first on Home.",
@@ -2372,7 +2383,7 @@ function renderAccountSpeciesMatrixCell(account, species, accountDragons) {
   const dragon = accountDragons.find((item) => item.species === species);
   if (dragon) {
     return `
-      <button class="matrix-cell is-filled${isElderDragon(dragon) ? " is-elder" : ""}" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin]))}">
+      <button class="matrix-cell is-filled${isElderDragon(dragon) ? " is-elder" : ""}${elderCrystalClassNames(dragon)}" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin, elderCrystalTitle(dragon)]))}">
         <strong class="matrix-cell-head">
           <span>${escapeHtml(statusShortLabel(dragon.status))}</span>
           <span class="matrix-sex ${sexClass(dragon.sex)}">${escapeHtml(sexShortLabel(dragon.sex))}</span>
@@ -2453,9 +2464,10 @@ function renderAccountCard(account) {
   const openSpecies = collectSpeciesNames().filter((species) => !ownedSpecies.has(species));
   const dragonRows = accountDragons.length
     ? accountDragons.map((dragon) => `
-      <div class="account-dragon-row${dragon.clanImported ? " is-clan-shared" : ""}${isElderDragon(dragon) ? " is-elder" : ""}">
+      <div class="account-dragon-row${dragon.clanImported ? " is-clan-shared" : ""}${isElderDragon(dragon) ? " is-elder" : ""}${elderCrystalClassNames(dragon)}">
         <span>${escapeHtml(dragon.species || "Unknown species")}</span>
         <strong class="account-dragon-status">${escapeHtml(dragon.status || "Unknown")}</strong>
+        ${renderElderCrystalBadge(dragon)}
         ${dragon.clanImported
           ? `<span class="small-pill">Clan shared</span>`
           : `<div class="account-dragon-actions">
@@ -2560,13 +2572,14 @@ function renderAccountDetailDragon(dragon) {
   `).join("");
   const parentLabel = dragonParentLabel(dragon);
   return `
-    <article class="account-detail-dragon${isElderDragon(dragon) ? " is-elder" : ""}">
+    <article class="account-detail-dragon${isElderDragon(dragon) ? " is-elder" : ""}${elderCrystalClassNames(dragon)}">
       <div class="account-detail-dragon-head">
         <div>
           <h4>${escapeHtml(dragon.species || "Unknown species")}</h4>
           <p>${escapeHtml(compactJoin([dragon.sex, dragon.status, dragon.clanImported ? "Clan shared" : "Local record"]))}</p>
         </div>
         <div class="account-detail-dragon-actions">
+          ${renderElderCrystalBadge(dragon)}
           <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
           ${dragon.clanImported ? "" : `
             <button class="tool-button" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}">Edit</button>
@@ -2580,6 +2593,7 @@ function renderAccountDetailDragon(dragon) {
         <div><dt>Nest role</dt><dd>${escapeHtml(dragon.nestRole || "Unknown")}</dd></div>
         <div><dt>Bloodline</dt><dd>${escapeHtml(dragon.bloodline || "Unknown")}</dd></div>
         <div><dt>Parents</dt><dd>${escapeHtml(parentLabel)}</dd></div>
+        ${ADULT_OR_HIGHER_STATUSES.has(dragon.status) ? `<div><dt>Elder progress</dt><dd>${escapeHtml(formatPercent(elderProgressValue(dragon)))}</dd></div>` : ""}
         <div><dt>Mutation points</dt><dd>${escapeHtml(String(dragon.mutationPoints ?? 0))}</dd></div>
         <div><dt>Social</dt><dd>${escapeHtml(formatSocialPoints(dragon.socialPoints))}</dd></div>
         <div><dt>Agile</dt><dd>${escapeHtml(formatTrackPoints(dragon.agilePoints, "Fast", dragon.fastMutation))}</dd></div>
@@ -2604,13 +2618,16 @@ function renderDragonCard(dragon) {
   const tagMarkup = tags.length ? `<div class="skin-meta">${tags.join("")}</div>` : "";
 
   return `
-    <article class="dragon-card${isElderDragon(dragon) ? " is-elder" : ""}" data-id="${escapeAttr(dragon.id)}">
+    <article class="dragon-card${isElderDragon(dragon) ? " is-elder" : ""}${elderCrystalClassNames(dragon)}" data-id="${escapeAttr(dragon.id)}">
       <div class="card-head">
         <div class="card-title">
           <h3>${escapeHtml(dragon.accountName || dragon.name)}</h3>
           <p class="card-subtitle">${escapeHtml(compactJoin([dragon.username, dragon.species, dragon.sex]))}</p>
         </div>
-        <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
+        <div class="dragon-card-status">
+          ${renderElderCrystalBadge(dragon)}
+          <span class="pill ${statusClass(dragon.status)}">${escapeHtml(dragon.status)}</span>
+        </div>
       </div>
 
       <dl class="line-list">
@@ -3372,9 +3389,8 @@ function refreshDragonDerivedFields() {
 }
 
 function inferNestRole(dragon) {
-  if (ultraSkinForDragon(dragon)) return "Ultra Pure";
   if (pureSkinForDragon(dragon)) return "Pure";
-  if (dragon.nestRole === "Breeder") return "Breeder";
+  if (["Breeder", "Fighter"].includes(dragon.nestRole)) return dragon.nestRole;
   return "Unknown";
 }
 
@@ -3391,18 +3407,6 @@ function pureSkinForDragon(dragon) {
   return pureSkin;
 }
 
-function ultraSkinForDragon(dragon) {
-  const pureSkin = matchingDominantRecessiveSkin(dragon);
-  const pureKey = canonicalSkinName(pureSkin);
-  if (!pureKey) return "";
-
-  const tree = visibleNestingTree(dragon);
-  if (tree.length < 3) return "";
-  if (!tree.every((treeDragon) => hasMatchingDominantRecessiveSkin(treeDragon, pureKey))) return "";
-
-  return pureSkin;
-}
-
 function hasPureSkin(dragon, skinKey) {
   return canonicalSkinName(pureSkinForDragon(dragon)) === skinKey;
 }
@@ -3415,24 +3419,9 @@ function matchingDominantRecessiveSkin(dragon) {
   return text(dragon.skin);
 }
 
-function hasMatchingDominantRecessiveSkin(dragon, skinKey) {
-  return canonicalSkinName(matchingDominantRecessiveSkin(dragon)) === skinKey;
-}
-
 function dragonVisibleSkinMatches(dragon, skinKey) {
   if (!dragon || !skinKey) return false;
   return canonicalSkinName(dragon.skin) === skinKey;
-}
-
-function visibleNestingTree(dragon) {
-  if (!dragon) return [];
-  const mother = dragonById(dragon.motherId);
-  const father = dragonById(dragon.fatherId);
-  const grandparents = [mother?.motherId, mother?.fatherId, father?.motherId, father?.fatherId]
-    .filter(Boolean)
-    .map((id) => dragonById(id))
-    .filter(Boolean);
-  return [dragon, mother, father, ...grandparents].filter(Boolean);
 }
 
 function renderSkins() {
@@ -4456,7 +4445,7 @@ function matchesClanSourceFilter(record, summary, filter) {
   if (filter === "mine") return record.source_user_id === clanUi.user?.id;
   if (filter === "others") return record.source_user_id && record.source_user_id !== clanUi.user?.id;
   if (filter === "missing-local") return !hasLocalDragonMatchingClanSummary(summary);
-  if (filter === "breeders") return ["Breeder", "Pure", "Ultra Pure"].includes(text(summary.nestRole)) || Number(summary.socialPoints) >= SOCIAL_POINTS_MAX;
+  if (filter === "breeders") return ["Breeder", "Pure"].includes(normalizeNestRole(summary.nestRole)) || Number(summary.socialPoints) >= SOCIAL_POINTS_MAX;
   if (filter === "fourth") return text(summary.status) === "4th Pointed" || text(summary.status) === "Elder" || Boolean(summary.dominantMutation);
   if (filter === "elder") return text(summary.status) === "Elder";
   return true;
@@ -6254,7 +6243,9 @@ function syncDragonComputedFields() {
     const locked = shouldLockSocialPoints(status, nestRole);
     socialInput.readOnly = locked;
     socialInput.classList.toggle("is-locked", locked);
-    socialInput.title = locked ? "Locked to available Social points for this status or nest role." : "";
+    socialInput.title = SOCIAL_ZERO_NEST_ROLES.has(nestRole)
+      ? "Fighter keeps all mutation points out of Social."
+      : locked ? "Locked to available Social points for this nest role." : "";
     socialInput.value = allocation.socialPoints;
   }
   syncPointCheckbox(dominantInput, allocation.dominantMutation, canUseDominantMutation(status), "Available once this dragon is 4th Pointed.");
@@ -8309,6 +8300,36 @@ function isElderDragon(dragon) {
   return dragon?.status === "Elder";
 }
 
+function elderProgressValue(dragon) {
+  if (!dragon || !ADULT_OR_HIGHER_STATUSES.has(dragon.status)) return "";
+  if (dragon.status === "Elder") return 100;
+  const number = Number(dragon.elderProgress);
+  return Number.isFinite(number) ? clampPercent(number) : 0;
+}
+
+function elderCrystalForDragon(dragon) {
+  const progress = elderProgressValue(dragon);
+  if (progress === "") return null;
+  return ELDER_CRYSTAL_STAGES.find((stage) => progress <= stage.max) || ELDER_CRYSTAL_STAGES.at(-1);
+}
+
+function elderCrystalClassNames(dragon) {
+  const crystal = elderCrystalForDragon(dragon);
+  return crystal ? ` has-elder-crystal crystal-${crystal.key}` : "";
+}
+
+function elderCrystalTitle(dragon) {
+  const crystal = elderCrystalForDragon(dragon);
+  return crystal ? `${crystal.label} daytime elder crystal` : "";
+}
+
+function renderElderCrystalBadge(dragon) {
+  const crystal = elderCrystalForDragon(dragon);
+  if (!crystal) return "";
+  const title = `${crystal.label} daytime elder crystal. White crystals work at every elder percentage.`;
+  return `<span class="elder-crystal-badge crystal-${crystal.key}" title="${escapeAttr(title)}"><span class="elder-crystal-gem" aria-hidden="true"></span><span>${escapeHtml(crystal.label)}</span></span>`;
+}
+
 function compactJoin(values) {
   return values.filter(Boolean).join(" / ") || "Unknown";
 }
@@ -8387,7 +8408,8 @@ function numberOrBlank(value) {
 }
 
 function shouldLockSocialPoints(status, nestRole) {
-  return SOCIAL_LOCK_NEST_ROLES.has(normalizeNestRole(nestRole));
+  const role = normalizeNestRole(nestRole);
+  return SOCIAL_LOCK_NEST_ROLES.has(role) || SOCIAL_ZERO_NEST_ROLES.has(role);
 }
 
 function normalizeMutationAllocation(values) {
@@ -8397,9 +8419,11 @@ function normalizeMutationAllocation(values) {
   let used = 0;
 
   const socialMax = Math.min(SOCIAL_POINTS_MAX, total);
-  const socialPoints = shouldLockSocialPoints(status, nestRole)
-    ? socialMax
-    : clampInteger(values.socialPoints, 0, Math.min(socialMax, total - used));
+  const socialPoints = SOCIAL_ZERO_NEST_ROLES.has(nestRole)
+    ? 0
+    : SOCIAL_LOCK_NEST_ROLES.has(nestRole)
+      ? socialMax
+      : clampInteger(values.socialPoints, 0, Math.min(socialMax, total - used));
   used += socialPoints;
 
   const dominantMutation = Boolean(values.dominantMutation) && canUseDominantMutation(status) && used < total;

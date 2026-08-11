@@ -195,8 +195,7 @@ function isEggRequestMatch(requestPayload: Record<string, unknown>, dragonPayloa
 
   const goal = normalizedLookupValue(requestPayload.goal, 120);
   const nestRole = normalizedLookupValue(dragonPayload.nestRole, 30);
-  if (goal.includes("ultra") && nestRole !== "ultra pure") return false;
-  if (!goal.includes("ultra") && goal.includes("pure") && !["pure", "ultra pure"].includes(nestRole)) return false;
+  if (goal.includes("pure") && !["pure", "ultra pure"].includes(nestRole)) return false;
 
   return true;
 }

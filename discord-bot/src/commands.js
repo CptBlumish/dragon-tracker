@@ -16,7 +16,7 @@ export const SPECIES_CHOICES = [
 export const SEX_CHOICES = ["Female", "Male", "Unknown"];
 export const STATUS_CHOICES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder"];
 export const BLOODLINE_CHOICES = ["F", "E", "D", "C", "B", "A"];
-export const NEST_ROLE_CHOICES = ["Unknown", "Breeder", "Pure", "Ultra Pure"];
+export const NEST_ROLE_CHOICES = ["Unknown", "Fighter", "Breeder", "Pure"];
 export const UPSTAT_STATUS_CHOICES = ["Not Started", "In Progress", "Partial A+", "Near 18A+", "18A+ Complete"];
 export const EGG_MATCH_ALERT_CHOICES = ["Enabled", "Disabled", "Status"];
 
@@ -78,7 +78,7 @@ export const commands = [
     .addStringOption((option) => option.setName("skin").setDescription("Wanted visible skin").setRequired(false).setMaxLength(100))
     .addStringOption((option) => option.setName("recessive").setDescription("Wanted recessive skin").setRequired(false).setMaxLength(100))
     .addStringOption((option) => addChoices(option.setName("sex").setDescription("Wanted sex").setRequired(false), SEX_CHOICES))
-    .addStringOption((option) => option.setName("goal").setDescription("Pure, ultra, upstat, mutation, etc.").setRequired(false).setMaxLength(120))
+    .addStringOption((option) => option.setName("goal").setDescription("Pure, upstat, mutation, or another nesting goal").setRequired(false).setMaxLength(120))
     .addStringOption((option) => option.setName("notes").setDescription("Request notes").setRequired(false).setMaxLength(1000)),
 
   new SlashCommandBuilder()
