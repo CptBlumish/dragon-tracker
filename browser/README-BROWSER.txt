@@ -28,12 +28,12 @@ YOUR DATA
 
 CLAN SYNC
 - Clan Sync is supported when this edition is opened with its included launcher.
-- Use the same Sync address, public Connection key, Discord identity, and clan
-  invite code as members using the installed desktop app.
-- The clan organizer must allow the matching Discord return address in Supabase:
+- Paste the same one-use clan invitation as the desktop app, then approve
+  Discord. Dragon Tracker supplies the official sync connection automatically.
+- The matching Discord return addresses are:
   Windows: http://localhost:8765/index.html
   macOS/Linux: http://127.0.0.1:8765/index.html
-- If you change the launcher's port, the organizer must allow that exact address.
+- A separate organizer-run sync service must allow the exact launcher address.
 - Clan sign-in cannot work when index.html is opened from a file:// address.
 
 PRIVACY

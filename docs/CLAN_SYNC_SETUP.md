@@ -1,17 +1,29 @@
 # Clan Sync Setup
 
-Clan Sync is optional. Until a user configures it and chooses to share an item, Dragon Tracker remains local-only.
+Clan Sync is optional. Dragon Tracker includes its official secure sync connection, while dragons, accounts, backups, and pins remain local until a user deliberately shares an item.
 
-## What You Need
+## Joining a Clan
 
-- A Supabase project owned by a trusted clan organizer
-- A Discord application owned by that organizer
-- The Supabase CLI installed and logged in for the organizer setup only
-- Either a packaged Dragon Tracker build or a local tracker opened through `http://localhost` or `http://127.0.0.1`
+Regular members need only a one-use invitation from a clan owner or admin:
+
+1. Open **Clans** and paste the invitation under **Clan invitation**.
+2. Select **Continue with Discord** and approve the identity screen.
+3. Return to Dragon Tracker. The app redeems the invitation automatically and opens the clan library.
+
+Members do not need a Supabase URL, API key, Discord developer application, or database setup. Discord provides only the stable identity used by membership rules. Dragon Tracker does not request messages, server lists, email, or passwords.
+
+## Starting a Clan
+
+1. Open **Clans** and select **Organizer Sign In**.
+2. Approve Discord and return to Dragon Tracker.
+3. Create the clan, then create one-use invitations for members.
+4. Send each invitation privately to its intended member.
+
+The official connection is already part of Dragon Tracker, so a regular clan owner does not need to operate a backend. The remaining sections are only for an advanced organizer who deliberately wants a separate sync service.
 
 Never put a Supabase service-role key, Discord client secret, Steam API key, browser cookie, password, or backup file into the desktop app or this repository.
 
-## 1. Create the Database
+## Advanced: Create a Separate Database
 
 From the repository root, link the Supabase project and apply the migration:
 
@@ -22,7 +34,7 @@ supabase db push
 
 The migration in `supabase/migrations/0001_clan_sync.sql` creates clan tables, opt-in shared dragon and pin tables, Row Level Security policies, and role-checked RPC functions.
 
-## 2. Configure Discord Identity
+## Advanced: Configure Discord Identity
 
 1. Create an application in the Discord Developer Portal.
 2. Add this redirect URL in Discord, replacing the project reference:
@@ -50,16 +62,16 @@ The migration in `supabase/migrations/0001_clan_sync.sql` creates clan tables, o
 
 The app uses Discord only to create a sign-in identity for clan permissions. It does not read Discord messages, servers, friend lists, or email.
 
-## 3. Configure Dragon Tracker
+## Advanced: Configure Dragon Tracker
 
-In the app, open **Settings** and select **Connect Sync**. Enter only:
+In the app, open **Settings** and select **Advanced Organizer Setup**. Enter only:
 
 - Your project URL, for example `https://YOUR_PROJECT_REF.supabase.co`, in **Sync address**
 - The public anon or publishable key from Supabase Settings > API, in **Connection key**
 
 The anon or publishable key is designed to be public. It grants no access beyond the Row Level Security rules in the migration. The packaged desktop app stores its sign-in session using the operating system's encrypted credential storage. Browser-local use keeps the sign-in session for that browser session.
 
-After saving the connection, open **Clans** and select **Connect Discord**. The tracker opens Discord in the system browser. After approval, Discord returns the user to the desktop app or local browser tracker. Every member then uses a one-use invite code to join the correct clan.
+After saving the separate connection, open **Clans** and select **Organizer Sign In**. The tracker opens Discord in the system browser. After approval, Discord returns the user to the desktop app or local browser tracker.
 
 ## 4. Verify Before Inviting Anyone
 

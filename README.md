@@ -34,9 +34,9 @@ Only share backup files with people you trust.
 
 ## Clan Sync
 
-Clan Sync is optional and begins with no shared data. Connecting Discord establishes an identity for clan permissions; it does not grant access to Discord messages, servers, friend lists, or email.
+Clan Sync is optional and begins with no shared data. A regular member pastes a one-use clan invitation and approves Discord; Dragon Tracker joins the clan automatically. Members do not need a project address, API key, or developer account. Discord establishes an identity for clan permissions and does not grant access to messages, servers, friend lists, or email.
 
-Only dragons and map pins that a member explicitly shares are visible to a clan. Local accounts, full backups, and unshared records remain on the device. Project owners can follow [Clan Sync Setup](docs/CLAN_SYNC_SETUP.md) to deploy the secure backend.
+Only dragons and map pins that a member explicitly shares are visible to a clan. Local accounts, full backups, and unshared records remain on the device. Organizers can create clans and one-use invitations on the official service; advanced organizers can follow [Clan Sync Setup](docs/CLAN_SYNC_SETUP.md) to operate a separate backend.
 
 The optional Discord bot can send dragon, egg request, upstat, brood pouch, current nest, and map-pin submissions to a clan inbox for review. Project owners can follow [Discord Bot Link](docs/discord-bot.md) to deploy it.
 

@@ -5,6 +5,11 @@
   const FALLBACK_SESSION_KEY = "dragon-tracker.sync-session.v1";
   const SESSION_STORE_KEY = "clan-sync-session";
   const PKCE_STORE_KEY = "clan-sync-discord-pkce";
+  const PENDING_INVITE_STORE_KEY = "clan-sync-pending-invite";
+  const OFFICIAL_SYNC_CONFIG = Object.freeze({
+    url: "https://iigmqyvtiqrbmwanfezx.supabase.co",
+    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpZ21xeXZ0aXFyYm13YW5mZXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNjQ2MTEsImV4cCI6MjA5NzY0MDYxMX0.vjPiprgaG_V71b4TduhO38bwKZW6NP0GvLhVqrTCCZQ"
+  });
 
   function cleanText(value, max = 500) {
     return String(value ?? "").trim().slice(0, max);
@@ -36,6 +41,26 @@
     return { url: validUrl ? parsed.toString().replace(/\/$/, "") : "", anonKey };
   }
 
+  function officialConfig() {
+    return { ...OFFICIAL_SYNC_CONFIG };
+  }
+
+  function usesOfficialSyncHost(config) {
+    try {
+      return new URL(config?.url).origin === OFFICIAL_SYNC_CONFIG.url;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function savedConfig() {
+    try {
+      return normalizeConfig(JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}"));
+    } catch (_) {
+      return normalizeConfig();
+    }
+  }
+
   async function secureGet(key) {
     if (window.dragonTrackerDesktop?.secureGet) return window.dragonTrackerDesktop.secureGet(key);
     return sessionStorage.getItem(`${FALLBACK_SESSION_KEY}:${key}`);
@@ -53,7 +78,7 @@
 
   function openExternal(url) {
     if (window.dragonTrackerDesktop?.openExternal) return window.dragonTrackerDesktop.openExternal(url);
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.location.assign(url);
     return Promise.resolve();
   }
 
@@ -73,16 +98,27 @@
 
   class DragonTrackerSyncClient {
     getConfig() {
-      try {
-        return normalizeConfig(JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}"));
-      } catch (_) {
-        return normalizeConfig();
-      }
+      const saved = savedConfig();
+      if (!saved.url || !saved.anonKey || usesOfficialSyncHost(saved)) return officialConfig();
+      return saved;
+    }
+
+    getCustomConfig() {
+      const saved = savedConfig();
+      return saved.url && saved.anonKey && !usesOfficialSyncHost(saved) ? saved : normalizeConfig();
+    }
+
+    isUsingOfficialConfig() {
+      return usesOfficialSyncHost(this.getConfig());
     }
 
     saveConfig(input) {
       const config = normalizeConfig(input);
       if (!config.url || !config.anonKey) throw new Error("Enter a valid sync address and connection key.");
+      if (usesOfficialSyncHost(config)) {
+        localStorage.removeItem(CONFIG_KEY);
+        return officialConfig();
+      }
       localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
       return config;
     }
@@ -139,6 +175,7 @@
       }
       await secureDelete(SESSION_STORE_KEY);
       await secureDelete(PKCE_STORE_KEY);
+      await secureDelete(PENDING_INVITE_STORE_KEY);
     }
 
     async request(path, options = {}, requireAuth = false) {
@@ -187,9 +224,12 @@
       return user;
     }
 
-    async startDiscordSignIn() {
+    async startDiscordSignIn(options = {}) {
       const config = this.getConfig();
       if (!config.url || !config.anonKey) throw new Error("Connect sync before connecting Discord.");
+      const inviteCode = cleanText(typeof options === "string" ? options : options.inviteCode, 100);
+      if (inviteCode) await secureSet(PENDING_INVITE_STORE_KEY, inviteCode);
+      else await secureDelete(PENDING_INVITE_STORE_KEY);
       const verifier = randomVerifier();
       const challenge = await sha256Base64Url(verifier);
       await secureSet(PKCE_STORE_KEY, verifier);
@@ -217,6 +257,16 @@
       await this.setSession(session);
       await secureDelete(PKCE_STORE_KEY);
       return session;
+    }
+
+    async redeemPendingInvite() {
+      const inviteCode = cleanText(await secureGet(PENDING_INVITE_STORE_KEY), 100);
+      if (!inviteCode) return null;
+      try {
+        return await this.joinClan(inviteCode);
+      } finally {
+        await secureDelete(PENDING_INVITE_STORE_KEY);
+      }
     }
 
     async startSteamLink() {

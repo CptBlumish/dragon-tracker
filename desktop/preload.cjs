@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-const allowedKeys = new Set(["clan-sync-session", "clan-sync-discord-pkce"]);
+const allowedKeys = new Set(["clan-sync-session", "clan-sync-discord-pkce", "clan-sync-pending-invite"]);
 
 function keyIsAllowed(key) {
   return typeof key === "string" && allowedKeys.has(key);

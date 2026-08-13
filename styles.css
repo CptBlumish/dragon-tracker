@@ -2292,6 +2292,19 @@ input[type="checkbox"] {
   font-size: 0.8rem;
 }
 
+.clan-quick-join {
+  width: min(760px, 100%);
+  margin-top: 4px;
+}
+
+.clan-quick-join > div {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.clan-organizer-entry {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 .clan-invite-code {
   display: flex;
   align-items: center;

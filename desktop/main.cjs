@@ -21,7 +21,7 @@ let pendingAuthCallbacks = [];
 
 const AUTH_PROTOCOL = "dragontracker";
 const SECURE_STORE_FILE = "dragon-tracker-secure.json";
-const SECURE_KEYS = new Set(["clan-sync-session", "clan-sync-discord-pkce"]);
+const SECURE_KEYS = new Set(["clan-sync-session", "clan-sync-discord-pkce", "clan-sync-pending-invite"]);
 
 function secureStorePath() {
   return path.join(app.getPath("userData"), SECURE_STORE_FILE);

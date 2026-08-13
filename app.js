@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.19";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.20";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -151,6 +151,9 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Simplified clan joining to one invitation field followed by Discord approval, with automatic invite redemption on return.",
+  "Added the official Dragon Tracker sync connection so regular members no longer enter project addresses or public keys.",
+  "Moved separate Supabase connections into advanced organizer setup and added automatic repair for stale official connection details.",
   "Filtered Parent B to the opposite sex of Parent A within the same species.",
   "Made species-specific target skins limit both nesting parents to their matching species; shared skins follow Parent A's species.",
   "Removed the Target stat selector from the Nesting Planner.",
@@ -4208,15 +4211,21 @@ function renderClansContent() {
     els.clanContent.innerHTML = `
       <section class="clan-panel clan-identity-panel">
         <div class="card-head">
-          <div class="card-title"><h2>Clan Sync</h2><p class="card-subtitle">Secure sync configured</p></div>
-          <span class="pill">Sign-in Required</span>
+          <div class="card-title"><h2>Join a Clan</h2><p class="card-subtitle">One invitation and Discord approval</p></div>
+          <span class="pill">Not Connected</span>
         </div>
-        <p class="clan-copy">Discord verifies the tracker identity used for clan permissions. Dragon Tracker requests no email, guild list, messages, or Discord password.</p>
+        <p class="clan-copy">Paste the one-use invitation from your clan organizer. Discord will verify who you are, then Dragon Tracker will join the clan automatically.</p>
         ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
-        <div class="card-actions">
-          <button class="primary-button" type="button" data-clan-action="connect-discord">Connect Discord</button>
-          <button class="tool-button" type="button" data-clan-action="configure">Sync Connection</button>
-        </div>
+        <form class="clan-inline-form clan-quick-join" data-clan-form="quick-join">
+          <label for="quickClanInviteCode">Clan invitation</label>
+          <div><input id="quickClanInviteCode" name="inviteCode" maxlength="100" autocomplete="one-time-code" placeholder="Paste invitation code" required><button class="primary-button" type="submit">Continue with Discord</button></div>
+        </form>
+        <p class="form-note">Dragon Tracker asks Discord only for basic identity. It cannot read messages, servers, email, or your password.</p>
+      </section>
+      <section class="clan-panel clan-organizer-entry">
+        <div class="card-head"><div class="card-title"><h2>Clan Organizer</h2><p class="card-subtitle">Create a clan or use a separate sync service</p></div></div>
+        <p class="clan-copy">Organizers can sign in without an invitation to create a clan. A separate backend is optional and belongs under advanced setup.</p>
+        <div class="card-actions"><button class="tool-button" type="button" data-clan-action="connect-discord">Organizer Sign In</button><button class="tool-button" type="button" data-clan-action="configure">Advanced Sync Service</button></div>
       </section>
     `;
     return;
@@ -4313,7 +4322,7 @@ function renderClansContent() {
       ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
       <div class="card-actions">
         <button class="tool-button" type="button" data-clan-action="refresh">Refresh</button>
-        <button class="tool-button" type="button" data-clan-action="configure">Sync Settings</button>
+        <button class="tool-button" type="button" data-clan-action="configure">Advanced Sync</button>
         ${state.settings.skipClanShareConfirmation ? `<button class="tool-button" type="button" data-clan-action="enable-share-prompts">Ask Before Sharing</button>` : ""}
         <button class="danger-button" type="button" data-clan-action="sign-out">Sign Out</button>
       </div>
@@ -4636,7 +4645,7 @@ function importDiscordBroodPouchSubmission(record) {
 
 function openSyncConfigDialog() {
   if (!els.syncConfigDialog || !clanSync) return;
-  const config = clanSync.getConfig();
+  const config = clanSync.getCustomConfig?.() || { url: "", anonKey: "" };
   if (els.syncProjectUrl) els.syncProjectUrl.value = config.url;
   if (els.syncAnonKey) els.syncAnonKey.value = config.anonKey;
   showModal(els.syncConfigDialog);
@@ -4656,6 +4665,10 @@ function handleSyncDialogAction(event) {
   if (action === "configure") {
     closeModal("syncSetupDialog");
     openSyncConfigDialog();
+  }
+  if (action === "clans") {
+    closeModal("syncSetupDialog");
+    setTab("clans", { updateHash: true });
   }
 }
 
@@ -4682,7 +4695,7 @@ async function handleSyncConfigSubmit(event) {
 }
 
 async function clearSyncConfiguration() {
-  if (!clanSync || !confirm("Clear this device's secure sync configuration and sign out? Local tracker data will stay here.")) return;
+  if (!clanSync || !confirm("Restore the official Dragon Tracker sync service and sign out? Local tracker data will stay here.")) return;
   try {
     await clanSync.signOut();
   } catch (_) {
@@ -4696,7 +4709,7 @@ async function clearSyncConfiguration() {
   renderBackup();
   renderDragons();
   renderMapPins();
-  showToast("Secure sync cleared from this device");
+  showToast("Official Dragon Tracker sync restored");
 }
 
 async function handleClanAction(event) {
@@ -4844,6 +4857,11 @@ async function handleClanSubmit(event) {
   }
   try {
     clanUi.busy = true;
+    if (form.dataset.clanForm === "quick-join") {
+      await clanSync.startDiscordSignIn({ inviteCode: values.get("inviteCode") });
+      showToast("Finish approving Discord, then Dragon Tracker will join the clan");
+      return;
+    }
     if (form.dataset.clanForm === "create") {
       const clan = await clanSync.createClan(values.get("name"));
       clanUi.activeClanId = Array.isArray(clan) ? clan[0]?.id : clan?.id;
@@ -4889,12 +4907,21 @@ async function handleAuthCallback(callbackUrl) {
   try {
     const url = new URL(callbackUrl);
     const provider = url.searchParams.get("provider") || ((url.searchParams.has("code") || url.searchParams.has("error")) ? "discord" : "");
+    let inviteJoinError = null;
+    let joinedClan = null;
     if (provider === "discord") {
       await clanSync.finishDiscordSignIn(callbackUrl);
       const user = await clanSync.getCurrentUser();
       if (user) await clanSync.upsertProfile(clanDisplayName(user));
       clanUi.profileUserId = user?.id || "";
-      showToast("Discord connected for clan sync");
+      try {
+        joinedClan = await clanSync.redeemPendingInvite?.();
+        const joined = Array.isArray(joinedClan) ? joinedClan[0] : joinedClan;
+        if (joined?.id) clanUi.activeClanId = joined.id;
+      } catch (error) {
+        inviteJoinError = error;
+      }
+      showToast(joinedClan ? "Discord connected and clan joined" : "Discord connected for clan sync");
     }
     if (provider === "steam") {
       const status = url.searchParams.get("status");
@@ -4903,6 +4930,11 @@ async function handleAuthCallback(callbackUrl) {
     }
     setTab("clans", { updateHash: true });
     await refreshClanSync();
+    if (inviteJoinError) {
+      clanUi.error = `Discord connected, but the invitation could not be used: ${clanFriendlyError(inviteJoinError)}`;
+      renderClans();
+      showToast(clanUi.error);
+    }
   } catch (error) {
     clanUi.error = clanFriendlyError(error);
     setTab("clans", { updateHash: true });
@@ -5714,7 +5746,7 @@ function renderSetupChecklist() {
     { label: "Add at least one player/account", done: state.accounts.length > 0 },
     { label: "Add dragons to the tracker", done: state.dragons.length > 0 },
     { label: "Export a JSON backup", done: Boolean(state.settings?.lastBackupAt) },
-    { label: "Configure clan sync only if you want shared dragons or pins", done: Boolean(clanSync?.isConfigured()) },
+    { label: "Join a clan only if you want shared dragons or pins", done: Boolean(activeClanMembership()) },
     { label: "Start an elder tick timer when needed", done: Boolean(elderTickStartTime() || Object.keys(state.settings?.elderTickAccounts || {}).length) }
   ];
   els.setupChecklist.innerHTML = renderQualityItems(items);
@@ -5932,8 +5964,10 @@ function renderSyncSettings() {
     return;
   }
 
-  els.syncSettingsState.textContent = "Ready to Sign In";
-  els.syncSettingsDescription.textContent = "This device knows the shared sync space. Open Clans to connect Discord and join or create a clan.";
+  els.syncSettingsState.textContent = clanSync.isUsingOfficialConfig?.() ? "Ready to Join" : "Custom Service";
+  els.syncSettingsDescription.textContent = clanSync.isUsingOfficialConfig?.()
+    ? "Open Clans with a one-use invitation. Discord approval and joining now happen in one guided step."
+    : "This device uses an organizer-provided sync service. Open Clans to connect Discord and join or create a clan.";
 }
 
 function renderSyncStatusBadge() {
