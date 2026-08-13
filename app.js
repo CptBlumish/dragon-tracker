@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.16";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.17";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -151,6 +151,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Selecting Pure now keeps a dragon's visible and recessive skins matched in the dragon editor.",
   "Pure is now assigned automatically whenever a dragon's visible and recessive skins match, without requiring recorded parents.",
   "Added daytime elder crystal colors to dragon surfaces while keeping exact elder percentages inside dragon details.",
   "Replaced Ultra Pure with Fighter; Fighter dragons keep Social at zero while legacy Ultra Pure records become Pure.",
@@ -1711,8 +1712,12 @@ function bindEvents() {
 
   ["dragonNestRole", "dragonElderProgress", "dragonSocialPoints", "dragonDominantMutation", "dragonAgilePoints", "dragonFastMutation", "dragonScavengerPoints", "dragonSurvivorMutation"].forEach((id) => {
     const control = document.querySelector(`#${id}`);
-    control?.addEventListener("input", syncDragonComputedFields);
-    control?.addEventListener("change", syncDragonComputedFields);
+    const syncRoleAndPoints = () => {
+      if (id === "dragonNestRole") syncDragonPureSkinFields("dragonSkin");
+      syncDragonComputedFields();
+    };
+    control?.addEventListener("input", syncRoleAndPoints);
+    control?.addEventListener("change", syncRoleAndPoints);
   });
 
   STAT_FIELDS.forEach((field) => {
@@ -6039,7 +6044,28 @@ function openChangelog(options = {}) {
 function handleDragonSkinControlChange(event) {
   if (event.target.id === "dragonSpecies") {
     renderDragonSkinSelects(event.target.value, "", "");
+    syncDragonPureSkinFields("dragonSkin");
+    return;
   }
+  syncDragonPureSkinFields(event.target.id);
+}
+
+function syncDragonPureSkinFields(sourceId = "dragonSkin") {
+  if (normalizeNestRole(document.querySelector("#dragonNestRole")?.value) !== "Pure") return false;
+
+  const skinInput = document.querySelector("#dragonSkin");
+  const recessiveInput = document.querySelector("#dragonRecessiveSkin");
+  if (!skinInput || !recessiveInput) return false;
+
+  const sourceInput = sourceId === "dragonRecessiveSkin" ? recessiveInput : skinInput;
+  const fallbackInput = sourceInput === skinInput ? recessiveInput : skinInput;
+  const matchedSkin = text(sourceInput.value || fallbackInput.value);
+  if (!matchedSkin) return false;
+
+  const changed = skinInput.value !== matchedSkin || recessiveInput.value !== matchedSkin;
+  skinInput.value = matchedSkin;
+  recessiveInput.value = matchedSkin;
+  return changed;
 }
 
 function handleDragonPlayerSelectChange() {
@@ -6375,6 +6401,7 @@ function handleAccountSubmit(event) {
 
 function handleDragonSubmit(event) {
   event.preventDefault();
+  syncDragonPureSkinFields("dragonSkin");
   const form = new FormData(els.dragonForm);
   const id = form.get("id") || uid("dragon");
   const existing = dragonById(id);
