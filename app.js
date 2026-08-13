@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.18";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.19";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -151,6 +151,9 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Filtered Parent B to the opposite sex of Parent A within the same species.",
+  "Made species-specific target skins limit both nesting parents to their matching species; shared skins follow Parent A's species.",
+  "Removed the Target stat selector from the Nesting Planner.",
   "Updated the confirmed Albino and Piebald mutation chances to 0.5%.",
   "Clarified local-browser Clan Sync support and the exact Windows, macOS, and Linux return addresses organizers must allow.",
   "Selecting Pure now keeps a dragon's visible and recessive skins matched in the dragon editor.",
@@ -528,7 +531,6 @@ const els = {
   parentOne: document.querySelector("#parentOne"),
   parentTwo: document.querySelector("#parentTwo"),
   nestTargetSkin: document.querySelector("#nestTargetSkin"),
-  nestTargetGrade: document.querySelector("#nestTargetGrade"),
   createEggBtn: document.querySelector("#createEggBtn"),
   broodWatcherBrooding: document.querySelector("#broodWatcherBrooding"),
   addEggToBroodPouch: document.querySelector("#addEggToBroodPouch"),
@@ -1734,8 +1736,9 @@ function bindEvents() {
   [els.parentTwo, els.broodWatcherBrooding].forEach((control) => {
     control.addEventListener("change", renderNesting);
   });
-  [els.nestTargetSkin, els.nestTargetGrade].forEach((control) => {
-    control?.addEventListener("change", renderNesting);
+  els.nestTargetSkin?.addEventListener("change", () => {
+    renderNestingOptions();
+    renderNesting();
   });
 
   els.createEggBtn.addEventListener("click", createEggFromPlanner);
@@ -1885,7 +1888,6 @@ function buildStaticSelects() {
   fillSelect(els.upstatStatusFilter, ["All processes", ...UPSTAT_STATUSES]);
   fillSelect(document.querySelector("#upstatStatus"), UPSTAT_STATUSES);
   renderUpstatSpeciesSelect();
-  fillSelect(els.nestTargetGrade, ["Any stat target", "A", "A+", "A++"]);
   renderMapAreaSelect();
 
   const dlcGrid = document.querySelector("#accountDlcGrid");
@@ -1977,7 +1979,7 @@ function renderFilters() {
   }
 
   if (els.nestTargetSkin) {
-    fillSelect(els.nestTargetSkin, ["Any target skin", ...collectSkinNames()]);
+    renderNestTargetSkinSelect();
     els.nestTargetSkin.value = [...els.nestTargetSkin.options].some((option) => option.value === currentNestSkin)
       ? currentNestSkin
       : "Any target skin";
@@ -2678,10 +2680,14 @@ function renderDragonCard(dragon) {
 function renderNestingOptions() {
   const selectedOne = els.parentOne.value;
   const selectedTwo = els.parentTwo.value;
-  const parentA = dragonById(selectedOne);
-  const parentBOptions = parentA ? state.dragons.filter((dragon) => canSelectAsSecondParent(parentA, dragon)) : state.dragons;
-  const parentTwoPlaceholder = parentA && isKnownSex(parentA.sex) ? "Select opposite-sex dragon" : "Select dragon";
-  const parentOneOptions = ["<option value=''>Select dragon</option>", ...state.dragons.map((dragon) => (
+  const targetSpecies = speciesForNestTargetSkin(els.nestTargetSkin?.value);
+  const parentOneOptionsList = state.dragons.filter((dragon) => !targetSpecies || canonicalSpeciesName(dragon.species) === targetSpecies);
+  const selectedParentA = dragonById(selectedOne);
+  const parentA = parentOneOptionsList.some((dragon) => dragon.id === selectedParentA?.id) ? selectedParentA : null;
+  const parentBOptions = parentA ? state.dragons.filter((dragon) => canSelectAsSecondParent(parentA, dragon)) : [];
+  const parentOnePlaceholder = targetSpecies ? `Select ${targetSpecies} dragon` : "Select dragon";
+  const parentTwoPlaceholder = nestingParentTwoPlaceholder(parentA);
+  const parentOneOptions = [`<option value=''>${escapeHtml(parentOnePlaceholder)}</option>`, ...parentOneOptionsList.map((dragon) => (
     `<option value="${escapeAttr(dragon.id)}">${escapeHtml(dragonOptionLabel(dragon))}</option>`
   ))].join("");
   const parentTwoOptions = [`<option value=''>${escapeHtml(parentTwoPlaceholder)}</option>`, ...parentBOptions.map((dragon) => (
@@ -2689,14 +2695,44 @@ function renderNestingOptions() {
   ))].join("");
   els.parentOne.innerHTML = parentOneOptions;
   els.parentTwo.innerHTML = parentTwoOptions;
-  if (dragonById(selectedOne)) els.parentOne.value = selectedOne;
+  if (parentA) els.parentOne.value = selectedOne;
   if (parentBOptions.some((dragon) => dragon.id === selectedTwo)) els.parentTwo.value = selectedTwo;
 }
 
 function canSelectAsSecondParent(parentA, dragon) {
   if (!parentA || !dragon || parentA.id === dragon.id) return false;
-  if (!isKnownSex(parentA.sex)) return true;
-  return isKnownSex(dragon.sex) && dragon.sex !== parentA.sex;
+  if (!isKnownSex(parentA.sex) || !isKnownSex(dragon.sex)) return false;
+  const parentSpecies = canonicalSpeciesName(parentA.species);
+  const candidateSpecies = canonicalSpeciesName(dragon.species);
+  return Boolean(parentSpecies && candidateSpecies === parentSpecies && dragon.sex !== parentA.sex);
+}
+
+function nestingParentTwoPlaceholder(parentA) {
+  if (!parentA) return "Select Parent A first";
+  if (!isKnownSex(parentA.sex)) return "Parent A needs Male or Female";
+  const species = canonicalSpeciesName(parentA.species);
+  if (!species) return "Parent A needs a species";
+  const oppositeSex = parentA.sex === "Male" ? "Female" : "Male";
+  return `Select ${oppositeSex} ${species}`;
+}
+
+function renderNestTargetSkinSelect() {
+  if (!els.nestTargetSkin) return;
+  const options = collectSkinNames().map((name) => {
+    const species = speciesForNestTargetSkin(name);
+    const label = species ? `${name} (${species})` : `${name} (All species)`;
+    return `<option value="${escapeAttr(name)}">${escapeHtml(label)}</option>`;
+  });
+  els.nestTargetSkin.innerHTML = ["<option value='Any target skin'>Any target skin</option>", ...options].join("");
+}
+
+function speciesForNestTargetSkin(name) {
+  const key = canonicalSkinName(name);
+  if (!key || key === canonicalSkinName("Any target skin")) return "";
+  const matches = state.skins.filter((skin) => canonicalSkinName(skin.name) === key);
+  if (matches.some((skin) => canonicalSpeciesName(skin.species) === "All")) return "";
+  const species = [...new Set(matches.map((skin) => canonicalSpeciesName(skin.species)).filter((value) => value && value !== "All"))];
+  return species.length === 1 ? species[0] : "";
 }
 
 function renderNesting() {
@@ -2800,17 +2836,15 @@ function renderNesting() {
 
 function renderNestPairingHelper(currentA = null, currentB = null) {
   const targetSkin = text(els.nestTargetSkin?.value);
-  const targetGrade = text(els.nestTargetGrade?.value);
   const requestedSkin = targetSkin && targetSkin !== "Any target skin" ? targetSkin : "";
-  const requestedGrade = targetGrade && targetGrade !== "Any stat target" ? targetGrade : "";
-  const candidates = nestPairCandidates(requestedSkin, requestedGrade).slice(0, 5);
+  const candidates = nestPairCandidates(requestedSkin).slice(0, 5);
 
   if (!state.dragons.length) {
-    return `<p class="planner-note">Add dragons first, then choose a target skin or stat grade to see suggested nest pairs.</p>`;
+    return `<p class="planner-note">Add dragons first, then choose a target skin to see suggested nest pairs.</p>`;
   }
 
-  if (!requestedSkin && !requestedGrade) {
-    return `<p class="planner-note">Choose a target skin or stat grade above to rank possible pairings. The helper only suggests same-species, male/female pairs that are not known inbred.</p>`;
+  if (!requestedSkin) {
+    return `<p class="planner-note">Choose a target skin above to rank possible pairings. The helper only suggests same-species, male/female pairs that are not known inbred.</p>`;
   }
 
   if (!candidates.length) {
@@ -2837,14 +2871,16 @@ function renderNestPairingHelper(currentA = null, currentB = null) {
   `;
 }
 
-function nestPairCandidates(targetSkin, targetGrade) {
+function nestPairCandidates(targetSkin) {
   const candidates = [];
+  const targetSpecies = speciesForNestTargetSkin(targetSkin);
   for (let i = 0; i < state.dragons.length; i += 1) {
     for (let j = i + 1; j < state.dragons.length; j += 1) {
       const a = state.dragons[i];
       const b = state.dragons[j];
       if (!canNestTogether(a, b) || !hasValidNestSexPair(a, b) || isInbredNest(a, b)) continue;
-      const score = scoreNestPair(a, b, targetSkin, targetGrade);
+      if (targetSpecies && canonicalSpeciesName(a.species) !== targetSpecies) continue;
+      const score = scoreNestPair(a, b, targetSkin);
       if (score.value <= 0) continue;
       candidates.push({ a, b, score: score.value, reasons: score.reasons });
     }
@@ -2852,7 +2888,7 @@ function nestPairCandidates(targetSkin, targetGrade) {
   return candidates.sort((left, right) => right.score - left.score || sortText(dragonAccountLabel(left.a), dragonAccountLabel(right.a)));
 }
 
-function scoreNestPair(a, b, targetSkin, targetGrade) {
+function scoreNestPair(a, b, targetSkin) {
   let value = 0;
   const reasons = [];
   if (targetSkin) {
@@ -2862,16 +2898,7 @@ function scoreNestPair(a, b, targetSkin, targetGrade) {
       value += carriers * 35;
       reasons.push(`${carriers} target skin slot${carriers === 1 ? "" : "s"}`);
     }
-  }
-  if (targetGrade) {
-    const targetScore = gradeScore(targetGrade);
-    const strongStats = STAT_FIELDS.reduce((sum, field) => (
-      sum + (gradeScore(a.stats?.[field.key]) >= targetScore ? 1 : 0) + (gradeScore(b.stats?.[field.key]) >= targetScore ? 1 : 0)
-    ), 0);
-    if (strongStats) {
-      value += strongStats;
-      reasons.push(`${strongStats} stat slot${strongStats === 1 ? "" : "s"} at ${targetGrade}+`);
-    }
+    if (!carriers) return { value: 0, reasons: [] };
   }
   if (hasFullSocial(a) || hasFullSocial(b)) {
     value += 8;
