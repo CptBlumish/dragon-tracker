@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.17";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.18";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -151,6 +151,8 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Updated the confirmed Albino and Piebald mutation chances to 0.5%.",
+  "Clarified local-browser Clan Sync support and the exact Windows, macOS, and Linux return addresses organizers must allow.",
   "Selecting Pure now keeps a dragon's visible and recessive skins matched in the dragon editor.",
   "Pure is now assigned automatically whenever a dragon's visible and recessive skins match, without requiring recorded parents.",
   "Added daytime elder crystal colors to dragon surfaces while keeping exact elder percentages inside dragon details.",
@@ -217,8 +219,8 @@ let geneticsLetterTemplates = null;
 
 const DISCORD_SKIN_SOURCE = "Discord SMOKE #skins DRAGON SKINS";
 const MUTATION_RULES = {
-  albinoChance: 0.05,
-  piebaldChance: 0.05
+  albinoChance: 0.5,
+  piebaldChance: 0.5
 };
 const ODDS_COLORS = ["#14726f", "#b94a2c", "#b8861c", "#4d6d3c", "#5b5b8f", "#a73535", "#2f6f8f", "#7a5b35", "#996c9e"];
 const SKIN_TURNTABLES = new Map([
@@ -317,8 +319,8 @@ const SHARED_DISCORD_SKINS = [
   ["Melanistic", "Exotic", "Unlocked after growing a nested dragon"],
   ["Leumelan", "Exotic", "Kickstarter spawnable"],
   ["Leucistic", "Exotic", "Kickstarter spawnable"],
-  ["Albino", "Mutation", "A 0.05% mutation chance from breeding any two skins together", "", "", "Discord lists a 0.05% mutation chance."],
-  ["Piebald", "Mutation", "A 0.05% mutation chance when one parent's primary skin is Exotic and the other parent's primary skin is non-Exotic", "Exotic primary", "Non-Exotic primary", "Discord lists a 0.05% mutation chance."],
+  ["Albino", "Mutation", "A confirmed 0.5% mutation chance from breeding any two skins together", "", "", "Confirmed mutation chance: 0.5%."],
+  ["Piebald", "Mutation", "A confirmed 0.5% mutation chance when one parent's primary skin is Exotic and the other parent's primary skin is non-Exotic", "Exotic primary", "Non-Exotic primary", "Confirmed mutation chance: 0.5%."],
   ["Sand Slayer", "Pearl Overlay", "Boss drop"],
   ["Snow Slayer", "Pearl Overlay", "Boss and Winter Quest drop"],
   ["Crimson Shard of Nharoghk", "Pearl Overlay", "Patreon LT15"],
@@ -3162,7 +3164,7 @@ function renderSkinOddsPanel(odds, skinPool = []) {
         </div>
       </div>
     </div>
-    <p class="planner-note">Tracker estimate: filled visible and recessive skin slots are weighted equally, duplicate skins are combined, then Discord-listed mutation chances are added as ${formatChance(MUTATION_RULES.albinoChance)} Albino and ${formatChance(MUTATION_RULES.piebaldChance)} Piebald when eligible. No public skin-inheritance buff formula has been stated, so breeder/social points are not applied to skin odds here. Hidden game RNG may differ.</p>
+    <p class="planner-note">Tracker estimate: filled visible and recessive skin slots are weighted equally, duplicate skins are combined, then the confirmed mutation chances are added as ${formatChance(MUTATION_RULES.albinoChance)} Albino and ${formatChance(MUTATION_RULES.piebaldChance)} Piebald when eligible. No public skin-inheritance buff formula has been stated, so breeder/social points are not applied to skin odds here. Hidden game RNG may differ.</p>
   `;
 }
 
@@ -3176,7 +3178,7 @@ function renderMutationGuide(odds) {
         <tr>
           <td>Albino</td>
           <td>${formatChance(MUTATION_RULES.albinoChance)}</td>
-          <td>Any two nesting parents; Discord lists this as a mutation from breeding any skins together.</td>
+          <td>Any two nesting parents; confirmed as a mutation from breeding any skins together.</td>
           <td>${escapeHtml(albinoStatus)}</td>
         </tr>
         <tr>

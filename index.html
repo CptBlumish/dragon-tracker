@@ -277,8 +277,8 @@
         <details class="skin-info-panel">
           <summary>Mutation and DLC reminders</summary>
           <div class="skin-info-grid">
-            <p><strong>Albino</strong> uses a 0.05% mutation chance when any two parent skins are nested.</p>
-            <p><strong>Piebald</strong> uses a 0.05% mutation chance when one primary skin is Exotic and the other primary skin is non-Exotic.</p>
+            <p><strong>Albino</strong> uses a confirmed 0.5% mutation chance when any two parent skins are nested.</p>
+            <p><strong>Piebald</strong> uses a confirmed 0.5% mutation chance when one primary skin is Exotic and the other primary skin is non-Exotic.</p>
             <p><strong>Wishlist</strong> marks skins you still want without changing ownership or nesting odds.</p>
           </div>
         </details>
@@ -401,7 +401,7 @@
             <div class="backup-panel">
               <h2>Version</h2>
               <p class="form-note">Compare this version with the latest release before updating.</p>
-              <p class="settings-version" id="appVersionLabel">Version 1.3.17</p>
+              <p class="settings-version" id="appVersionLabel">Version 1.3.18</p>
               <div class="button-row compact-actions">
                 <button class="tool-button" type="button" id="openChangelogBtn">View Changelog</button>
               </div>
@@ -987,7 +987,7 @@
             <li>Open Supabase's <strong>SQL Editor</strong>. Run Dragon Tracker's supplied clan-sync setup file, <code>supabase/migrations/0001_clan_sync.sql</code>. It creates the private clan tables and access rules.</li>
             <li>Create a Discord application in the Discord Developer Portal. In Supabase Authentication, enable Discord, add the Discord Client ID and Client Secret, and request only the <code>identify</code> permission.</li>
             <li>In the Discord application, add <code>https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback</code> as the callback address. Replace <code>YOUR_PROJECT_REF</code> with the project reference from your Supabase URL.</li>
-            <li>In Supabase Authentication's allowed redirect addresses, add <code>dragontracker://auth/callback</code> for the installed app. Add the exact local-browser address too, such as <code>http://127.0.0.1:8765/index.html</code>, if members will use it.</li>
+            <li>In Supabase Authentication's allowed redirect addresses, add <code>dragontracker://auth/callback</code> for the installed app. For the downloadable browser edition, also add <code>http://localhost:8765/index.html</code> for Windows and <code>http://127.0.0.1:8765/index.html</code> for macOS and Linux.</li>
             <li>Connect sync and Discord in Dragon Tracker using a test account, create a test clan, then verify that a second Discord account can join with a one-use invite and view one deliberately shared test dragon.</li>
           </ol>
         </details>
@@ -1007,7 +1007,7 @@
           <li>Paste the one-use invite code to join. Only then can you see the clan's shared dragons and pins.</li>
           <li>Use <strong>Share to Clan</strong> on a dragon or map pin when you want other clan members to see it. Nothing is shared automatically.</li>
         </ol>
-        <p class="sync-setup-note"><strong>Desktop app and browser-local tracker:</strong> both use the same sync address, connection key, Discord identity, and invite code. For the browser-local tracker, open it through <code>http://localhost</code> or <code>http://127.0.0.1</code>, not by double-clicking an <code>index.html</code> file. The organizer must add that exact local address to the shared space's allowed return addresses before you connect Discord.</p>
+        <p class="sync-setup-note"><strong>Desktop app and downloadable browser edition:</strong> both support Clan Sync and use the same sync address, connection key, Discord identity, and invite code. Start the browser edition with its included launcher instead of double-clicking <code>index.html</code>. Its Discord return address is <code>http://localhost:8765/index.html</code> on Windows or <code>http://127.0.0.1:8765/index.html</code> on macOS and Linux; the organizer must allow the matching address in Supabase.</p>
       </section>
     </div>
     <details class="sync-bot-guide">
@@ -1112,6 +1112,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="./sync-client.js?v=20260721-breeder-bot-pure-filter"></script>
-  <script src="./app.js?v=20260812-pure-skin-sync"></script>
+  <script src="./app.js?v=20260813-mutation-local-sync"></script>
 </body>
 </html>
