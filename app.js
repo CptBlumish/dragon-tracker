@@ -2,7 +2,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.20";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.21";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -151,6 +151,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added a compact Pure badge to matching visible and recessive skin pairs in the Home roster grid.",
   "Simplified clan joining to one invitation field followed by Discord approval, with automatic invite redemption on return.",
   "Added the official Dragon Tracker sync connection so regular members no longer enter project addresses or public keys.",
   "Moved separate Supabase connections into advanced organizer setup and added automatic repair for stale official connection details.",
@@ -2374,6 +2375,7 @@ function renderAccountSpeciesMatrix(accounts, target = els.accountSpeciesMatrix)
   }
 
   const speciesNames = collectSpeciesNames();
+  const showPure = target === els.homeAccountSpeciesMatrix;
   target.style.setProperty("--species-columns", String(speciesNames.length));
   target.innerHTML = `
     <div class="matrix-head">
@@ -2385,20 +2387,24 @@ function renderAccountSpeciesMatrix(accounts, target = els.accountSpeciesMatrix)
       return `
         <div class="matrix-row">
           <button class="matrix-account" type="button" data-account-action="open-detail" data-id="${escapeAttr(account.id)}">${escapeHtml(compactJoin([account.username, account.accountName]))}</button>
-          ${speciesNames.map((species) => renderAccountSpeciesMatrixCell(account, species, accountDragons)).join("")}
+          ${speciesNames.map((species) => renderAccountSpeciesMatrixCell(account, species, accountDragons, showPure)).join("")}
         </div>
       `;
     }).join("")}
   `;
 }
 
-function renderAccountSpeciesMatrixCell(account, species, accountDragons) {
+function renderAccountSpeciesMatrixCell(account, species, accountDragons, showPure = false) {
   const dragon = accountDragons.find((item) => item.species === species);
   if (dragon) {
+    const pureSkin = showPure ? pureSkinForDragon(dragon) : "";
     return `
-      <button class="matrix-cell is-filled${isElderDragon(dragon) ? " is-elder" : ""}${elderCrystalClassNames(dragon)}" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin, elderCrystalTitle(dragon)]))}">
+      <button class="matrix-cell is-filled${isElderDragon(dragon) ? " is-elder" : ""}${elderCrystalClassNames(dragon)}" type="button" data-dragon-action="edit" data-id="${escapeAttr(dragon.id)}" title="${escapeAttr(compactJoin([dragon.status, dragon.sex, dragon.skin, pureSkin ? `Pure ${pureSkin}` : "", elderCrystalTitle(dragon)]))}">
         <strong class="matrix-cell-head">
-          <span>${escapeHtml(statusShortLabel(dragon.status))}</span>
+          <span class="matrix-cell-traits">
+            <span>${escapeHtml(statusShortLabel(dragon.status))}</span>
+            ${pureSkin ? `<span class="matrix-pure" title="Pure: visible and recessive skins match">Pure</span>` : ""}
+          </span>
           <span class="matrix-sex ${sexClass(dragon.sex)}">${escapeHtml(sexShortLabel(dragon.sex))}</span>
         </strong>
         <span>${escapeHtml(dragon.skin || "Skin?")}</span>

@@ -471,6 +471,29 @@ svg {
   color: var(--gold);
 }
 
+.matrix-cell-traits {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.matrix-pure {
+  display: inline-flex !important;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 16px;
+  border: 1px solid rgba(246, 217, 86, 0.72);
+  border-radius: 999px;
+  background: rgba(246, 217, 86, 0.1);
+  padding: 0 4px;
+  color: var(--gold) !important;
+  font-size: 0.52rem !important;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .matrix-sex {
   display: inline-flex !important;
   align-items: center;
