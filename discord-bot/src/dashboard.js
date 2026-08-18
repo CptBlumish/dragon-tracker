@@ -125,7 +125,7 @@ export function modalForAction(action, displayName = "") {
       input("owner", "Player | Account", { placeholder: "Blumish | Main Account", maxLength: 165 }),
       input("profile", "Sex | Status | Bloodline", { placeholder: "Female | Elder | A", maxLength: 80 }),
       input("skins", "Primary skin | Recessive skin", { placeholder: "Ashfall | Ashfall", required: false, maxLength: 205 }),
-      input("lineage", "Mother | Father | Point traits", { placeholder: "Dam | Sire | Breeder, Pure, Dominant", required: false, maxLength: 300 })
+      input("lineage", "Mother | Father | Points", { placeholder: "Dam | Sire | PvP, Breeder, Pure, Dominant", required: false, maxLength: 300 })
     ]);
   }
   if (action === "egg") {
