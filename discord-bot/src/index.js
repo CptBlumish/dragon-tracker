@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { Client, GatewayIntentBits, MessageFlags, PermissionFlagsBits } from "discord.js";
 import {
@@ -63,6 +64,24 @@ console.error = (...values) => {
   standardError(...values);
   writeBotLog("ERROR", values);
 };
+
+// A loopback-only port acts as a process lock and is released automatically on exit.
+async function claimSingleBotInstance() {
+  const configuredPort = Number(process.env.BOT_SINGLE_INSTANCE_PORT) || 47_881;
+  const port = Math.max(1_024, Math.min(65_535, Math.trunc(configuredPort)));
+  return new Promise((resolve, reject) => {
+    const guard = createServer();
+    guard.unref();
+    guard.once("error", (error) => {
+      if (error?.code === "EADDRINUSE") {
+        resolve(null);
+        return;
+      }
+      reject(error);
+    });
+    guard.listen({ host: "127.0.0.1", port, exclusive: true }, () => resolve(guard));
+  });
+}
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -1198,6 +1217,12 @@ async function handlePrefixMessage(message) {
 }
 
 // Discord client startup and graceful shutdown
+const instanceGuard = await claimSingleBotInstance();
+if (!instanceGuard) {
+  console.log("Another Dragon Tracker bot process is already running; this duplicate will exit.");
+  process.exit(0);
+}
+
 const intents = [GatewayIntentBits.Guilds];
 if (optionalEnv("ENABLE_PREFIX_COMMANDS", "false").toLowerCase() === "true") {
   intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
@@ -1237,7 +1262,7 @@ async function flushQueuedAlertsBeforeExit() {
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, () => {
-    void flushQueuedAlertsBeforeExit().finally(() => process.exit(0));
+    void flushQueuedAlertsBeforeExit().finally(() => instanceGuard.close(() => process.exit(0)));
   });
 }
 
