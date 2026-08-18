@@ -60,7 +60,18 @@ function canonicalChoice(value, choices, fallback = "") {
 }
 
 export function canonicalSpecies(value) {
-  return canonicalChoice(value, SPECIES);
+  const key = canonicalKey(value);
+  const aliases = {
+    fs: "Flame Stalker",
+    ss: "Shadow Scale",
+    as: "Acid Spitter",
+    ir: "Inferno Ravager",
+    bs: "Blitz Striker",
+    bw: "Brood Watcher",
+    sc: "Singe Crest",
+    fz: "Feathered Zygovo"
+  };
+  return aliases[key] || canonicalChoice(value, SPECIES);
 }
 
 export function canonicalGrade(value, fallback = "") {

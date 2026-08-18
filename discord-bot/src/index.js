@@ -604,15 +604,15 @@ function interactionDisplayName(interaction) {
 
 function modalPayload(interaction, action) {
   if (action === "dragon") {
-    const [name, species] = splitValues(fieldValue(interaction, "identity"), 2);
-    const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
+    const [accountName, species] = splitValues(fieldValue(interaction, "identity"), 2);
+    const playerName = fieldValue(interaction, "owner");
     const [sex, status, bloodline] = splitValues(fieldValue(interaction, "profile"), 3);
     const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
     const [motherName, fatherName, pointTraits] = splitValues(fieldValue(interaction, "lineage"), 3);
     return normalizeDragonGenetics({
-      name: clean(name, 80),
+      name: clean(accountName, 80),
       playerName: clean(playerName, 80) || interactionDisplayName(interaction),
-      accountName: clean(accountName, 80) || clean(name, 80),
+      accountName: clean(accountName, 80),
       species: clean(species, 80),
       sex: clean(sex, 20) || "Unknown",
       status: clean(status, 40) || "Hatchie",

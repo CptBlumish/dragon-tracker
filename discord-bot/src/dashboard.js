@@ -121,8 +121,8 @@ export function modalForAction(action, displayName = "") {
   }
   if (action === "dragon") {
     return modal(action, "Add Dragon", [
-      input("identity", "Dragon name | Species", { placeholder: "Harbinger | Flame Stalker", maxLength: 165 }),
-      input("owner", "Player | Account", { placeholder: "Blumish | Main Account", maxLength: 165 }),
+      input("owner", "Player", { placeholder: "Blumish", maxLength: 80 }),
+      input("identity", "Account name | Species", { placeholder: "Maximus | FS", maxLength: 165 }),
       input("profile", "Sex | Status | Bloodline", { placeholder: "Female | Elder | A", maxLength: 80 }),
       input("skins", "Primary skin | Recessive skin", { placeholder: "Ashfall | Ashfall", required: false, maxLength: 205 }),
       input("lineage", "Mother | Father | Points", { placeholder: "Damsel | Sire | PvP, Breeder, Pure, Dominant", required: false, maxLength: 300 })

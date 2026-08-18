@@ -45,6 +45,11 @@ test("matching primary and recessive skins automatically become Pure", () => {
   assert.equal(dragon.nestRole, "Pure");
 });
 
+test("common species abbreviations are accepted", () => {
+  const dragon = normalizeDragonGenetics(baseDragon({ species: "FS" }));
+  assert.equal(dragon.species, "Flame Stalker");
+});
+
 test("Dominant promotes a dragon to 4th Pointed and preserves other traits", () => {
   const dragon = normalizeDragonGenetics(baseDragon({ pointTraits: "PvP, Breeder, Dominant" }));
   assert.equal(dragon.status, "4th Pointed");
