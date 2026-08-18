@@ -65,7 +65,9 @@
       <button class="tab" type="button" data-tab="settings">Settings</button>
     </nav>
 
+    <!-- Primary page panels; JavaScript switches them with the navigation tabs. -->
     <main>
+      <!-- Home: primary player's accounts, roster grid, and elder timers -->
       <section class="tab-panel is-active" id="home-panel" data-panel="home">
         <div class="toolbar accounts-toolbar">
           <div>
@@ -111,6 +113,7 @@
         </section>
       </section>
 
+      <!-- Dragons: local collection and upstat tracking -->
       <section class="tab-panel" id="dragons-panel" data-panel="dragons">
         <div class="view-tabs" role="tablist" aria-label="Dragon views">
           <button class="view-tab is-active" type="button" role="tab" aria-selected="true" data-dragon-view="collection">Collection</button>
@@ -179,6 +182,7 @@
         </div>
       </section>
 
+      <!-- Players: player accounts and species roster matrix -->
       <section class="tab-panel" id="players-panel" data-panel="players">
         <div class="toolbar accounts-toolbar">
           <div class="field search-field">
@@ -197,6 +201,7 @@
         <div class="account-list" id="accountList"></div>
       </section>
 
+      <!-- Breeding: nesting planner and brood pouch -->
       <section class="tab-panel" id="breeding-panel" data-panel="breeding">
         <div class="view-tabs" role="tablist" aria-label="Breeding views">
           <button class="view-tab is-active" type="button" role="tab" aria-selected="true" data-breeding-view="planner">Nesting Planner</button>
@@ -245,6 +250,7 @@
         </div>
       </section>
 
+      <!-- Skins: catalog, rarity filters, and turntables -->
       <section class="tab-panel" id="skins-panel" data-panel="skins">
         <div class="toolbar">
           <div class="field search-field">
@@ -281,6 +287,7 @@
         <div class="skin-list" id="skinList"></div>
       </section>
 
+      <!-- Map: overlays, reference images, and shared pins -->
       <section class="tab-panel" id="map-panel" data-panel="map">
         <div class="toolbar map-toolbar">
           <label class="toggle-field">
@@ -308,6 +315,12 @@
               <svg viewBox="0 0 24 24"><path d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11Z"/><path d="M12 10h.01"/></svg>
             </span>
             Add Pin
+          </button>
+          <button class="tool-button" type="button" id="addMapPinCoordinatesBtn">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>
+            </span>
+            Coordinates
           </button>
           <button class="tool-button" type="button" data-map-action="import-code">Import Code</button>
         </div>
@@ -348,10 +361,12 @@
         </div>
       </section>
 
+      <!-- Clans: connected clan library and member tools -->
       <section class="tab-panel" id="clans-panel" data-panel="clans">
         <div class="clan-layout" id="clanContent" aria-live="polite"></div>
       </section>
 
+      <!-- Settings: preferences, backup, sync, and diagnostics -->
       <section class="tab-panel" id="settings-panel" data-panel="settings">
         <div class="view-tabs" role="tablist" aria-label="Settings views">
           <button class="view-tab is-active" type="button" role="tab" aria-selected="true" data-settings-view="general">General</button>
@@ -463,6 +478,7 @@
     </main>
   </div>
 
+  <!-- Add or edit a dragon and its genetics -->
   <dialog class="modal" id="dragonDialog">
     <form id="dragonForm" method="dialog">
       <input type="hidden" name="id" id="dragonId">
@@ -637,6 +653,7 @@
     </form>
   </dialog>
 
+  <!-- Add or edit a player account -->
   <dialog class="modal compact-modal" id="accountDialog">
     <form id="accountForm" method="dialog">
       <input type="hidden" name="id" id="accountId">
@@ -680,6 +697,7 @@
     </form>
   </dialog>
 
+  <!-- Full account roster and account-level actions -->
   <dialog class="modal account-detail-modal" id="accountDetailDialog">
     <div class="modal-header">
       <div>
@@ -693,6 +711,7 @@
     <div class="account-detail-content" id="accountDetailContent"></div>
   </dialog>
 
+  <!-- Add or edit a skin catalog entry -->
   <dialog class="modal compact-modal" id="skinDialog">
     <form id="skinForm" method="dialog">
       <input type="hidden" name="id" id="skinId">
@@ -749,6 +768,7 @@
     </form>
   </dialog>
 
+  <!-- Add or edit upstat progress -->
   <dialog class="modal compact-modal" id="upstatDialog">
     <form id="upstatForm" method="dialog">
       <input type="hidden" name="id" id="upstatId">
@@ -805,6 +825,7 @@
     </form>
   </dialog>
 
+  <!-- Confirm before sharing local data with a clan -->
   <dialog class="modal compact-modal" id="clanShareDialog">
     <div class="modal-header">
       <div>
@@ -824,6 +845,7 @@
     </div>
   </dialog>
 
+  <!-- Add or edit a map pin -->
   <dialog class="modal compact-modal" id="mapPinDialog">
     <form id="mapPinForm" method="dialog">
       <input type="hidden" name="x" id="mapPinX">
@@ -846,6 +868,28 @@
           <label for="mapPinType">Location type</label>
           <input id="mapPinType" name="type" maxlength="50" value="Dragon">
         </div>
+        <div class="map-coordinate-grid">
+          <div class="field">
+            <label for="mapPinNorthSouth">North / South</label>
+            <div class="map-coordinate-control">
+              <input id="mapPinNorthSouth" name="northSouth" type="number" min="0" max="807" step="1" inputmode="numeric" placeholder="0-807" required>
+              <select id="mapPinNorthSouthDirection" name="northSouthDirection" aria-label="North or South">
+                <option value="N">N</option>
+                <option value="S">S</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="mapPinEastWest">East / West</label>
+            <div class="map-coordinate-control">
+              <input id="mapPinEastWest" name="eastWest" type="number" min="0" max="806" step="1" inputmode="numeric" placeholder="0-806" required>
+              <select id="mapPinEastWestDirection" name="eastWestDirection" aria-label="East or West">
+                <option value="E">E</option>
+                <option value="W">W</option>
+              </select>
+            </div>
+          </div>
+        </div>
         <div class="field">
           <label for="mapPinNotes">Notes</label>
           <textarea id="mapPinNotes" name="notes" rows="3" maxlength="600" placeholder="Optional details"></textarea>
@@ -858,6 +902,7 @@
     </form>
   </dialog>
 
+  <!-- Import a shared map-pin code -->
   <dialog class="modal compact-modal" id="mapImportDialog">
     <form id="mapImportForm" method="dialog">
       <div class="modal-header">
@@ -882,6 +927,7 @@
     </form>
   </dialog>
 
+  <!-- Add or edit an egg in a brood pouch -->
   <dialog class="modal compact-modal" id="broodPouchDialog">
     <form id="broodPouchForm" method="dialog">
       <input type="hidden" name="id" id="broodPouchId">
@@ -920,6 +966,7 @@
     </form>
   </dialog>
 
+  <!-- Configure an alternate clan sync service -->
   <dialog class="modal compact-modal" id="syncConfigDialog">
     <form id="syncConfigForm" method="dialog">
       <div class="modal-header">
@@ -953,6 +1000,7 @@
     </form>
   </dialog>
 
+  <!-- Step-by-step clan sync setup -->
   <dialog class="modal sync-setup-modal" id="syncSetupDialog">
     <div class="modal-header">
       <div>
@@ -1019,6 +1067,7 @@
     </div>
   </dialog>
 
+  <!-- Preview merged backup data before importing -->
   <dialog class="modal compact-modal" id="importPreviewDialog">
     <div class="modal-header">
       <div>
@@ -1036,6 +1085,7 @@
     </div>
   </dialog>
 
+  <!-- Full-size skin turntable viewer -->
   <dialog class="modal skin-turntable-modal" id="skinTurntableDialog">
     <div class="modal-header">
       <div>
@@ -1051,6 +1101,7 @@
     </div>
   </dialog>
 
+  <!-- App version changelog -->
   <dialog class="modal compact-modal" id="changelogDialog">
     <div class="modal-header">
       <div>
@@ -1067,6 +1118,7 @@
     </div>
   </dialog>
 
+  <!-- Desktop update download and install progress -->
   <dialog class="modal compact-modal update-progress-modal" id="updateProgressDialog" aria-labelledby="updateProgressTitle">
     <div class="modal-header">
       <div>

@@ -1,3 +1,4 @@
+// Shared game rules and local-storage keys used throughout the tracker.
 const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
@@ -90,6 +91,7 @@ const GRADE_ALIASES = new Map([
 ]);
 const UPSTAT_STATUSES = ["Not Started", "In Progress", "Partial A+", "Near 18A+", "18A+ Complete"];
 const MAP_LAYERS = ["locations", "crystals", "food"];
+const MAP_COORDINATE_BOUNDS = Object.freeze({ northSouth: 807, eastWest: 806 });
 const MAP_REFERENCE_BASE = "./assets/map/references/";
 const MAP_REFERENCE_AREAS = [
   { id: "67", region: "Elder Forest", name: "67", files: ["67.png", "67-1.png"], button: [7.2, 85.6, 5, 4.5] },
@@ -140,9 +142,9 @@ const DEFAULT_TAB = "home";
 const TAB_NAMES = ["home", "dragons", "players", "breeding", "skins", "map", "clans", "settings"];
 const ACTIVE_CLAN_STORAGE_KEY = "dragon-tracker.active-clan.v1";
 const CLAN_LIBRARY_SOURCE_FILTERS = [
-  { value: "", label: "All shared dragons" },
-  { value: "mine", label: "Shared by me" },
-  { value: "others", label: "Shared by others" },
+  { value: "", label: "All clan dragons" },
+  { value: "mine", label: "Added by me" },
+  { value: "others", label: "Added by others" },
   { value: "missing-local", label: "Not in my tracker" },
   { value: "breeders", label: "Breeders" },
   { value: "fourth", label: "4th pointed" },
@@ -151,6 +153,9 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added precise map pin entry using the game's 807 N/S and 806 E/W coordinate bounds.",
+  "Clan bot dragons now stay in the read-only Clan Library and can be selected directly in Breeding without entering local Players or Dragons.",
+  "Bot dragons now import automatically only when their account already exists locally, using saved player aliases to route them to the correct player.",
   "Added a compact Pure badge to matching visible and recessive skin pairs in the Home roster grid.",
   "Simplified clan joining to one invitation field followed by Discord approval, with automatic invite redemption on return.",
   "Added the official Dragon Tracker sync connection so regular members no longer enter project addresses or public keys.",
@@ -456,8 +461,10 @@ const DEPRECATED_PLACEHOLDER_SKIN_KEYS = new Set([
   "all::custom"
 ]);
 
+// Build the default skin catalog before loading saved user data into it.
 const STARTER_SKINS = buildStarterSkins();
 
+// Runtime state for the current tab, open tools, and optional clan connection.
 let state = loadState();
 let currentTab = DEFAULT_TAB;
 let currentDragonView = "collection";
@@ -572,6 +579,7 @@ const els = {
   mapPinsPersonal: document.querySelector("#mapPinsPersonal"),
   mapPinsClan: document.querySelector("#mapPinsClan"),
   addMapPinBtn: document.querySelector("#addMapPinBtn"),
+  addMapPinCoordinatesBtn: document.querySelector("#addMapPinCoordinatesBtn"),
   mapStage: document.querySelector("#mapStage"),
   mapPinDialog: document.querySelector("#mapPinDialog"),
   mapPinForm: document.querySelector("#mapPinForm"),
@@ -642,6 +650,7 @@ const els = {
   toast: document.querySelector("#toast")
 };
 
+// App startup
 init();
 
 function init() {
@@ -663,6 +672,7 @@ function init() {
   maybeShowChangelog();
 }
 
+// Starter catalog
 function buildStarterSkins() {
   const skins = [];
 
@@ -697,6 +707,7 @@ function dedupeSkins(skins) {
   return [...byKey.values()];
 }
 
+// Local data loading and normalization
 function loadState() {
   const fallback = createDefaultState();
   try {
@@ -929,6 +940,7 @@ function attachAccountsToDragons(dragons, accounts) {
   });
 }
 
+// Backup merging keeps existing records and combines matching accounts and dragons.
 function mergeImportedState(currentInput, incomingInput) {
   const current = normalizeState(currentInput);
   const incoming = normalizeState(incomingInput);
@@ -1591,6 +1603,7 @@ function mergeSpecies(savedSpecies) {
   return [...byName.values()];
 }
 
+// Persistence, undo history, and cross-window refresh
 function saveState(options = {}) {
   if (!options.skipHistory) pushUndoSnapshot(options.reason || "Tracker change");
   state.updatedAt = new Date().toISOString();
@@ -1673,6 +1686,7 @@ function syncStateFromStorage() {
   }
 }
 
+// Event wiring
 function bindEvents() {
   els.tabs.forEach((tab) => tab.addEventListener("click", () => {
     const tabName = tab.dataset.tab;
@@ -1776,6 +1790,7 @@ function bindEvents() {
   els.mapPinsClan?.addEventListener("change", renderMapPins);
   els.toggleMapFavoriteBtn?.addEventListener("click", toggleCurrentMapFavorite);
   els.addMapPinBtn?.addEventListener("click", startMapPinPlacement);
+  els.addMapPinCoordinatesBtn?.addEventListener("click", openCoordinateMapPinDialog);
   els.mapStage?.addEventListener("click", handleMapStageClick);
   document.querySelectorAll("[data-map-action='import-code']").forEach((button) => {
     button.addEventListener("click", openMapImportDialog);
@@ -1914,6 +1929,7 @@ function buildStaticSelects() {
   `).join("");
 }
 
+// Main rendering and search
 function renderAll() {
   renderDatalists();
   renderDragonSkinSelects(document.querySelector("#dragonSpecies")?.value || "");
@@ -2277,6 +2293,7 @@ function renderAccounts() {
   els.accountList.innerHTML = renderAccountSections(accounts);
 }
 
+// Home and player account views
 function renderHome() {
   if (!els.homeAccountList) return;
   renderPersonalPlayerSelect(els.homePersonalPlayerSelect);
@@ -2686,14 +2703,16 @@ function renderDragonCard(dragon) {
   `;
 }
 
+// Breeding planner and inheritance display
 function renderNestingOptions() {
   const selectedOne = els.parentOne.value;
   const selectedTwo = els.parentTwo.value;
   const targetSpecies = speciesForNestTargetSkin(els.nestTargetSkin?.value);
-  const parentOneOptionsList = state.dragons.filter((dragon) => !targetSpecies || canonicalSpeciesName(dragon.species) === targetSpecies);
-  const selectedParentA = dragonById(selectedOne);
+  const dragonPool = nestingDragonPool();
+  const parentOneOptionsList = dragonPool.filter((dragon) => !targetSpecies || canonicalSpeciesName(dragon.species) === targetSpecies);
+  const selectedParentA = nestingDragonById(selectedOne, dragonPool);
   const parentA = parentOneOptionsList.some((dragon) => dragon.id === selectedParentA?.id) ? selectedParentA : null;
-  const parentBOptions = parentA ? state.dragons.filter((dragon) => canSelectAsSecondParent(parentA, dragon)) : [];
+  const parentBOptions = parentA ? dragonPool.filter((dragon) => canSelectAsSecondParent(parentA, dragon)) : [];
   const parentOnePlaceholder = targetSpecies ? `Select ${targetSpecies} dragon` : "Select dragon";
   const parentTwoPlaceholder = nestingParentTwoPlaceholder(parentA);
   const parentOneOptions = [`<option value=''>${escapeHtml(parentOnePlaceholder)}</option>`, ...parentOneOptionsList.map((dragon) => (
@@ -2745,11 +2764,12 @@ function speciesForNestTargetSkin(name) {
 }
 
 function renderNesting() {
-  const parentA = dragonById(els.parentOne.value);
-  const parentB = dragonById(els.parentTwo.value);
+  const dragonPool = nestingDragonPool();
+  const parentA = nestingDragonById(els.parentOne.value, dragonPool);
+  const parentB = nestingDragonById(els.parentTwo.value, dragonPool);
   els.createEggBtn.disabled = false;
 
-  if (!state.dragons.length) {
+  if (!dragonPool.length) {
     els.createEggBtn.disabled = true;
     els.nestingOutput.innerHTML = `
       <div class="empty-state">
@@ -2848,7 +2868,7 @@ function renderNestPairingHelper(currentA = null, currentB = null) {
   const requestedSkin = targetSkin && targetSkin !== "Any target skin" ? targetSkin : "";
   const candidates = nestPairCandidates(requestedSkin).slice(0, 5);
 
-  if (!state.dragons.length) {
+  if (!nestingDragonPool().length) {
     return `<p class="planner-note">Add dragons first, then choose a target skin to see suggested nest pairs.</p>`;
   }
 
@@ -2883,10 +2903,11 @@ function renderNestPairingHelper(currentA = null, currentB = null) {
 function nestPairCandidates(targetSkin) {
   const candidates = [];
   const targetSpecies = speciesForNestTargetSkin(targetSkin);
-  for (let i = 0; i < state.dragons.length; i += 1) {
-    for (let j = i + 1; j < state.dragons.length; j += 1) {
-      const a = state.dragons[i];
-      const b = state.dragons[j];
+  const dragonPool = nestingDragonPool();
+  for (let i = 0; i < dragonPool.length; i += 1) {
+    for (let j = i + 1; j < dragonPool.length; j += 1) {
+      const a = dragonPool[i];
+      const b = dragonPool[j];
       if (!canNestTogether(a, b) || !hasValidNestSexPair(a, b) || isInbredNest(a, b)) continue;
       if (targetSpecies && canonicalSpeciesName(a.species) !== targetSpecies) continue;
       const score = scoreNestPair(a, b, targetSkin);
@@ -3352,6 +3373,7 @@ function lineageNodeHtml(role, node) {
   `;
 }
 
+// Recalculate fields that are determined by skins, growth, or mutation points.
 function refreshAllDerivedRecords() {
   const roleChanged = refreshNestRoles();
   const derivedChanged = refreshDragonDerivedFields();
@@ -3454,6 +3476,7 @@ function matchingDominantRecessiveSkin(dragon) {
   return text(dragon.skin);
 }
 
+// Skin catalog and upstat tracking
 function renderSkins() {
   const query = els.skinSearch.value.trim().toLowerCase();
   const species = els.skinSpeciesFilter.value;
@@ -3810,6 +3833,7 @@ function renderMap() {
   renderMapPins();
 }
 
+// Clan sync and shared-library helpers
 function clanMembershipClan(membership) {
   const relation = membership?.clans;
   return Array.isArray(relation) ? relation[0] : relation;
@@ -3932,23 +3956,52 @@ async function syncImportedDiscordDragon(clanId, record, dragon) {
   await clanSync.shareDragon(clanId, discordSubmissionSourceId(record), clanDragonSummary(dragon));
 }
 
-async function autoImportOwnDiscordSubmissions(clanId, records) {
+function matchingLocalAccount(accountName, playerName = "") {
+  const accountKey = text(accountName).toLowerCase();
+  if (!accountKey) return null;
+  const accountMatches = state.accounts.filter((account) => text(account.accountName).toLowerCase() === accountKey);
+  if (!accountMatches.length) return null;
+
+  const resolvedPlayer = resolvePlayerName(playerName);
+  const playerKey = playerNameKey(resolvedPlayer);
+  const playerMatch = playerKey
+    ? accountMatches.find((account) => playerNameKey(account.username) === playerKey)
+    : null;
+  if (playerMatch) return playerMatch;
+  return accountMatches.length === 1 ? accountMatches[0] : null;
+}
+
+function localAccountForDiscordSubmission(record) {
+  if (!CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record?.submission_type))) return null;
+  const payload = record?.payload && typeof record.payload === "object" ? record.payload : {};
+  const accountName = text(payload.accountName || payload.account || payload.name, 80);
+  const playerName = text(payload.playerName || payload.username || record?.discord_username, 80);
+  return matchingLocalAccount(accountName, playerName);
+}
+
+async function autoImportDiscordSubmissions(clanId, records) {
+  // Dragon ownership follows a saved local account; other personal records still follow Discord identity.
   if (!clanId) return new Set();
   const discordUserId = connectedDiscordUserId();
-  if (!discordUserId) return new Set();
 
   const importedIds = new Set();
-  const ownSubmissions = Array.isArray(records)
-    ? records.filter((record) => (
-      AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES.has(text(record?.submission_type))
-      && isOwnDiscordSubmission(record, discordUserId)
-      && !isAutomatedDiscordTestSubmission(record)
-    ))
+  const importableSubmissions = Array.isArray(records)
+    ? records.filter((record) => AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES.has(text(record?.submission_type)))
     : [];
 
-  for (const record of ownSubmissions) {
+  for (const record of importableSubmissions) {
+    const type = text(record?.submission_type);
+    const isDragonRecord = CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(type);
+    const account = isDragonRecord ? localAccountForDiscordSubmission(record) : null;
+    const belongsLocally = isDragonRecord ? Boolean(account) : isOwnDiscordSubmission(record, discordUserId);
+    if (!belongsLocally || isAutomatedDiscordTestSubmission(record)) continue;
+
     try {
-      const imported = importDiscordSubmission(record);
+      const imported = importDiscordSubmission(record, {
+        account,
+        requireExistingAccount: isDragonRecord,
+        useExistingDragon: isDragonRecord
+      });
       await syncImportedDiscordDragon(clanId, record, imported);
       await clanSync.resolveDiscordSubmission(record.id, "imported");
       importedIds.add(record.id);
@@ -4042,11 +4095,12 @@ async function refreshClanSync(options = {}) {
       }
 
       if (discordSubmissionsResult.status === "fulfilled") {
-        const autoImportedIds = await autoImportOwnDiscordSubmissions(clanUi.activeClanId, clanUi.discordSubmissions);
+        const autoImportedIds = await autoImportDiscordSubmissions(clanUi.activeClanId, clanUi.discordSubmissions);
         if (autoImportedIds.size) {
           clanUi.discordSubmissions = clanUi.discordSubmissions.filter((record) => !autoImportedIds.has(record.id));
           const refreshedSharedDragons = await clanSync.getSharedDragons(clanUi.activeClanId);
           clanUi.sharedDragons = Array.isArray(refreshedSharedDragons) ? refreshedSharedDragons : clanUi.sharedDragons;
+          if (!document.querySelector("dialog[open]")) renderAll();
         }
       }
     } else {
@@ -4271,7 +4325,8 @@ function renderClansContent() {
     `;
     }).join("")
     : `<p class="account-empty">Choose or join a clan to see its roster.</p>`;
-  const filteredSharedDragons = getFilteredClanSharedDragons();
+  const clanLibraryDragons = clanLibraryDragonRecords();
+  const filteredSharedDragons = getFilteredClanSharedDragons(clanLibraryDragons);
   const filters = clanUi.libraryFilters;
   const dragonOptions = clanLibraryFilterOptions("displayName", filters.dragon, "All dragons");
   const skinOptions = clanLibraryFilterOptions("skin", filters.skin, "All skins");
@@ -4288,18 +4343,21 @@ function renderClansContent() {
   const sharedRows = filteredSharedDragons.length
     ? filteredSharedDragons.map((record) => {
       const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
+      const pointTraits = Array.isArray(summary.pointTraits) ? summary.pointTraits.filter(Boolean).join(", ") : "";
+      const stats = summary.stats && typeof summary.stats === "object" ? Object.values(summary.stats) : [];
+      const derivedAPlusCount = stats.filter((grade) => ["A+", "A++"].includes(text(grade, 4).toUpperCase())).length;
+      const aPlusCount = Number.isFinite(Number(summary.aPlusCount)) ? clampInteger(summary.aPlusCount, 0, 18) : derivedAPlusCount;
+      const statSummary = stats.length ? `${aPlusCount}/18 A+${aPlusCount < 18 ? " - Upstat" : " - Complete"}` : "";
       return `
         <article class="clan-share-row">
           <strong>${escapeHtml(summary.displayName || "Shared Dragon")}</strong>
-          <span>${escapeHtml(compactJoin([summary.species, summary.sex, summary.skin, summary.recessiveSkin ? `Res: ${summary.recessiveSkin}` : "", isPureSkinPair(summary) ? "Pure" : "", summary.status]))}</span>
-          <small>Shared by ${escapeHtml(clanMemberName(record.source_user_id))}</small>
+          <span>${escapeHtml(compactJoin([summary.species, summary.sex, summary.status, summary.bloodline ? `Bloodline: ${summary.bloodline}` : "", summary.skin, summary.recessiveSkin ? `Res: ${summary.recessiveSkin}` : "", pointTraits ? `Points: ${pointTraits}` : isPureSkinPair(summary) ? "Pure" : "", statSummary]))}</span>
+          ${summary.motherName || summary.fatherName ? `<span>${escapeHtml(`Parents: ${summary.motherName || "Unknown"} / ${summary.fatherName || "Unknown"}`)}</span>` : ""}
+          <small>${escapeHtml(clanDragonSourceLabel(record))}</small>
         </article>
       `;
     }).join("")
-    : `<p class="account-empty">${clanUi.sharedDragons.length ? "No shared dragons match these filters." : "No dragons have been shared with this clan yet."}</p>`;
-  const discordSubmissionRows = clanUi.discordSubmissions.length
-    ? clanUi.discordSubmissions.map(renderDiscordSubmissionRow).join("")
-    : `<p class="account-empty">No pending Discord bot submissions for this clan.</p>`;
+    : `<p class="account-empty">${clanLibraryDragons.length ? "No clan dragons match these filters." : "No dragons have been added to this clan yet."}</p>`;
 
   els.clanContent.innerHTML = `
     <section class="clan-panel clan-sync-health">
@@ -4309,8 +4367,8 @@ function renderClansContent() {
       </div>
       <dl class="line-list">
         <div><dt>Clan</dt><dd>${escapeHtml(currentClan?.name || "No active clan")}</dd></div>
-        <div><dt>Shared records</dt><dd>${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</dd></div>
-        <div><dt>Discord inbox</dt><dd>${clanUi.discordSubmissions.length} pending</dd></div>
+        <div><dt>Clan dragons</dt><dd>${clanLibraryDragons.length}</dd></div>
+        <div><dt>Map pins</dt><dd>${clanUi.sharedPins.length}</dd></div>
       </dl>
       <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh"${clanUi.loading ? " disabled" : ""}>${clanUi.loading ? "Refreshing..." : "Refresh Clan Library"}</button></div>
     </section>
@@ -4323,7 +4381,7 @@ function renderClansContent() {
       <dl class="line-list">
         <div><dt>Identity</dt><dd>Discord verified</dd></div>
         <div><dt>Data default</dt><dd>Local only</dd></div>
-        <div><dt>Discord submissions</dt><dd>Your submissions import locally; other members' submissions stay in the Clan Library.</dd></div>
+        <div><dt>Bot dragons</dt><dd>Dragons stay in the Clan Library unless their account already belongs to one of your saved players.</dd></div>
       </dl>
       ${clanUi.error ? `<p class="clan-error">${escapeHtml(clanUi.error)}</p>` : ""}
       <div class="card-actions">
@@ -4360,7 +4418,7 @@ function renderClansContent() {
     </section>
 
     <section class="clan-panel clan-shared-panel">
-      <div class="card-head"><div class="card-title"><h2>Shared Library</h2><p class="card-subtitle">Only items chosen by members - kept separate from local Players and Dragons</p></div><span class="pill">${filteredSharedDragons.length} of ${clanUi.sharedDragons.length} dragons / ${clanUi.sharedPins.length} pins</span></div>
+      <div class="card-head"><div class="card-title"><h2>Clan Library</h2><p class="card-subtitle">Member and bot dragons stay read-only here and can be selected in Breeding</p></div><span class="pill">${filteredSharedDragons.length} of ${clanLibraryDragons.length} dragons</span></div>
       <form class="clan-library-search" data-clan-form="library-search">
         <div class="field"><label for="clanLibraryDragon">Dragon</label><select id="clanLibraryDragon" name="dragon">${dragonOptions}</select></div>
         <div class="field"><label for="clanLibrarySkin">Skin</label><select id="clanLibrarySkin" name="skin">${skinOptions}</select></div>
@@ -4372,77 +4430,95 @@ function renderClansContent() {
       </form>
       <div class="clan-share-list">${sharedRows}</div>
     </section>
-
-    <section class="clan-panel clan-shared-panel">
-      <div class="card-head">
-        <div class="card-title"><h2>Discord Inbox</h2><p class="card-subtitle">Slash command submissions waiting for review</p></div>
-        <span class="pill">${clanUi.discordSubmissions.length} pending</span>
-      </div>
-      <p class="clan-copy">The Discord bot can collect dragon and location details from clan channels. Imported dragons and brood-pouch eggs are synced to the clan library so they carry to your other tracker installs.</p>
-      <div class="clan-share-list">${discordSubmissionRows}</div>
-    </section>
   `;
 }
 
-function renderDiscordSubmissionRow(record) {
-  record = record && typeof record === "object" ? record : {};
-  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
-  const type = text(record.submission_type);
-  const title = type === "dragon"
-    ? text(payload.name || payload.accountName, 80) || "Dragon submission"
-    : type === "map_pin"
-      ? text(payload.label, 80) || "Map pin submission"
-      : type === "egg_request"
-        ? text(payload.requester || payload.species, 100) || "Egg request"
-        : type === "upstat"
-          ? text(compactJoin([payload.species, payload.skin]), 120) || "Upstat submission"
-          : type === "brood_pouch"
-            ? text(payload.name || payload.accountName, 80) || "Brood pouch egg"
-            : type === "current_nest"
-              ? text(compactJoin([payload.father, payload.mother]), 140) || "Current nest"
-              : text(payload.title, 120) || "Discord note";
-  const detail = type === "dragon"
-    ? compactJoin([payload.species, payload.sex, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.status])
-    : type === "map_pin"
-      ? compactJoin([payload.type || "Location", `${Number(payload.x).toFixed(1)}%, ${Number(payload.y).toFixed(1)}%`])
-      : type === "egg_request"
-        ? compactJoin([payload.species, payload.sex, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.goal])
-        : type === "upstat"
-          ? compactJoin([payload.status, `${Number(payload.aPlusCount) || 0}/18 A+`, payload.accountName])
-          : type === "brood_pouch"
-            ? compactJoin([payload.species, payload.skin, payload.recessiveSkin ? `Res: ${payload.recessiveSkin}` : "", payload.brood, payload.dueAt])
-            : type === "current_nest"
-              ? compactJoin([payload.species, payload.expectedSkin, payload.broodWatcherBrooding ? "BW brooding" : "", payload.breeder, payload.requester])
-              : text(payload.notes, 160);
-  const belongsToConnectedUser = isOwnDiscordSubmission(record);
-  const canImport = belongsToConnectedUser && ["dragon", "map_pin", "upstat", "brood_pouch"].includes(type);
-  return `
-    <article class="clan-share-row discord-submission-row">
-      <strong>${escapeHtml(title)}</strong>
-      <span>${escapeHtml(detail || "No extra details")}</span>
-      <small>${escapeHtml(discordSubmissionTypeLabel(type))} from ${escapeHtml(record.discord_username || "Discord user")} - ${escapeHtml(formatDateTime(record.created_at))}</small>
-      <div class="clan-share-row-actions">
-        ${canImport ? `<button class="primary-button" type="button" data-clan-action="import-discord-submission" data-id="${escapeAttr(record.id)}">Import</button>` : ""}
-        ${belongsToConnectedUser
-          ? `<button class="tool-button" type="button" data-clan-action="ignore-discord-submission" data-id="${escapeAttr(record.id)}">Ignore</button>`
-          : `<span class="small-pill">Clan only</span>`}
-      </div>
-    </article>
-  `;
+function discordDragonSummary(record) {
+  const payload = record?.payload && typeof record.payload === "object" ? record.payload : {};
+  const species = canonicalSpeciesName(payload.species);
+  const accountName = text(payload.accountName || payload.account || payload.name || `${species || "Dragon"} from Discord`, 80);
+  return {
+    displayName: accountName,
+    playerName: text(payload.playerName || payload.username || record?.discord_username || "Discord Player", 80),
+    accountName,
+    species,
+    sex: text(payload.sex, 20) || "Unknown",
+    status: text(payload.status, 30) || (record?.submission_type === "brood_pouch" ? "Hatchie" : "Unknown"),
+    server: text(payload.server, 80),
+    skin: text(payload.skin, 100),
+    skinType: text(payload.skinType, 30),
+    recessiveSkin: text(payload.recessiveSkin || payload.recessive, 100),
+    nestRole: text(payload.nestRole, 30),
+    pointTraits: Array.isArray(payload.pointTraits) ? payload.pointTraits.map((trait) => text(trait, 30)).filter(Boolean) : [],
+    bloodline: text(payload.bloodline, 20),
+    motherName: text(payload.motherName || payload.mother, 80),
+    fatherName: text(payload.fatherName || payload.father, 80),
+    stats: payload.stats && typeof payload.stats === "object" ? payload.stats : {},
+    aPlusCount: clampInteger(payload.aPlusCount, 0, 18),
+    upstat: Boolean(payload.upstat),
+    inbred: Boolean(payload.inbred),
+    dominantMutation: Boolean(payload.dominantMutation),
+    elderProgress: Number(payload.elderProgress) || 0,
+    socialPoints: Number(payload.socialPoints) || 0,
+    agilePoints: Number(payload.agilePoints) || 0,
+    fastMutation: Boolean(payload.fastMutation),
+    scavengerPoints: Number(payload.scavengerPoints) || 0,
+    survivorMutation: Boolean(payload.survivorMutation),
+    birthDate: text(payload.birthDate, 30),
+    tags: ["discord"],
+    updatedAt: text(record?.created_at) || new Date().toISOString()
+  };
 }
 
-function discordSubmissionTypeLabel(type) {
-  if (type === "dragon") return "Dragon";
-  if (type === "map_pin") return "Map pin";
-  if (type === "egg_request") return "Egg request";
-  if (type === "upstat") return "Upstat";
-  if (type === "brood_pouch") return "Brood pouch";
-  if (type === "current_nest") return "Current nest";
-  return "Note";
+function discordSubmissionClanDragon(record) {
+  return {
+    id: `discord-${text(record?.id)}`,
+    source_user_id: "",
+    source_local_id: discordSubmissionSourceId(record),
+    summary: discordDragonSummary(record),
+    updated_at: record?.created_at,
+    discordSubmission: true,
+    discord_user_id: text(record?.discord_user_id),
+    discord_username: text(record?.discord_username)
+  };
+}
+
+function clanDragonSummaryIdentityKey(summary = {}) {
+  const accountName = text(summary.accountName || summary.displayName);
+  const playerName = resolvePlayerName(summary.playerName || summary.username);
+  const species = canonicalSpeciesName(summary.species);
+  return accountName && species ? `${accountIdentityKey(playerName, accountName)}::${species.toLowerCase()}` : "";
+}
+
+function clanLibraryDragonRecords() {
+  const records = Array.isArray(clanUi.sharedDragons) ? [...clanUi.sharedDragons] : [];
+  const sourceIds = new Set(records.map((record) => text(record?.source_local_id)).filter(Boolean));
+  const identities = new Set(records.map((record) => clanDragonSummaryIdentityKey(record?.summary)).filter(Boolean));
+
+  (Array.isArray(clanUi.discordSubmissions) ? clanUi.discordSubmissions : [])
+    .filter((record) => CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record?.submission_type)))
+    .forEach((record) => {
+      const sourceId = discordSubmissionSourceId(record);
+      const synthetic = discordSubmissionClanDragon(record);
+      const identity = clanDragonSummaryIdentityKey(synthetic.summary);
+      if (sourceIds.has(sourceId) || (identity && identities.has(identity))) return;
+      records.push(synthetic);
+      sourceIds.add(sourceId);
+      if (identity) identities.add(identity);
+    });
+
+  return records;
+}
+
+function clanDragonSourceLabel(record) {
+  if (record?.discordSubmission) {
+    return `Added by ${record.discord_username || "Discord user"} through the bot`;
+  }
+  return `Shared by ${clanMemberName(record?.source_user_id)}`;
 }
 
 function clanLibraryFilterOptions(summaryKey, selectedValue, emptyLabel) {
-  const sharedDragons = Array.isArray(clanUi.sharedDragons) ? clanUi.sharedDragons : [];
+  const sharedDragons = clanLibraryDragonRecords();
   const values = [...new Set(sharedDragons
     .map((record) => text(record.summary?.[summaryKey], 100))
     .filter(Boolean))]
@@ -4452,11 +4528,11 @@ function clanLibraryFilterOptions(summaryKey, selectedValue, emptyLabel) {
   ))].join("");
 }
 
-function getFilteredClanSharedDragons() {
+function getFilteredClanSharedDragons(records = clanLibraryDragonRecords()) {
   const filters = clanUi.libraryFilters && typeof clanUi.libraryFilters === "object"
     ? clanUi.libraryFilters
     : {};
-  const sharedDragons = Array.isArray(clanUi.sharedDragons) ? clanUi.sharedDragons : [];
+  const sharedDragons = Array.isArray(records) ? records : [];
   const includes = (value, query) => !query || text(value).toLowerCase().includes(query.toLowerCase());
   return sharedDragons.filter((record) => {
     const summary = record.summary && typeof record.summary === "object" ? record.summary : {};
@@ -4478,8 +4554,9 @@ function isPureSkinPair(summary = {}) {
 
 function matchesClanSourceFilter(record, summary, filter) {
   if (!filter) return true;
-  if (filter === "mine") return record.source_user_id === clanUi.user?.id;
-  if (filter === "others") return record.source_user_id && record.source_user_id !== clanUi.user?.id;
+  const mine = record?.discordSubmission ? isOwnDiscordSubmission(record) : record.source_user_id === clanUi.user?.id;
+  if (filter === "mine") return mine;
+  if (filter === "others") return !mine;
   if (filter === "missing-local") return !hasLocalDragonMatchingClanSummary(summary);
   if (filter === "breeders") return ["Breeder", "Pure"].includes(normalizeNestRole(summary.nestRole)) || Number(summary.socialPoints) >= SOCIAL_POINTS_MAX;
   if (filter === "fourth") return text(summary.status) === "4th Pointed" || text(summary.status) === "Elder" || Boolean(summary.dominantMutation);
@@ -4488,39 +4565,39 @@ function matchesClanSourceFilter(record, summary, filter) {
 }
 
 function hasLocalDragonMatchingClanSummary(summary = {}) {
-  const player = text(summary.playerName || summary.username || "Unknown Player");
   const account = text(summary.accountName || summary.displayName || "Dragon");
   const species = canonicalSpeciesName(summary.species);
+  const localAccount = matchingLocalAccount(account, summary.playerName || summary.username);
+  if (!localAccount) return false;
   return state.dragons.some((dragon) =>
-    accountIdentityKey(dragon.username || "Unknown Player", dragon.accountName || dragon.name) === accountIdentityKey(player, account)
+    dragon.accountId === localAccount.id
     && dragon.species === species
   );
 }
 
-function discordSubmissionById(id) {
-  return clanUi.discordSubmissions.find((record) => record.id === id) || null;
-}
-
-function importDiscordSubmission(record) {
+function importDiscordSubmission(record, options = {}) {
   if (CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record?.submission_type))) {
     const existing = importedDragonForDiscordSubmission(record);
     if (existing) return existing;
   }
-  if (record.submission_type === "dragon") return importDiscordDragonSubmission(record);
+  if (record.submission_type === "dragon") return importDiscordDragonSubmission(record, options);
   if (record.submission_type === "map_pin") return importDiscordMapPinSubmission(record);
   if (record.submission_type === "upstat") return importDiscordUpstatSubmission(record);
-  if (record.submission_type === "brood_pouch") return importDiscordBroodPouchSubmission(record);
+  if (record.submission_type === "brood_pouch") return importDiscordBroodPouchSubmission(record, options);
   throw new Error("Only dragon, map pin, upstat, and brood pouch submissions can be imported.");
 }
 
-function importDiscordDragonSubmission(record) {
+function importDiscordDragonSubmission(record, options = {}) {
   const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
   const species = canonicalSpeciesName(payload.species);
   if (!species) throw new Error("The Discord dragon submission needs a species.");
   const playerName = text(payload.playerName || record.discord_username || "Discord Player", 80) || "Discord Player";
   const accountName = text(payload.accountName || payload.name || `${species} from Discord`, 80) || `${species} from Discord`;
-  const account = upsertAccountRecord({ username: playerName, accountName });
+  const account = options.account || localAccountForDiscordSubmission(record)
+    || (options.requireExistingAccount ? null : upsertAccountRecord({ username: playerName, accountName }));
+  if (!account) throw new Error("This bot dragon does not match an account saved in your tracker.");
   const duplicate = duplicateDragonForAccount(account.id, species);
+  if (duplicate && options.useExistingDragon) return duplicate;
   if (duplicate) throw new Error(`${account.accountName} already has a ${species}. Edit the existing dragon instead.`);
 
   const dragon = normalizeDragon({
@@ -4538,7 +4615,16 @@ function importDiscordDragonSubmission(record) {
     recessiveSkin: text(payload.recessiveSkin, 100),
     bloodline: text(payload.bloodline, 10),
     nestRole: normalizeNestRole(payload.nestRole),
-    tags: ["discord", discordSubmissionTag(record)],
+    motherName: text(payload.motherName || payload.mother, 100),
+    fatherName: text(payload.fatherName || payload.father, 100),
+    dominantMutation: Boolean(payload.dominantMutation),
+    stats: payload.stats && typeof payload.stats === "object" ? payload.stats : {},
+    tags: [
+      "discord",
+      ...(Array.isArray(payload.pointTraits) ? payload.pointTraits.map((trait) => text(trait, 30)).filter(Boolean) : []),
+      payload.upstat ? "upstat" : "",
+      discordSubmissionTag(record)
+    ].filter(Boolean),
     notes: [
       text(payload.notes, 600),
       `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
@@ -4600,14 +4686,21 @@ function importDiscordUpstatSubmission(record) {
   return upstat;
 }
 
-function importDiscordBroodPouchSubmission(record) {
+function importDiscordBroodPouchSubmission(record, options = {}) {
   const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
   const species = canonicalSpeciesName(payload.species);
   if (!species) throw new Error("The Discord brood pouch submission needs a species.");
   const playerName = text(payload.playerName || record.discord_username || "Discord Player", 80) || "Discord Player";
   const accountName = text(payload.accountName || payload.name || `${species} egg`, 80) || `${species} egg`;
-  const account = upsertAccountRecord({ username: playerName, accountName });
+  const account = options.account || localAccountForDiscordSubmission(record)
+    || (options.requireExistingAccount ? null : upsertAccountRecord({ username: playerName, accountName }));
+  if (!account) throw new Error("This bot egg does not match an account saved in your tracker.");
   const duplicate = duplicateDragonForAccount(account.id, species);
+  if (duplicate && options.useExistingDragon) {
+    addDiscordBroodPouchEntry(record, duplicate);
+    saveState();
+    return duplicate;
+  }
   if (duplicate) throw new Error(`${account.accountName} already has a ${species}. Edit the existing dragon instead.`);
 
   const dragon = normalizeDragon({
@@ -4623,7 +4716,19 @@ function importDiscordBroodPouchSubmission(record) {
     status: "Hatchie",
     skin: text(payload.skin, 100),
     recessiveSkin: text(payload.recessiveSkin, 100),
-    tags: ["discord", "egg", discordSubmissionTag(record)],
+    bloodline: text(payload.bloodline, 10),
+    nestRole: normalizeNestRole(payload.nestRole),
+    motherName: text(payload.motherName || payload.mother, 100),
+    fatherName: text(payload.fatherName || payload.father, 100),
+    dominantMutation: Boolean(payload.dominantMutation),
+    stats: payload.stats && typeof payload.stats === "object" ? payload.stats : {},
+    tags: [
+      "discord",
+      "egg",
+      ...(Array.isArray(payload.pointTraits) ? payload.pointTraits.map((trait) => text(trait, 30)).filter(Boolean) : []),
+      payload.upstat ? "upstat" : "",
+      discordSubmissionTag(record)
+    ].filter(Boolean),
     notes: [
       text(payload.notes, 1000),
       `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
@@ -4631,7 +4736,18 @@ function importDiscordBroodPouchSubmission(record) {
   });
   dragon.skinType = skinTypeForName(dragon.skin, dragon.species);
   state.dragons.push(dragon);
-  state.broodPouch.push(normalizeBroodPouchEntry({
+  addDiscordBroodPouchEntry(record, dragon);
+  refreshAllDerivedRecords();
+  saveState();
+  return dragon;
+}
+
+function addDiscordBroodPouchEntry(record, dragon) {
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const marker = discordSubmissionTag(record);
+  const existing = state.broodPouch.find((entry) => entry.dragonId === dragon.id && text(entry.notes).includes(marker));
+  if (existing) return existing;
+  const entry = normalizeBroodPouchEntry({
     id: uid("brood-pouch"),
     createdAt: record.created_at || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -4641,12 +4757,12 @@ function importDiscordBroodPouchSubmission(record) {
     oddsSummary: text(payload.oddsSummary, 180),
     notes: [
       text(payload.notes, 1000),
+      marker,
       `Discord bot: ${record.discord_username || record.discord_user_id || "unknown"}`
     ].filter(Boolean).join(" | ")
-  }));
-  refreshAllDerivedRecords();
-  saveState();
-  return dragon;
+  });
+  state.broodPouch.push(entry);
+  return entry;
 }
 
 function openSyncConfigDialog() {
@@ -4738,30 +4854,6 @@ async function handleClanAction(event) {
       saveState();
       renderClans();
       showToast("Share confirmations restored");
-      return;
-    }
-    if (action === "import-discord-submission") {
-      const record = discordSubmissionById(button.dataset.id);
-      if (!record) throw new Error("That Discord submission is no longer available.");
-      if (!isOwnDiscordSubmission(record)) throw new Error("Only submissions from your connected Discord account can enter your local tracker.");
-      const imported = importDiscordSubmission(record);
-      await syncImportedDiscordDragon(clanUi.activeClanId, record, imported);
-      await clanSync.resolveDiscordSubmission(record.id, "imported");
-      await refreshClanSync({ quiet: true });
-      renderAll();
-      showToast(CLAN_SYNCED_DISCORD_DRAGON_TYPES.has(text(record.submission_type))
-        ? "Discord dragon imported and synced to your clan library"
-        : "Discord submission imported");
-      return;
-    }
-    if (action === "ignore-discord-submission") {
-      const record = discordSubmissionById(button.dataset.id);
-      if (!record) throw new Error("That Discord submission is no longer available.");
-      if (!isOwnDiscordSubmission(record)) throw new Error("Other members' submissions stay available in the Clan Library.");
-      await clanSync.resolveDiscordSubmission(record.id, "ignored");
-      await refreshClanSync({ quiet: true });
-      renderClans();
-      showToast("Discord submission ignored");
       return;
     }
     if (action === "sign-out") {
@@ -5021,6 +5113,14 @@ async function shareAccountWithClan(account) {
 }
 
 function clanDragonSummary(dragon) {
+  const stats = Object.fromEntries(STAT_FIELDS.map((field) => [field.key, text(dragon.stats?.[field.key], 10)]));
+  const aPlusCount = Object.values(stats).filter((grade) => ["A+", "A++"].includes(text(grade, 4).toUpperCase())).length;
+  const pointTraits = [
+    dragon.nestRole === "Fighter" ? "PvP" : "",
+    dragon.nestRole === "Breeder" ? "Breeder" : "",
+    isPureSkinPair(dragon) ? "Pure" : "",
+    dragon.dominantMutation ? "Dominant" : ""
+  ].filter(Boolean);
   return {
     displayName: text(dragon.accountName || dragon.name || "Dragon", 80),
     playerName: text(dragon.username, 80),
@@ -5033,10 +5133,13 @@ function clanDragonSummary(dragon) {
     skinType: text(dragon.skinType, 30),
     recessiveSkin: text(dragon.recessiveSkin, 100),
     nestRole: text(dragon.nestRole, 30),
+    pointTraits,
     bloodline: text(dragon.bloodline, 20),
     motherName: text(dragon.motherName, 80),
     fatherName: text(dragon.fatherName, 80),
-    stats: Object.fromEntries(STAT_FIELDS.map((field) => [field.key, text(dragon.stats?.[field.key], 10)])),
+    stats,
+    aPlusCount,
+    upstat: aPlusCount < STAT_FIELDS.length,
     dominantMutation: Boolean(dragon.dominantMutation),
     elderProgress: Number(dragon.elderProgress) || 0,
     socialPoints: Number(dragon.socialPoints) || 0,
@@ -5068,6 +5171,7 @@ function broodPouchIdentityKey(entry) {
   return text(entry?.dragonId);
 }
 
+// Map references, layers, and shareable pins
 function renderMapAreaSelect() {
   if (!els.mapAreaSelect) return;
   const current = els.mapAreaSelect.value || MAP_REFERENCE_AREAS[0]?.id || "";
@@ -5280,7 +5384,7 @@ function renderMapPins() {
   const pins = [...localPins, ...remotePins].sort((a, b) => sortText(a.label, b.label));
   els.mapPinCount.textContent = `${pins.length} pin${pins.length === 1 ? "" : "s"}`;
   els.mapPinLayer.innerHTML = pins.map((pin) => `
-    <button class="map-pin${pin.remote ? " is-clan-pin" : ""}" type="button" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-map-pin-id="${escapeAttr(pin.id)}"`} style="left:${pin.x}%; top:${pin.y}%;" title="${escapeAttr(compactJoin([pin.label, pin.type, pin.remote ? "Clan" : "Local"]))}">
+    <button class="map-pin${pin.remote ? " is-clan-pin" : ""}" type="button" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-map-pin-id="${escapeAttr(pin.id)}"`} style="left:${pin.x}%; top:${pin.y}%;" title="${escapeAttr(compactJoin([pin.label, pin.type, formatMapCoordinates(pin.x, pin.y), pin.remote ? "Clan" : "Local"]))}">
       <span>${escapeHtml(pin.label.slice(0, 2).toUpperCase())}</span>
     </button>
   `).join("");
@@ -5290,7 +5394,7 @@ function renderMapPins() {
       <article class="map-pin-card${pin.remote ? " is-clan-pin" : ""}" ${pin.remote ? `data-clan-map-pin-id="${escapeAttr(pin.id)}"` : `data-id="${escapeAttr(pin.id)}"`}>
         <div>
           <strong>${escapeHtml(pin.label)}</strong>
-          <span>${escapeHtml(compactJoin([pin.type, pin.remote ? `Clan: ${pin.sharedBy}` : pin.sharedBy, pin.updatedAt ? `Updated ${formatDateTime(pin.updatedAt)}` : ""]))}</span>
+          <span>${escapeHtml(compactJoin([pin.type, formatMapCoordinates(pin.x, pin.y), pin.remote ? `Clan: ${pin.sharedBy}` : pin.sharedBy, pin.updatedAt ? `Updated ${formatDateTime(pin.updatedAt)}` : ""]))}</span>
         </div>
         ${pin.notes ? `<p>${escapeHtml(pin.notes)}</p>` : ""}
         <div class="card-actions">
@@ -5375,8 +5479,19 @@ function openMapPinDialog(x, y) {
   els.mapPinForm.reset();
   setFormValue("mapPinX", String(x));
   setFormValue("mapPinY", String(y));
+  const coordinates = mapPercentToCoordinates(x, y);
+  setFormValue("mapPinNorthSouth", String(coordinates.northSouth));
+  setFormValue("mapPinNorthSouthDirection", coordinates.northSouthDirection);
+  setFormValue("mapPinEastWest", String(coordinates.eastWest));
+  setFormValue("mapPinEastWestDirection", coordinates.eastWestDirection);
   setFormValue("mapPinType", "Dragon");
   showModal(els.mapPinDialog);
+}
+
+function openCoordinateMapPinDialog() {
+  openMapPinDialog(50, 50);
+  setFormValue("mapPinNorthSouth", "");
+  setFormValue("mapPinEastWest", "");
 }
 
 function handleMapPinSubmit(event) {
@@ -5387,12 +5502,24 @@ function handleMapPinSubmit(event) {
     showToast("Enter a location name before adding the pin.");
     return;
   }
+  let position;
+  try {
+    position = mapCoordinatesToPercent(
+      values.get("northSouth"),
+      values.get("northSouthDirection"),
+      values.get("eastWest"),
+      values.get("eastWestDirection")
+    );
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
   const pin = normalizeMapPin({
     id: uid("pin"),
     label,
     type: text(values.get("type")) || "Dragon",
-    x: values.get("x"),
-    y: values.get("y"),
+    x: position.x,
+    y: position.y,
     notes: text(values.get("notes")),
     sharedBy: collectPlayerNames()[0] || ""
   });
@@ -5401,6 +5528,42 @@ function handleMapPinSubmit(event) {
   closeModal("mapPinDialog");
   renderAll();
   showToast(`${pin.label} pinned`);
+}
+
+function mapCoordinatesToPercent(northSouth, northSouthDirection, eastWest, eastWestDirection) {
+  if (text(northSouth) === "" || text(eastWest) === "") {
+    throw new Error("Enter both North / South and East / West coordinates.");
+  }
+  const vertical = Number(northSouth);
+  const horizontal = Number(eastWest);
+  if (!Number.isFinite(vertical) || vertical < 0 || vertical > MAP_COORDINATE_BOUNDS.northSouth) {
+    throw new Error("North / South coordinates must be between 0 and 807.");
+  }
+  if (!Number.isFinite(horizontal) || horizontal < 0 || horizontal > MAP_COORDINATE_BOUNDS.eastWest) {
+    throw new Error("East / West coordinates must be between 0 and 806.");
+  }
+  const signedNorth = northSouthDirection === "S" ? -vertical : vertical;
+  const signedEast = eastWestDirection === "W" ? -horizontal : horizontal;
+  return {
+    x: clampPercent(50 + (signedEast / MAP_COORDINATE_BOUNDS.eastWest) * 50),
+    y: clampPercent(50 - (signedNorth / MAP_COORDINATE_BOUNDS.northSouth) * 50)
+  };
+}
+
+function mapPercentToCoordinates(x, y) {
+  const signedNorth = ((50 - clampPercent(y)) / 50) * MAP_COORDINATE_BOUNDS.northSouth;
+  const signedEast = ((clampPercent(x) - 50) / 50) * MAP_COORDINATE_BOUNDS.eastWest;
+  return {
+    northSouth: Math.round(Math.abs(signedNorth)),
+    northSouthDirection: signedNorth < 0 ? "S" : "N",
+    eastWest: Math.round(Math.abs(signedEast)),
+    eastWestDirection: signedEast < 0 ? "W" : "E"
+  };
+}
+
+function formatMapCoordinates(x, y) {
+  const coordinates = mapPercentToCoordinates(x, y);
+  return `${coordinates.northSouth}${coordinates.northSouthDirection} ${coordinates.eastWest}${coordinates.eastWestDirection}`;
 }
 
 function handleMapPinAction(event) {
@@ -5498,6 +5661,7 @@ function mapPinById(id) {
   return state.mapPins.find((pin) => pin.id === id);
 }
 
+// Settings, diagnostics, aliases, and elder timers
 function renderBackup() {
   const bytes = new Blob([JSON.stringify(state)]).size;
   els.backupStats.innerHTML = `
@@ -6110,6 +6274,7 @@ function openChangelog(options = {}) {
   showModal(els.changelogDialog);
 }
 
+// Dragon and account editor forms
 function handleDragonSkinControlChange(event) {
   if (event.target.id === "dragonSpecies") {
     renderDragonSkinSelects(event.target.value, "", "");
@@ -6896,9 +7061,11 @@ function deleteSkin(skin) {
   showToast(`${skin.name} deleted`);
 }
 
+// Egg creation, lineage checks, and projected stat inheritance
 function createEggFromPlanner() {
-  const parentA = dragonById(els.parentOne.value);
-  const parentB = dragonById(els.parentTwo.value);
+  const dragonPool = nestingDragonPool();
+  const parentA = nestingDragonById(els.parentOne.value, dragonPool);
+  const parentB = nestingDragonById(els.parentTwo.value, dragonPool);
   if (!parentA || !parentB) {
     showToast("Select two parent records first");
     return;
@@ -6919,8 +7086,10 @@ function createEggFromPlanner() {
     return;
   }
 
-  const motherId = parentA.sex === "Female" ? parentA.id : parentB.sex === "Female" ? parentB.id : parentA.id;
-  const fatherId = parentA.sex === "Male" ? parentA.id : parentB.sex === "Male" ? parentB.id : parentB.id;
+  const mother = parentA.sex === "Female" ? parentA : parentB.sex === "Female" ? parentB : parentA;
+  const father = parentA.sex === "Male" ? parentA : parentB.sex === "Male" ? parentB : parentB;
+  const motherId = mother.clanVirtual ? "" : mother.id;
+  const fatherId = father.clanVirtual ? "" : father.id;
   const bloodline = estimateBloodline(parentA.bloodline, parentB.bloodline);
   const broodWatcherBrooding = Boolean(els.broodWatcherBrooding?.checked);
   const inbredNest = isInbredNest(parentA, parentB);
@@ -6940,6 +7109,8 @@ function createEggFromPlanner() {
     skinType: "Unknown",
     motherId,
     fatherId,
+    motherName: mother.accountName || mother.name,
+    fatherName: father.accountName || father.name,
     bloodline,
     stats: Object.fromEntries(STAT_FIELDS.map((field) => [field.key, projectStatInheritance(field, parentA, parentB, bloodline, broodWatcherBrooding, { inbred: inbredNest }).eggGrade])),
     notes: `Created from the nesting planner from ${dragonAccountLabel(parentA)} x ${dragonAccountLabel(parentB)}. ${inbredNest ? "Inbred nest one selected parent is the child or sibling of the other. This nest will result in F stats." : `Stat values use the current Social point projection rules${broodWatcherBrooding ? " with BW brooding marked for possible supercrits." : "."}`}`
@@ -7008,6 +7179,7 @@ function isKnownSex(sex) {
 }
 
 function projectStatInheritance(field, parentA, parentB, eggBloodline, broodWatcherBrooding = false, options = {}) {
+  // Inbred nests override every other inheritance rule before stats are projected.
   const parentAGrade = normalizeGrade(parentA.stats?.[field.key]);
   const parentBGrade = normalizeGrade(parentB.stats?.[field.key]);
   if (options.inbred) {
@@ -7291,6 +7463,7 @@ function bloodlineScore(grade) {
   return gradeScore(normalizeBloodlineGrade(grade));
 }
 
+// Backup, portable chart export, and import preview
 function exportJson() {
   state.settings.lastBackupAt = new Date().toISOString();
   saveState({ skipHistory: true });
@@ -7668,6 +7841,7 @@ function undoLastChange() {
   }
 }
 
+// Genetics PNG reader. It identifies the yellow in-game grade letters by shape.
 async function importGeneticsPng() {
   const file = els.geneticsImageFile?.files?.[0];
   if (!file) return;
@@ -8120,6 +8294,7 @@ function downloadBlob(filename, content, type) {
   URL.revokeObjectURL(url);
 }
 
+// Navigation and URL hash handling
 function startupTab() {
   const hash = window.location.hash.replace("#", "").trim();
   if (hash === "accounts") return "players";
@@ -8347,7 +8522,42 @@ function dragonAccountLabel(dragon) {
 }
 
 function dragonOptionLabel(dragon) {
-  return `${dragonAccountLabel(dragon)} - ${dragon.species || "Unknown species"} - ${dragon.sex || "Unknown sex"}`;
+  const source = dragon?.clanVirtual ? " - Clan Library" : "";
+  return `${dragonAccountLabel(dragon)} - ${dragon.species || "Unknown species"} - ${dragon.sex || "Unknown sex"}${source}`;
+}
+
+function clanVirtualDragon(record) {
+  const summary = record?.summary && typeof record.summary === "object" ? record.summary : {};
+  const dragon = normalizeDragon({
+    ...summary,
+    id: `clan-dragon:${text(record?.id || record?.source_local_id)}`,
+    createdAt: record?.updated_at || summary.updatedAt,
+    updatedAt: record?.updated_at || summary.updatedAt,
+    username: summary.playerName || summary.username || (record?.discord_username || "Clan Member"),
+    accountName: summary.accountName || summary.displayName || "Clan Dragon",
+    name: summary.accountName || summary.displayName || "Clan Dragon",
+    tags: [...(Array.isArray(summary.tags) ? summary.tags : []), "clan-library"]
+  });
+  return {
+    ...dragon,
+    clanVirtual: true,
+    clanRecordId: text(record?.id),
+    clanSourceLabel: clanDragonSourceLabel(record)
+  };
+}
+
+function nestingDragonPool() {
+  const virtualDragons = clanLibraryDragonRecords()
+    .filter((record) => !hasLocalDragonMatchingClanSummary(record?.summary))
+    .map(clanVirtualDragon)
+    .filter((dragon) => dragon.species);
+  return [...state.dragons, ...virtualDragons];
+}
+
+function nestingDragonById(id, pool = null) {
+  const dragonId = text(id);
+  if (!dragonId) return null;
+  return (Array.isArray(pool) ? pool : nestingDragonPool()).find((dragon) => dragon.id === dragonId) || null;
 }
 
 function newerTimestamp(a, b) {
@@ -8475,6 +8685,7 @@ function normalizeElderProgress(status, value) {
   return Math.max(0, Math.min(99.9, number));
 }
 
+// Growth rules and mutation-point allocation
 function estimateMutationPoints(status, growth, elderProgress) {
   return MUTATION_POINTS_BY_STATUS[normalizeStatusForProgress(status, elderProgress)] || 1;
 }
@@ -8496,6 +8707,7 @@ function shouldLockSocialPoints(status, nestRole) {
 }
 
 function normalizeMutationAllocation(values) {
+  // Allocate the fixed point pool in order so no mutation track can overspend it.
   const status = values.status || "Hatchie";
   const nestRole = normalizeNestRole(values.nestRole);
   const total = Math.max(1, Number(values.mutationPoints) || estimateMutationPoints(status, "", values.elderProgress));

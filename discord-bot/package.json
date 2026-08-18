@@ -7,7 +7,8 @@
   "scripts": {
     "deploy": "node src/deploy-commands.js",
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/deploy-commands.js && node --check src/commands.js && node --check src/dashboard.js && node --check src/seed-clan-test-data.js",
+    "check": "node --check src/index.js && node --check src/deploy-commands.js && node --check src/commands.js && node --check src/dashboard.js && node --check src/genetics.js && node --check src/seed-clan-test-data.js && node --test",
+    "test": "node --test",
     "seed:test-data": "node src/seed-clan-test-data.js",
     "clear:test-data": "node src/seed-clan-test-data.js --clear"
   },

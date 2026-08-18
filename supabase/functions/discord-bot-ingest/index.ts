@@ -1,11 +1,27 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+// Server-only secrets authenticate the bot and grant controlled database access.
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const INGEST_SECRET = Deno.env.get("DRAGON_TRACKER_BOT_INGEST_SECRET") || "";
 const HEARTBEAT_SECRET = Deno.env.get("DRAGON_TRACKER_HEARTBEAT_SECRET") || "";
 const MAX_TEXT = 500;
 const CLAN_DRAGON_QUERY_LIMIT = 2500;
+const SPECIES = ["Flame Stalker", "Shadow Scale", "Acid Spitter", "Inferno Ravager", "Bio", "Blitz Striker", "Brood Watcher", "Mimikor", "Singe Crest", "Feathered Zygovo"];
+const SEXES = ["Female", "Male", "Unknown"];
+const STATUSES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder"];
+const BLOODLINES = ["E", "D", "C", "B", "A"];
+const GRADES = ["F", "E", "D-", "D", "D+", "C-", "C", "C+", "B-", "B", "B+", "A-", "A", "A+", "A++"];
+const POINT_TRAITS = ["PvP", "Breeder", "Pure", "Dominant"];
+const STAT_FIELDS = [
+  ["lifeExpectancy", "Life Expectancy"], ["scaleThickness", "Scale Thickness"], ["endurance", "Endurance"],
+  ["bileProduction", "Bile Production"], ["biteForce", "Bite Force"], ["power", "Power"], ["strength", "Strength"],
+  ["nutrientAbsorption", "Nutrient Absorption"], ["waterRetention", "Water Retention"], ["toxinTolerance", "Toxin Tolerance"],
+  ["impactResistance", "Impact Resistance"], ["pierceResistance", "Pierce Resistance"], ["fireResistance", "Fire Resistance"],
+  ["frostResistance", "Frost Resistance"], ["plasmaResistance", "Plasma Resistance"], ["lightningResistance", "Lightning Resistance"],
+  ["acidResistance", "Acid Resistance"], ["venomResistance", "Venom Resistance"]
+] as const;
+const FLAT_RANK: Record<string, number> = { F: 0, E: 1, D: 2, C: 3, B: 4, A: 5 };
 
 type SubmissionType = "dragon" | "map_pin" | "note" | "egg_request" | "upstat" | "brood_pouch" | "current_nest";
 
@@ -18,6 +34,67 @@ function json(body: Record<string, unknown>, status = 200) {
 
 function clean(value: unknown, max = MAX_TEXT) {
   return String(value ?? "").trim().slice(0, max);
+}
+
+function canonicalKey(value: unknown) {
+  return clean(value, 120).toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function canonicalChoice(value: unknown, choices: string[], fallback = "") {
+  const key = canonicalKey(value);
+  return choices.find((choice) => canonicalKey(choice) === key) || fallback;
+}
+
+function canonicalGrade(value: unknown, fallback = "E") {
+  const grade = clean(value, 4).toUpperCase();
+  return GRADES.includes(grade) ? grade : fallback;
+}
+
+function canonicalBloodline(value: unknown, fallback = "E") {
+  const grade = clean(value, 4).toUpperCase().replace(/[+-]+/g, "");
+  return BLOODLINES.includes(grade) ? grade : fallback;
+}
+
+function optionalBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  const key = canonicalKey(value);
+  if (["yes", "true", "on", "enabled", "1", "upstat"].includes(key)) return true;
+  if (["no", "false", "off", "disabled", "0", "complete"].includes(key)) return false;
+  return null;
+}
+
+function pointTraits(...values: unknown[]) {
+  const found = new Set<string>();
+  values.flatMap((value) => Array.isArray(value) ? value : [value]).forEach((value) => {
+    clean(value, 300).split(/[,/;+|]/).forEach((part) => {
+      const key = canonicalKey(part);
+      if (["pvp", "fighter", "combat"].includes(key)) found.add("PvP");
+      if (["breeder", "social"].includes(key)) found.add("Breeder");
+      if (["pure", "ultrapure"].includes(key)) found.add("Pure");
+      if (["dominant", "dom", "dominantmutation"].includes(key)) found.add("Dominant");
+    });
+  });
+  return POINT_TRAITS.filter((trait) => found.has(trait));
+}
+
+function normalizedStats(value: unknown, bloodline: string, options: { inbred?: boolean; parentFourthPointed?: boolean } = {}) {
+  const input = payloadRecord(value);
+  const stats: Record<string, string> = {};
+  for (const [key, label] of STAT_FIELDS) {
+    const enteredGrade = clean(input[key], 4);
+    const grade = options.inbred ? "F" : canonicalGrade(enteredGrade, enteredGrade ? "" : "E");
+    if (!grade) throw new Error(`${label} has an invalid grade`);
+    if ((FLAT_RANK[grade.charAt(0)] ?? 0) > (FLAT_RANK[bloodline] ?? 1)) throw new Error(`${label} ${grade} requires ${grade.charAt(0)} bloodline or better`);
+    if (grade === "A++" && !options.parentFourthPointed) throw new Error(`${label} cannot be A++ unless at least one recorded parent is 4th Pointed or Elder`);
+    stats[key] = grade;
+  }
+  return stats;
+}
+
+function statProgress(statsValue: unknown) {
+  const stats = payloadRecord(statsValue);
+  const aPlusCount = STAT_FIELDS.filter(([key]) => ["A+", "A++"].includes(canonicalGrade(stats[key], "E"))).length;
+  return { aPlusCount, complete: aPlusCount === STAT_FIELDS.length, upstat: aPlusCount < STAT_FIELDS.length };
 }
 
 function requireUuid(value: unknown) {
@@ -57,6 +134,7 @@ function boundedLimit(value: unknown, fallback = 8) {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(12, Math.round(parsed))) : fallback;
 }
 
+// Read models used by the bot's search and progress commands.
 async function lookupUpstatProgress(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
   const species = clean(input.species, 80);
   const skin = clean(input.skin, 100);
@@ -78,15 +156,19 @@ async function lookupUpstatProgress(database: ReturnType<typeof serviceClient>, 
     return normalizedLookupValue(payload.species, 80) === speciesKey && normalizedLookupValue(payload.skin, 100) === skinKey;
   });
   const upstatRecords = matching
-    .filter((record) => record.submission_type === "upstat")
     .map((record) => {
       const payload = record.payload && typeof record.payload === "object" ? record.payload as Record<string, unknown> : {};
-      const aPlusCount = Number(payload.aPlusCount);
+      const savedCount = Number(payload.aPlusCount);
+      const derived = statProgress(payload.stats);
+      const aPlusCount = Number.isFinite(savedCount) ? savedCount : derived.aPlusCount;
       return {
         aPlusCount: Number.isFinite(aPlusCount) ? Math.max(0, Math.min(18, Math.round(aPlusCount))) : 0,
-        status: clean(payload.status, 40) || "In Progress",
+        status: record.submission_type === "dragon"
+          ? (aPlusCount >= 18 ? "18A+ Complete" : "In Progress")
+          : clean(payload.status, 40) || "In Progress",
         submittedBy: clean(record.discord_username, 100) || "Discord user",
-        createdAt: clean(record.created_at, 80)
+        createdAt: clean(record.created_at, 80),
+        source: record.submission_type
       };
     });
 
@@ -98,7 +180,17 @@ async function lookupUpstatProgress(database: ReturnType<typeof serviceClient>, 
   };
 }
 
+// Convert app shares and bot submissions into one searchable dragon shape.
 function normalizedDragonRecord(input: Record<string, unknown>, source: string, updatedAt: unknown) {
+  const traits = pointTraits(
+    input.pointTraits,
+    input.traits,
+    input.nestRole,
+    input.dominantMutation ? "Dominant" : "",
+    input.skin && input.recessiveSkin && canonicalKey(input.skin) === canonicalKey(input.recessiveSkin) ? "Pure" : ""
+  );
+  const stats = payloadRecord(input.stats);
+  const progress = statProgress(stats);
   return {
     source,
     name: clean(input.displayName || input.name || input.accountName, 80),
@@ -110,6 +202,14 @@ function normalizedDragonRecord(input: Record<string, unknown>, source: string, 
     skin: clean(input.skin, 100),
     recessiveSkin: clean(input.recessiveSkin || input.recessive, 100),
     nestRole: clean(input.nestRole, 30) || "Unknown",
+    pointTraits: traits,
+    dominantMutation: Boolean(input.dominantMutation) || traits.includes("Dominant"),
+    bloodline: clean(input.bloodline, 10),
+    motherName: clean(input.motherName || input.mother, 100),
+    fatherName: clean(input.fatherName || input.father, 100),
+    stats,
+    aPlusCount: Number.isFinite(Number(input.aPlusCount)) ? Number(input.aPlusCount) : progress.aPlusCount,
+    upstat: typeof input.upstat === "boolean" ? input.upstat : progress.upstat,
     updatedAt: clean(updatedAt, 80)
   };
 }
@@ -124,13 +224,22 @@ function dragonMatchesSearch(record: Record<string, unknown>, input: Record<stri
   const species = normalizedLookupValue(input.species, 80);
   const sex = normalizedLookupValue(input.sex, 20);
   const nestRole = normalizedLookupValue(input.nestRole, 30);
+  const bloodline = normalizedLookupValue(input.bloodline, 10);
+  const requestedTraits = pointTraits(input.pointTraits, input.traits, input.nestRole);
   if (species && species !== normalizedLookupValue(record.species, 80)) return false;
   if (sex && sex !== normalizedLookupValue(record.sex, 20)) return false;
   if (nestRole && nestRole !== normalizedLookupValue(record.nestRole, 30)) return false;
-  return includesLookupValue(record.skin, input.skin, 100)
+  if (bloodline && bloodline !== normalizedLookupValue(record.bloodline, 10)) return false;
+  if (!requestedTraits.every((trait) => pointTraits(record.pointTraits, record.nestRole, record.dominantMutation ? "Dominant" : "").includes(trait))) return false;
+  const upstat = optionalBoolean(input.upstat);
+  if (upstat != null && Boolean(record.upstat) !== upstat) return false;
+  return includesLookupValue(record.name, input.name, 80)
+    && includesLookupValue(record.skin, input.skin, 100)
     && includesLookupValue(record.recessiveSkin, input.recessiveSkin, 100)
     && includesLookupValue(record.playerName, input.playerName, 80)
-    && includesLookupValue(record.accountName || record.name, input.accountName, 80);
+    && includesLookupValue(record.accountName || record.name, input.accountName, 80)
+    && includesLookupValue(record.motherName, input.motherName || input.mother, 100)
+    && includesLookupValue(record.fatherName, input.fatherName || input.father, 100);
 }
 
 async function searchClanDragons(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
@@ -168,7 +277,14 @@ async function searchClanDragons(database: ReturnType<typeof serviceClient>, cla
     if (!unique.has(key)) unique.set(key, record);
   }
 
-  const matches = [...unique.values()].filter((record) => dragonMatchesSearch(record, input));
+  const records = [...unique.values()];
+  const pairingParent = findDragonByName(records, input.pairingParent, input.species);
+  const matches = records.filter((record) => {
+    if (!dragonMatchesSearch(record, input)) return false;
+    if (!pairingParent) return true;
+    if (sameDragonIdentity(record, pairingParent)) return false;
+    return !inbredPairReason(record, pairingParent);
+  });
   return {
     total: matches.length,
     records: matches.slice(0, boundedLimit(input.limit))
@@ -179,7 +295,67 @@ function payloadRecord(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
-function isEggRequestMatch(requestPayload: Record<string, unknown>, dragonPayload: Record<string, unknown>) {
+function dragonIdentityNames(record: Record<string, unknown>) {
+  return [record.name, record.accountName, record.displayName].map(canonicalKey).filter(Boolean);
+}
+
+function dragonParentNames(record: Record<string, unknown>) {
+  return [record.motherName || record.mother, record.fatherName || record.father].map(canonicalKey).filter(Boolean);
+}
+
+function sameDragonIdentity(first: Record<string, unknown>, second: Record<string, unknown>) {
+  if (first.species && second.species && canonicalKey(first.species) !== canonicalKey(second.species)) return false;
+  const secondNames = dragonIdentityNames(second);
+  return dragonIdentityNames(first).some((name) => secondNames.includes(name));
+}
+
+function inbredPairReason(first: Record<string, unknown>, second: Record<string, unknown>) {
+  if (first.species && second.species && canonicalKey(first.species) !== canonicalKey(second.species)) return "";
+  const firstNames = dragonIdentityNames(first);
+  const secondNames = dragonIdentityNames(second);
+  const firstParents = dragonParentNames(first);
+  const secondParents = dragonParentNames(second);
+  if (firstNames.some((name) => secondParents.includes(name)) || secondNames.some((name) => firstParents.includes(name))) {
+    return "one selected parent is the child of the other";
+  }
+  if (firstParents.some((name) => secondParents.includes(name))) return "the selected parents are siblings";
+  return "";
+}
+
+function findDragonByName(records: Record<string, unknown>[], value: unknown, species: unknown = "") {
+  const key = canonicalKey(value);
+  const speciesKey = canonicalKey(species);
+  return key ? records.find((record) => (
+    (!speciesKey || canonicalKey(record.species) === speciesKey)
+    && dragonIdentityNames(record).includes(key)
+  )) || null : null;
+}
+
+async function clanDragonRecords(database: ReturnType<typeof serviceClient>, clanId: string) {
+  const [sharedResult, submittedResult] = await Promise.all([
+    database.from("shared_dragons").select("summary,updated_at").eq("clan_id", clanId).limit(CLAN_DRAGON_QUERY_LIMIT),
+    database.from("discord_bot_submissions").select("payload,created_at").eq("clan_id", clanId).eq("submission_type", "dragon").neq("status", "ignored").limit(CLAN_DRAGON_QUERY_LIMIT)
+  ]);
+  if (sharedResult.error) throw sharedResult.error;
+  if (submittedResult.error) throw submittedResult.error;
+  return [
+    ...(sharedResult.data ?? []).map((row) => normalizedDragonRecord(payloadRecord(row.summary), "shared", row.updated_at)),
+    ...(submittedResult.data ?? []).map((row) => normalizedDragonRecord(payloadRecord(row.payload), "discord", row.created_at))
+  ];
+}
+
+async function lineageContext(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
+  const records = await clanDragonRecords(database, clanId);
+  const mother = findDragonByName(records, input.motherName || input.mother, input.species);
+  const father = findDragonByName(records, input.fatherName || input.father, input.species);
+  const reason = mother && father ? inbredPairReason(mother, father) : "";
+  const parentFourthPointed = [mother, father].some((parent) => parent && (
+    ["4thpointed", "elder"].includes(canonicalKey(parent.status)) || Boolean(parent.dominantMutation)
+  ));
+  return { records, mother, father, inbredReason: reason, parentFourthPointed };
+}
+
+function isEggRequestMatch(requestPayload: Record<string, unknown>, dragonPayload: Record<string, unknown>, clanRecords: Record<string, unknown>[] = []) {
   const requestSpecies = normalizedLookupValue(requestPayload.species, 80);
   const dragonSpecies = normalizedLookupValue(dragonPayload.species, 80);
   if (!requestSpecies || requestSpecies !== dragonSpecies) return false;
@@ -193,9 +369,24 @@ function isEggRequestMatch(requestPayload: Record<string, unknown>, dragonPayloa
   const requestedSex = normalizedLookupValue(requestPayload.sex, 20);
   if (requestedSex && requestedSex !== "unknown" && requestedSex !== normalizedLookupValue(dragonPayload.sex, 20)) return false;
 
-  const goal = normalizedLookupValue(requestPayload.goal, 120);
-  const nestRole = normalizedLookupValue(dragonPayload.nestRole, 30);
-  if (goal.includes("pure") && !["pure", "ultra pure"].includes(nestRole)) return false;
+  const requestedBloodline = normalizedLookupValue(requestPayload.bloodline, 10);
+  if (requestedBloodline && requestedBloodline !== normalizedLookupValue(dragonPayload.bloodline, 10)) return false;
+
+  const requestedTraits = pointTraits(requestPayload.pointTraits, requestPayload.traits, requestPayload.goal);
+  const dragonTraits = pointTraits(
+    dragonPayload.pointTraits,
+    dragonPayload.nestRole,
+    dragonPayload.dominantMutation ? "Dominant" : "",
+    dragonPayload.skin && dragonPayload.recessiveSkin && canonicalKey(dragonPayload.skin) === canonicalKey(dragonPayload.recessiveSkin) ? "Pure" : ""
+  );
+  if (!requestedTraits.every((trait) => dragonTraits.includes(trait))) return false;
+
+  const requestedUpstat = optionalBoolean(requestPayload.upstat);
+  if (requestedUpstat != null && statProgress(dragonPayload.stats).upstat !== requestedUpstat) return false;
+
+  const pairingParent = findDragonByName(clanRecords, requestPayload.pairingParent, requestPayload.species);
+  const candidate = normalizedDragonRecord(dragonPayload, "discord", "");
+  if (pairingParent && (sameDragonIdentity(candidate, pairingParent) || inbredPairReason(candidate, pairingParent))) return false;
 
   return true;
 }
@@ -238,6 +429,7 @@ async function eggMatchAlertPreference(database: ReturnType<typeof serviceClient
   return { enabled: Boolean(payloadRecord(data?.payload).enabled) };
 }
 
+// Queue opt-in notifications without exposing another member's private data.
 async function createEggMatchNotifications(
   database: ReturnType<typeof serviceClient>,
   clanId: string,
@@ -253,6 +445,8 @@ async function createEggMatchNotifications(
     .eq("submission_type", "egg_request")
     .single();
   if (requestError) throw requestError;
+  const requestPayload = payloadRecord(eggRequest.payload);
+  if (requestPayload.notifyOwners === false) return [];
 
   const { data: preferences, error: preferenceError } = await database
     .from("discord_bot_submissions")
@@ -279,13 +473,13 @@ async function createEggMatchNotifications(
     .limit(CLAN_DRAGON_QUERY_LIMIT);
   if (dragonError) throw dragonError;
 
-  const requestPayload = payloadRecord(eggRequest.payload);
+  const allClanDragons = await clanDragonRecords(database, clanId);
   const notifications: Array<Record<string, unknown>> = [];
   for (const dragon of dragons ?? []) {
     const recipientDiscordUserId = clean(dragon.discord_user_id, 40);
     if (!recipientDiscordUserId || !optedInUserIds.has(recipientDiscordUserId)) continue;
     const dragonPayload = payloadRecord(dragon.payload);
-    if (!isEggRequestMatch(requestPayload, dragonPayload)) continue;
+    if (!isEggRequestMatch(requestPayload, dragonPayload, allClanDragons)) continue;
 
     const notificationSourceKey = `egg-match:${eggRequest.id}:${dragon.id}`;
     const { data: existingNotification, error: existingNotificationError } = await database
@@ -331,7 +525,9 @@ async function createEggMatchNotifications(
       requestSkin: clean(requestPayload.skin, 100),
       requestRecessiveSkin: clean(requestPayload.recessiveSkin, 100),
       requestSex: clean(requestPayload.sex, 20),
-      requestGoal: clean(requestPayload.goal, 120),
+      requestBloodline: clean(requestPayload.bloodline, 10),
+      requestPointTraits: pointTraits(requestPayload.pointTraits, requestPayload.traits, requestPayload.goal),
+      requestUpstat: optionalBoolean(requestPayload.upstat) === true,
       requestNotes: clean(requestPayload.notes, 1000),
       discordGuildId: clean(eggRequest.discord_guild_id, 40),
       discordChannelId: clean(eggRequest.discord_channel_id, 40)
@@ -373,23 +569,61 @@ async function recordEggMatchNotification(database: ReturnType<typeof serviceCli
   return { ok: true };
 }
 
-function normalizePayload(type: SubmissionType, input: Record<string, unknown>) {
+// Keep only the fields and lengths accepted for each submission type.
+function normalizeDragonPayload(input: Record<string, unknown>, context: { inbredReason?: string; parentFourthPointed?: boolean } = {}) {
+  const name = clean(input.name || input.accountName, 80);
+  const species = canonicalChoice(input.species, SPECIES);
+  if (!name || !species) throw new Error("Dragon name and a valid species are required");
+
+  const traits = pointTraits(input.pointTraits, input.traits, input.nestRole, input.dominantMutation ? "Dominant" : "");
+  const skin = clean(input.skin || input.primarySkin, 100);
+  let recessiveSkin = clean(input.recessiveSkin || input.recessive, 100);
+  if (traits.includes("Pure") && !skin) throw new Error("Pure requires a primary skin");
+  if (traits.includes("Pure") && skin && !recessiveSkin) recessiveSkin = skin;
+  if (skin && recessiveSkin && canonicalKey(skin) === canonicalKey(recessiveSkin) && !traits.includes("Pure")) traits.push("Pure");
+
+  const dominantMutation = traits.includes("Dominant");
+  let status = canonicalChoice(input.status, STATUSES, "Hatchie");
+  if (dominantMutation && STATUSES.indexOf(status) < STATUSES.indexOf("4th Pointed")) status = "4th Pointed";
+  const enteredBloodline = clean(input.bloodline, 10).toUpperCase();
+  if (enteredBloodline && !BLOODLINES.includes(enteredBloodline)) throw new Error("Bloodline must be E, D, C, B, or A");
+  const bloodline = canonicalBloodline(enteredBloodline, enteredBloodline ? "" : "E");
+  if (!bloodline) throw new Error("Bloodline must be E, D, C, B, or A");
+  const inbredReason = clean(context.inbredReason || input.inbredReason, 180);
+  // A++ is a lineage result, so only stored parent records can unlock it.
+  const parentFourthPointed = Boolean(context.parentFourthPointed);
+  const stats = normalizedStats(input.stats, bloodline, { inbred: Boolean(inbredReason), parentFourthPointed });
+  const progress = statProgress(stats);
+  const nestRole = traits.includes("Pure") ? "Pure" : traits.includes("Breeder") ? "Breeder" : traits.includes("PvP") ? "Fighter" : "Unknown";
+
+  return {
+    name,
+    playerName: clean(input.playerName || input.username, 80),
+    accountName: clean(input.accountName, 80) || name,
+    species,
+    sex: canonicalChoice(input.sex, SEXES, "Unknown"),
+    status,
+    skin,
+    recessiveSkin,
+    bloodline,
+    nestRole,
+    pointTraits: POINT_TRAITS.filter((trait) => traits.includes(trait)),
+    dominantMutation,
+    motherName: clean(input.motherName || input.mother, 100),
+    fatherName: clean(input.fatherName || input.father, 100),
+    parentFourthPointed,
+    inbred: Boolean(inbredReason),
+    inbredReason,
+    stats,
+    aPlusCount: progress.aPlusCount,
+    upstat: progress.upstat,
+    notes: clean(input.notes, 600)
+  };
+}
+
+function normalizePayload(type: SubmissionType, input: Record<string, unknown>, context: { inbredReason?: string; parentFourthPointed?: boolean } = {}) {
   if (type === "dragon") {
-    const payload = {
-      name: clean(input.name, 80),
-      playerName: clean(input.playerName || input.username, 80),
-      accountName: clean(input.accountName, 80),
-      species: clean(input.species, 80),
-      sex: clean(input.sex, 20),
-      status: clean(input.status, 40),
-      skin: clean(input.skin, 100),
-      recessiveSkin: clean(input.recessiveSkin, 100),
-      bloodline: clean(input.bloodline, 10),
-      nestRole: clean(input.nestRole, 30),
-      notes: clean(input.notes, 600)
-    };
-    if (!payload.name || !payload.species || !payload.sex || !payload.status) throw new Error("Dragon name, species, sex, and status are required");
-    return payload;
+    return normalizeDragonPayload(input, context);
   }
 
   if (type === "map_pin") {
@@ -410,13 +644,25 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
   }
 
   if (type === "egg_request") {
+    const traits = pointTraits(input.pointTraits, input.traits, input.goal);
+    const skin = clean(input.skin || input.primarySkin, 100);
+    let recessiveSkin = clean(input.recessiveSkin || input.recessive, 100);
+    const requestedBloodline = clean(input.bloodline, 10).toUpperCase();
+    if (requestedBloodline && !BLOODLINES.includes(requestedBloodline)) throw new Error("Bloodline must be E, D, C, B, or A");
+    if (traits.includes("Pure") && skin && !recessiveSkin) recessiveSkin = skin;
+    if (skin && recessiveSkin && canonicalKey(skin) === canonicalKey(recessiveSkin) && !traits.includes("Pure")) traits.push("Pure");
     const payload = {
       requester: clean(input.requester || input.playerName || input.username, 100),
-      species: clean(input.species, 80),
-      skin: clean(input.skin, 100),
-      recessiveSkin: clean(input.recessiveSkin || input.recessive, 100),
-      sex: clean(input.sex, 20),
-      goal: clean(input.goal, 120),
+      accountName: clean(input.accountName || input.account, 80),
+      species: canonicalChoice(input.species, SPECIES),
+      skin,
+      recessiveSkin,
+      sex: input.sex ? canonicalChoice(input.sex, SEXES) : "",
+      bloodline: requestedBloodline,
+      pointTraits: POINT_TRAITS.filter((trait) => traits.includes(trait)),
+      pairingParent: clean(input.pairingParent, 100),
+      upstat: optionalBoolean(input.upstat),
+      notifyOwners: optionalBoolean(input.notifyOwners ?? input.pings) !== false,
       notes: clean(input.notes, 1000)
     };
     if (!payload.requester || !payload.species) throw new Error("Egg requester and species are required");
@@ -426,7 +672,7 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
   if (type === "upstat") {
     const aPlusCount = Number(input.aPlusCount ?? input.currentAPlus ?? input.aplus);
     const payload = {
-      species: clean(input.species, 80),
+      species: canonicalChoice(input.species, SPECIES),
       skin: clean(input.skin, 100),
       status: clean(input.status, 40),
       aPlusCount: Number.isFinite(aPlusCount) ? Math.max(0, Math.min(18, Math.round(aPlusCount))) : 0,
@@ -438,14 +684,9 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
   }
 
   if (type === "brood_pouch") {
+    const dragon = normalizeDragonPayload({ ...input, name: input.name || input.eggName || input.accountName, status: "Hatchie" }, context);
     const payload = {
-      name: clean(input.name || input.eggName || input.accountName, 80),
-      playerName: clean(input.playerName || input.username, 80),
-      accountName: clean(input.accountName || input.account || input.name, 80),
-      species: clean(input.species, 80),
-      sex: clean(input.sex, 20),
-      skin: clean(input.skin, 100),
-      recessiveSkin: clean(input.recessiveSkin || input.recessive, 100),
+      ...dragon,
       brood: clean(input.brood || input.currentBrood, 80),
       dueAt: clean(input.dueAt || input.due || input.reminder, 80),
       oddsSummary: clean(input.oddsSummary || input.odds, 180),
@@ -456,10 +697,11 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
   }
 
   if (type === "current_nest") {
+    if (context.inbredReason) throw new Error(`Inbred nest: ${context.inbredReason}. This pairing would result in F stats`);
     const payload = {
       father: clean(input.father, 100),
       mother: clean(input.mother, 100),
-      species: clean(input.species, 80),
+      species: canonicalChoice(input.species, SPECIES),
       breeder: clean(input.breeder || input.playerName || input.username, 100),
       requester: clean(input.requester, 100),
       expectedSkin: clean(input.expectedSkin || input.skin, 120),
@@ -478,6 +720,7 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>) 
   return payload;
 }
 
+// Single authenticated endpoint for bot writes, searches, and alert updates.
 Deno.serve(async (request) => {
   try {
     if (request.method !== "POST") return json({ error: "POST required" }, 405);
@@ -514,12 +757,39 @@ Deno.serve(async (request) => {
     if (action === "record_egg_match_notification") {
       return json(await recordEggMatchNotification(database, clanId, input));
     }
+    if (action === "update_dragon_stats") {
+      const submissionId = requireUuid(input.submission_id);
+      const discordUserId = clean(input.discord_user_id, 40);
+      const { data: existing, error: existingError } = await database
+        .from("discord_bot_submissions")
+        .select("id,discord_user_id,submission_type,payload")
+        .eq("id", submissionId)
+        .eq("clan_id", clanId)
+        .single();
+      if (existingError) throw existingError;
+      if (existing.submission_type !== "dragon") throw new Error("Only dragon submissions can receive 18-stat updates");
+      if (!discordUserId || clean(existing.discord_user_id, 40) !== discordUserId) throw new Error("Only the original submitter can edit these stats");
+      const existingPayload = payloadRecord(existing.payload);
+      const context = await lineageContext(database, clanId, existingPayload);
+      const payload = normalizeDragonPayload({ ...existingPayload, stats: payloadRecord(input.stats) }, context);
+      const { error: updateError } = await database
+        .from("discord_bot_submissions")
+        .update({ payload })
+        .eq("id", submissionId)
+        .eq("clan_id", clanId);
+      if (updateError) throw updateError;
+      return json({ ok: true, name: payload.name, stats: payload.stats, aPlusCount: payload.aPlusCount, upstat: payload.upstat });
+    }
 
     const type = normalizeType(input.type);
     const sourceKey = clean(input.source_key, 160);
     if (!sourceKey) throw new Error("source_key is required");
 
-    const payload = normalizePayload(type, input.payload && typeof input.payload === "object" ? input.payload : {});
+    const rawPayload = input.payload && typeof input.payload === "object" ? input.payload as Record<string, unknown> : {};
+    const context = ["dragon", "brood_pouch", "current_nest"].includes(type)
+      ? await lineageContext(database, clanId, rawPayload)
+      : {};
+    const payload = normalizePayload(type, rawPayload, context);
     const { data: submission, error } = await database.from("discord_bot_submissions").upsert({
       clan_id: clanId,
       source_key: sourceKey,
@@ -536,7 +806,7 @@ Deno.serve(async (request) => {
     const eggMatchNotifications = type === "egg_request"
       ? await createEggMatchNotifications(database, clanId, submission.id, sourceKey)
       : [];
-    return json({ ok: true, eggMatchNotifications });
+    return json({ ok: true, submissionId: submission.id, eggMatchNotifications });
   } catch (error) {
     console.error("discord-bot-ingest failed", error);
     return json({ error: error instanceof Error ? error.message : "Discord bot submission failed" }, 400);

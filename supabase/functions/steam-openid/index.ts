@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Steam OpenID links a public Steam ID to the currently signed-in tracker user.
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const DEEP_LINK = Deno.env.get("DRAGON_TRACKER_DEEP_LINK") || "dragontracker://auth/callback";
@@ -48,6 +49,7 @@ function steamUrl(callbackUrl: string) {
   return url.toString();
 }
 
+// Steam must confirm the callback assertion before any identity is stored.
 async function verifySteamAssertion(url: URL) {
   const form = new URLSearchParams();
   url.searchParams.forEach((value, key) => {
@@ -69,6 +71,7 @@ async function verifySteamAssertion(url: URL) {
   return matched[1];
 }
 
+// Return only to the desktop protocol or an approved local browser address.
 function allowedReturnUrl(value: string | null) {
   const candidate = value || DEEP_LINK || DEFAULT_RETURN_URL;
   try {
@@ -104,6 +107,7 @@ function callbackFunctionUrl() {
   return new URL("/functions/v1/steam-openid", SUPABASE_URL);
 }
 
+// Start the OpenID redirect or finish a verified callback.
 Deno.serve(async (request) => {
   let returnUrl = DEEP_LINK || DEFAULT_RETURN_URL;
   try {

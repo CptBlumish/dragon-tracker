@@ -6,12 +6,24 @@ import {
   alertMenuMessage,
   dashboardAction,
   dashboardMessage,
+  dragonStatsPromptMessage,
   fieldValue,
   modalForAction,
   splitValues,
   upstatMenuMessage
 } from "./dashboard.js";
+import {
+  STAT_FIELDS,
+  dragonPointTraits,
+  formatStatsSummary,
+  normalizeDragonFilters,
+  normalizeDragonGenetics,
+  parseBooleanChoice,
+  parseStats,
+  statProgress
+} from "./genetics.js";
 
+// Bot limits, local logging, and in-memory spam protection.
 const REQUEST_TIMEOUT_MS = 15_000;
 const TRACKER_REQUEST_ATTEMPTS = 2;
 const DEFAULT_BREEDER_ROLE_NAME = "Breeder";
@@ -20,7 +32,10 @@ const BOT_LOG_MAX_BYTES = 2 * 1024 * 1024;
 const EGG_ALERT_DIGEST_WINDOW_MS = Math.max(15_000, Math.min(10 * 60_000, Number(process.env.EGG_ALERT_DIGEST_WINDOW_MS) || 60_000));
 const commandCooldowns = new Map();
 const eggAlertDigests = new Map();
+const eggAlertLastSentAt = new Map();
+const EGG_ALERT_MIN_INTERVAL_MS = Math.max(60_000, Math.min(60 * 60_000, Number(process.env.EGG_ALERT_MIN_INTERVAL_MS) || 10 * 60_000));
 
+// Keep one small rotating log for troubleshooting background runs.
 function writeBotLog(level, values) {
   const details = values.map((value) => {
     if (value instanceof Error) return value.stack || value.message;
@@ -109,6 +124,7 @@ function commandCooldownRemaining(interaction) {
   return 0;
 }
 
+// Attach Discord identity details before sending a submission to the tracker API.
 async function submitToTracker(interaction, type, payload) {
   return trackerRequest({
     clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
@@ -122,6 +138,7 @@ async function submitToTracker(interaction, type, payload) {
   });
 }
 
+// Retry brief network failures, but return validation errors immediately.
 async function trackerRequest(payload) {
   let failure = null;
   for (let attempt = 1; attempt <= TRACKER_REQUEST_ATTEMPTS; attempt += 1) {
@@ -172,16 +189,22 @@ async function lookupUpstatProgress(interaction) {
 }
 
 function findDragonPayload(interaction) {
-  return {
+  return normalizeDragonFilters({
+    name: clean(interaction.options.getString("name"), 80),
     species: clean(interaction.options.getString("species"), 80),
     skin: clean(interaction.options.getString("skin"), 100),
     recessiveSkin: clean(interaction.options.getString("recessive"), 100),
     sex: clean(interaction.options.getString("sex"), 20),
     nestRole: clean(interaction.options.getString("nest_role"), 30),
+    pointTraits: clean(interaction.options.getString("point_traits"), 80),
+    bloodline: clean(interaction.options.getString("bloodline"), 10),
     playerName: clean(interaction.options.getString("player"), 80),
     accountName: clean(interaction.options.getString("account"), 80),
+    motherName: clean(interaction.options.getString("mother"), 100),
+    fatherName: clean(interaction.options.getString("father"), 100),
+    upstat: interaction.options.getBoolean("upstat"),
     limit: interaction.options.getInteger("limit") ?? 8
-  };
+  });
 }
 
 async function findClanDragons(interaction) {
@@ -205,7 +228,10 @@ function dragonSearchMessage(result) {
       clean(record?.status, 40),
       record?.skin ? `Skin: ${clean(record.skin, 100)}` : "",
       record?.recessiveSkin ? `Res: ${clean(record.recessiveSkin, 100)}` : "",
-      record?.nestRole && clean(record.nestRole, 30) !== "Unknown" ? `Role: ${clean(record.nestRole, 30)}` : "",
+      dragonPointTraits(record).length ? `Points: ${dragonPointTraits(record).join(", ")}` : "",
+      record?.bloodline ? `Bloodline: ${clean(record.bloodline, 10)}` : "",
+      record?.stats && Object.keys(record.stats).length ? `Stats: ${formatStatsSummary(record.stats)}` : "",
+      record?.upstat ? "Upstat" : "",
       compactOwner(record)
     ].filter(Boolean);
     return `- **${title}** - ${details.join(" | ")}`;
@@ -244,7 +270,7 @@ function upstatProgressMessage(result) {
 
 function dragonPayload(interaction) {
   const name = clean(interaction.options.getString("name", true), 80);
-  return {
+  return normalizeDragonGenetics({
     name,
     accountName: clean(interaction.options.getString("account"), 80) || name,
     playerName: clean(interaction.options.getString("player"), 80) || interaction.member?.displayName || interaction.user.username,
@@ -255,8 +281,13 @@ function dragonPayload(interaction) {
     recessiveSkin: clean(interaction.options.getString("recessive"), 100),
     bloodline: clean(interaction.options.getString("bloodline"), 10),
     nestRole: clean(interaction.options.getString("nest_role"), 30) || "Unknown",
+    pointTraits: clean(interaction.options.getString("point_traits"), 80),
+    motherName: clean(interaction.options.getString("mother"), 100),
+    fatherName: clean(interaction.options.getString("father"), 100),
+    stats: clean(interaction.options.getString("stats"), 2_000),
+    parentFourthPointed: Boolean(interaction.options.getBoolean("parent_fourth_pointed")),
     notes: clean(interaction.options.getString("notes"), 600)
-  };
+  });
 }
 
 function hasBreederAccess(member, permissions) {
@@ -275,7 +306,10 @@ async function announceDragonSubmission(channel, payload, submittedBy) {
     [payload.species, payload.sex, payload.status].filter(Boolean).join(" | "),
     payload.skin ? `Skin: ${payload.skin}` : "",
     payload.recessiveSkin ? `Recessive: ${payload.recessiveSkin}` : "",
-    payload.nestRole && payload.nestRole !== "Unknown" ? `Nest role: ${payload.nestRole}` : "",
+    payload.pointTraits?.length ? `Points: ${payload.pointTraits.join(", ")}` : "",
+    payload.bloodline ? `Bloodline: ${payload.bloodline}` : "",
+    payload.motherName || payload.fatherName ? `Parents: ${payload.motherName || "Unknown"} / ${payload.fatherName || "Unknown"}` : "",
+    payload.stats ? `Stats: ${formatStatsSummary(payload.stats)}${payload.upstat ? " (Upstat)" : ""}` : "",
     `Submitted by: ${submittedBy || "a breeder"}`
   ].filter(Boolean);
   await channel.send({
@@ -291,7 +325,10 @@ async function announceEggRequest(channel, payload, submittedBy) {
     [payload.species, payload.sex].filter(Boolean).join(" | "),
     payload.skin ? `Skin: ${payload.skin}` : "",
     payload.recessiveSkin ? `Recessive: ${payload.recessiveSkin}` : "",
-    payload.goal ? `Goal: ${payload.goal}` : "",
+    payload.pointTraits?.length ? `Points: ${payload.pointTraits.join(", ")}` : "",
+    payload.bloodline ? `Bloodline: ${payload.bloodline}` : "",
+    payload.upstat === true ? "Upstat requested" : "",
+    payload.pairingParent ? `Pairing parent: ${payload.pairingParent} (F-stat relatives excluded)` : "",
     payload.notes ? `Notes: ${payload.notes}` : "",
     `Submitted by: ${submittedBy || "a clan member"}`,
     "Breeders: contact the requester when you have a suitable nest."
@@ -359,7 +396,9 @@ function eggMatchDigestMessage(matches) {
       first.requestSkin ? `Skin: ${first.requestSkin}` : "",
       first.requestRecessiveSkin ? `Res: ${first.requestRecessiveSkin}` : "",
       first.requestSex ? `Sex: ${first.requestSex}` : "",
-      first.requestGoal ? `Goal: ${first.requestGoal}` : ""
+      first.requestBloodline ? `Bloodline: ${first.requestBloodline}` : "",
+      Array.isArray(first.requestPointTraits) && first.requestPointTraits.length ? `Points: ${first.requestPointTraits.join(", ")}` : "",
+      first.requestUpstat ? "Upstat" : ""
     ].filter(Boolean).join(" | ");
     const dragonNames = [...new Set(group.map((match) => clean(match.dragonName, 80)).filter(Boolean))];
     const shownNames = dragonNames.slice(0, 4).join(", ");
@@ -381,6 +420,7 @@ function dmFailureStatus(error) {
   return Number(error?.code) === 50007 ? "blocked" : "failed";
 }
 
+// Combine matching egg requests into one DM per recipient and time window.
 async function flushEggMatchDigest(recipientId) {
   const digest = eggAlertDigests.get(recipientId);
   if (!digest) return "missing";
@@ -390,6 +430,7 @@ async function flushEggMatchDigest(recipientId) {
   try {
     const recipient = await client.users.fetch(recipientId);
     await recipient.send({ content: eggMatchDigestMessage(matches), allowedMentions: { parse: [] } });
+    eggAlertLastSentAt.set(recipientId, Date.now());
     await Promise.all(matches.map((match) => recordEggMatchNotification(match.notificationSourceKey, "sent")));
     return "sent";
   } catch (error) {
@@ -405,9 +446,13 @@ function queueEggMatchDigest(recipientId, matches) {
   let digest = eggAlertDigests.get(recipientId);
   if (!digest) {
     digest = { matches: new Map(), timer: null };
+    const earliestSendAt = Math.max(
+      Date.now() + EGG_ALERT_DIGEST_WINDOW_MS,
+      (eggAlertLastSentAt.get(recipientId) || 0) + EGG_ALERT_MIN_INTERVAL_MS
+    );
     digest.timer = setTimeout(() => {
       void flushEggMatchDigest(recipientId);
-    }, EGG_ALERT_DIGEST_WINDOW_MS);
+    }, Math.max(1_000, earliestSendAt - Date.now()));
     digest.timer.unref?.();
     eggAlertDigests.set(recipientId, digest);
   }
@@ -443,21 +488,26 @@ function eggMatchDeliveryMessage(delivery) {
   if (!delivery?.matchingDragons) return " No alert-eligible submitted dragons matched this request.";
   const matchLabel = `${delivery.matchingDragons} matching submitted dragon${delivery.matchingDragons === 1 ? "" : "s"}`;
   if (delivery.queuedOwners) {
-    return ` Found ${matchLabel}. ${delivery.queuedOwners} owner${delivery.queuedOwners === 1 ? "" : "s"} will receive one condensed DM within ${Math.ceil(EGG_ALERT_DIGEST_WINDOW_MS / 60_000)} minute${EGG_ALERT_DIGEST_WINDOW_MS > 60_000 ? "s" : ""}.`;
+    return ` Found ${matchLabel}. ${delivery.queuedOwners} owner${delivery.queuedOwners === 1 ? "" : "s"} will receive one condensed DM, with repeat alerts held to a reasonable interval.`;
   }
   return ` Found ${matchLabel}, but no eligible owner could be queued.`;
 }
 
 function eggRequestPayload(interaction) {
-  return {
+  return normalizeDragonFilters({
     requester: clean(interaction.options.getString("requester", true), 100),
     species: clean(interaction.options.getString("species", true), 80),
     skin: clean(interaction.options.getString("skin"), 100),
     recessiveSkin: clean(interaction.options.getString("recessive"), 100),
     sex: clean(interaction.options.getString("sex"), 20),
-    goal: clean(interaction.options.getString("goal"), 120),
+    bloodline: clean(interaction.options.getString("bloodline"), 10),
+    pointTraits: clean(interaction.options.getString("point_traits"), 80),
+    pairingParent: clean(interaction.options.getString("pairing_parent"), 100),
+    upstat: interaction.options.getBoolean("upstat"),
+    notifyOwners: interaction.options.getBoolean("pings"),
+    accountName: clean(interaction.options.getString("account"), 80),
     notes: clean(interaction.options.getString("notes"), 1000)
-  };
+  });
 }
 
 function upstatPayload(interaction) {
@@ -473,7 +523,7 @@ function upstatPayload(interaction) {
 
 function broodPouchPayload(interaction) {
   const name = clean(interaction.options.getString("name", true), 80);
-  return {
+  const genetics = normalizeDragonGenetics({
     name,
     accountName: clean(interaction.options.getString("account"), 80) || name,
     playerName: clean(interaction.options.getString("player"), 80) || interaction.member?.displayName || interaction.user.username,
@@ -481,6 +531,17 @@ function broodPouchPayload(interaction) {
     sex: clean(interaction.options.getString("sex"), 20) || "Unknown",
     skin: clean(interaction.options.getString("skin"), 100),
     recessiveSkin: clean(interaction.options.getString("recessive"), 100),
+    bloodline: clean(interaction.options.getString("bloodline"), 10),
+    pointTraits: clean(interaction.options.getString("point_traits"), 80),
+    motherName: clean(interaction.options.getString("mother"), 100),
+    fatherName: clean(interaction.options.getString("father"), 100),
+    stats: clean(interaction.options.getString("stats"), 2_000),
+    parentFourthPointed: Boolean(interaction.options.getBoolean("parent_fourth_pointed")),
+    upstat: interaction.options.getBoolean("upstat"),
+    status: "Hatchie"
+  });
+  return {
+    ...genetics,
     brood: clean(interaction.options.getString("brood", true), 80),
     dueAt: clean(interaction.options.getString("due"), 80),
     oddsSummary: clean(interaction.options.getString("odds"), 180),
@@ -524,50 +585,69 @@ function interactionDisplayName(interaction) {
 
 function modalPayload(interaction, action) {
   if (action === "dragon") {
+    const [name, species] = splitValues(fieldValue(interaction, "identity"), 2);
     const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
-    const [sex, status] = splitValues(fieldValue(interaction, "profile"), 2);
-    const [skin, recessiveSkin, bloodline, nestRole] = splitValues(fieldValue(interaction, "genetics"), 4);
-    const name = clean(fieldValue(interaction, "name"), 80);
-    return {
-      name,
+    const [sex, status, bloodline] = splitValues(fieldValue(interaction, "profile"), 3);
+    const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
+    const [motherName, fatherName, pointTraits] = splitValues(fieldValue(interaction, "lineage"), 3);
+    return normalizeDragonGenetics({
+      name: clean(name, 80),
       playerName: clean(playerName, 80) || interactionDisplayName(interaction),
-      accountName: clean(accountName, 80) || name,
-      species: clean(fieldValue(interaction, "species"), 80),
+      accountName: clean(accountName, 80) || clean(name, 80),
+      species: clean(species, 80),
       sex: clean(sex, 20) || "Unknown",
       status: clean(status, 40) || "Hatchie",
       skin: clean(skin, 100),
       recessiveSkin: clean(recessiveSkin, 100),
       bloodline: clean(bloodline, 10),
-      nestRole: clean(nestRole, 30) || "Unknown",
+      motherName: clean(motherName, 100),
+      fatherName: clean(fatherName, 100),
+      pointTraits: clean(pointTraits, 100),
       notes: ""
-    };
+    });
   }
   if (action === "egg") {
+    const [requester, species] = splitValues(fieldValue(interaction, "request"), 2);
+    const [accountName, sex] = splitValues(fieldValue(interaction, "owner"), 2);
     const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
-    const [sex, goal] = splitValues(fieldValue(interaction, "target"), 2);
-    return {
-      requester: clean(fieldValue(interaction, "requester"), 100),
-      species: clean(fieldValue(interaction, "species"), 80),
+    const [bloodline, pointTraits] = splitValues(fieldValue(interaction, "filters"), 2);
+    const [pairingParent, upstat, pings, notes] = splitValues(fieldValue(interaction, "details"), 4);
+    return normalizeDragonFilters({
+      requester: clean(requester, 100),
+      species: clean(species, 80),
+      accountName: clean(accountName, 80),
       skin: clean(skin, 100),
       recessiveSkin: clean(recessiveSkin, 100),
       sex: clean(sex, 20),
-      goal: clean(goal, 120),
-      notes: clean(fieldValue(interaction, "notes"), 1000)
-    };
+      bloodline: clean(bloodline, 10),
+      pointTraits: clean(pointTraits, 100),
+      pairingParent: clean(pairingParent, 100),
+      upstat: parseBooleanChoice(upstat, null),
+      notifyOwners: parseBooleanChoice(pings, true),
+      notes: clean(notes, 1000)
+    });
   }
   if (action === "find") {
-    const [sex, nestRole] = splitValues(fieldValue(interaction, "traits"), 2);
+    const [name, species] = splitValues(fieldValue(interaction, "identity"), 2);
+    const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
+    const [sex, bloodline, pointTraits] = splitValues(fieldValue(interaction, "traits"), 3);
     const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
-    return {
-      species: clean(fieldValue(interaction, "species"), 80),
-      skin: clean(fieldValue(interaction, "skin"), 100),
-      recessiveSkin: clean(fieldValue(interaction, "recessive"), 100),
+    const [motherName, fatherName, upstat] = splitValues(fieldValue(interaction, "lineage"), 3);
+    return normalizeDragonFilters({
+      name: clean(name, 80),
+      species: clean(species, 80),
+      skin: clean(skin, 100),
+      recessiveSkin: clean(recessiveSkin, 100),
       sex: clean(sex, 20),
-      nestRole: clean(nestRole, 30),
+      bloodline: clean(bloodline, 10),
+      pointTraits: clean(pointTraits, 100),
       playerName: clean(playerName, 80),
       accountName: clean(accountName, 80),
+      motherName: clean(motherName, 100),
+      fatherName: clean(fatherName, 100),
+      upstat: parseBooleanChoice(upstat, null),
       limit: 10
-    };
+    });
   }
   if (action === "upstat-submit") {
     const [accountName, notes] = splitValues(fieldValue(interaction, "details"), 2);
@@ -587,21 +667,33 @@ function modalPayload(interaction, action) {
     };
   }
   if (action === "brood") {
+    const [name, species] = splitValues(fieldValue(interaction, "identity"), 2);
     const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
-    const [sex, skin, recessiveSkin, dueAt, oddsSummary, notes] = splitValues(fieldValue(interaction, "details"), 6);
-    const name = clean(fieldValue(interaction, "name"), 80);
-    return {
-      name,
+    const [brood, sex, bloodline] = splitValues(fieldValue(interaction, "profile"), 3);
+    const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
+    const [motherName, fatherName, pointTraits, upstat, notes] = splitValues(fieldValue(interaction, "details"), 5);
+    const genetics = normalizeDragonGenetics({
+      name: clean(name, 80),
       playerName: clean(playerName, 80) || interactionDisplayName(interaction),
-      accountName: clean(accountName, 80) || name,
-      species: clean(fieldValue(interaction, "species"), 80),
-      brood: clean(fieldValue(interaction, "brood"), 80),
+      accountName: clean(accountName, 80) || clean(name, 80),
+      species: clean(species, 80),
+      brood: clean(brood, 80),
       sex: clean(sex, 20) || "Unknown",
+      status: "Hatchie",
       skin: clean(skin, 100),
       recessiveSkin: clean(recessiveSkin, 100),
-      dueAt: clean(dueAt, 80),
-      oddsSummary: clean(oddsSummary, 180),
+      bloodline: clean(bloodline, 10),
+      motherName: clean(motherName, 100),
+      fatherName: clean(fatherName, 100),
+      pointTraits: clean(pointTraits, 100),
+      upstat: parseBooleanChoice(upstat, null),
       notes: clean(notes, 1000)
+    });
+    return {
+      ...genetics,
+      brood: clean(brood, 80),
+      dueAt: "",
+      oddsSummary: ""
     };
   }
   if (action === "nest") {
@@ -649,6 +741,21 @@ function modalCooldownRemaining(interaction, action) {
   }) : 0;
 }
 
+function dragonStatsModalPayload(interaction, action) {
+  const submissionId = clean(action.slice("dragon-stats.".length), 80);
+  if (!/^[0-9a-f-]{36}$/i.test(submissionId)) throw new Error("That dragon stats form has expired. Submit the dragon again to reopen it.");
+  const groups = [
+    splitValues(fieldValue(interaction, "stats_1"), 4),
+    splitValues(fieldValue(interaction, "stats_2"), 4),
+    splitValues(fieldValue(interaction, "stats_3"), 4),
+    splitValues(fieldValue(interaction, "stats_4"), 3),
+    splitValues(fieldValue(interaction, "stats_5"), 3)
+  ];
+  const stats = parseStats(groups.flat().join(" | "));
+  return { submissionId, stats };
+}
+
+// Button dashboard interactions
 async function handleDashboardButton(interaction) {
   if (!interaction.isButton()) return false;
   const action = dashboardAction(interaction.customId, "button");
@@ -674,8 +781,11 @@ async function handleDashboardButton(interaction) {
       content: [
         "**Dragon Tracker help**",
         "Add Dragon is limited to members with the Breeder role.",
-        "Request Egg posts the request and privately alerts opted-in owners whose submitted dragons match.",
-        "Find Dragon searches the shared clan library without importing another member's dragons into your local collection.",
+        "Add Dragon applies Pure, Dominant, bloodline, parent, Upstat, and 18-stat rules used by the desktop tracker.",
+        "Request Egg can combine species, sex, both skins, bloodline, point traits, Upstat, and a safe pairing parent.",
+        "Every egg request is posted in its channel. Pings are optional and privately notify only opted-in original submitters whose dragons match.",
+        "Private owner alerts are opt-in, condensed, rate-limited, and only go to the member who originally submitted a matching dragon.",
+        "Find Dragon applies any combination of the same filters without importing another member's dragons into your local collection.",
         "Use `|` only where a form label shows multiple values."
       ].join("\n"),
       flags: MessageFlags.Ephemeral
@@ -704,6 +814,18 @@ async function handleDashboardModal(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   try {
     if (!isConfiguredGuild(interaction)) throw new Error("This Dragon Tracker bot is configured for a different clan server.");
+    if (action.startsWith("dragon-stats.")) {
+      const update = dragonStatsModalPayload(interaction, action);
+      const result = await trackerRequest({
+        action: "update_dragon_stats",
+        clan_id: requiredEnv("DRAGON_TRACKER_CLAN_ID"),
+        discord_user_id: interaction.user.id,
+        submission_id: update.submissionId,
+        stats: update.stats
+      });
+      await interaction.editReply(`Updated ${clean(result?.name, 80) || "the dragon"}: ${formatStatsSummary(result?.stats || update.stats)}${result?.upstat ? " - tagged Upstat" : " - 18A+ complete"}.`);
+      return true;
+    }
     const cooldownRemaining = modalCooldownRemaining(interaction, action);
     if (cooldownRemaining) {
       await interaction.editReply(`Please wait ${Math.ceil(cooldownRemaining / 1000)} seconds before submitting that again.`);
@@ -715,9 +837,11 @@ async function handleDashboardModal(interaction) {
         await interaction.editReply("Only members with the Discord `Breeder` role can submit dragons.");
         return true;
       }
-      await submitToTracker(interaction, "dragon", payload);
+      const submissionResult = await submitToTracker(interaction, "dragon", payload);
       await announceDragonSubmission(interaction.channel, payload, interactionDisplayName(interaction));
-      await interaction.editReply(`Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
+      await interaction.editReply(submissionResult?.submissionId
+        ? dragonStatsPromptMessage(submissionResult.submissionId, payload)
+        : `Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
     }
     if (action === "egg") {
       const submissionResult = await submitToTracker(interaction, "egg_request", payload);
@@ -754,6 +878,10 @@ async function handleDashboardModal(interaction) {
         [payload.species, payload.sex].filter(Boolean).join(" | "),
         `Brood: ${payload.brood}`,
         payload.skin ? `Skin: ${payload.skin}` : "",
+        payload.recessiveSkin ? `Recessive: ${payload.recessiveSkin}` : "",
+        payload.pointTraits?.length ? `Points: ${payload.pointTraits.join(", ")}` : "",
+        payload.motherName || payload.fatherName ? `Parents: ${payload.motherName || "Unknown"} / ${payload.fatherName || "Unknown"}` : "",
+        `Stats: ${formatStatsSummary(payload.stats)}${payload.upstat ? " (Upstat)" : ""}`,
         `Submitted by: ${interactionDisplayName(interaction)}`
       ]);
       await interaction.editReply(`Sent ${payload.name} on ${payload.brood} to the tracker.`);
@@ -781,6 +909,7 @@ async function handleDashboardModal(interaction) {
   }
 }
 
+// Legacy slash-command support
 async function handleCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
   console.log(`Received /${interaction.commandName} from ${interaction.user.id} in ${interaction.guildId || "direct messages"}.`);
@@ -816,7 +945,7 @@ async function handleCommand(interaction) {
         "`/dt-currentnest` sends a current nest note.",
         "`/dt-location` sends a map pin to the clan inbox.",
         "`/dt-note` sends a note for review.",
-        "Open Dragon Tracker > Clans > Discord Inbox to import or ignore submissions."
+        "Open Dragon Tracker > Clans to use the shared library. Bot dragons only enter your local collection when their player and account match one you already own."
       ].join("\n"));
       return;
     }
@@ -827,9 +956,11 @@ async function handleCommand(interaction) {
         return;
       }
       const payload = dragonPayload(interaction);
-      await submitToTracker(interaction, "dragon", payload);
+      const submissionResult = await submitToTracker(interaction, "dragon", payload);
       await announceDragonSubmission(interaction.channel, payload, interaction.member?.displayName || interaction.user.username);
-      await interaction.editReply(`Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
+      await interaction.editReply(submissionResult?.submissionId
+        ? dragonStatsPromptMessage(submissionResult.submissionId, payload)
+        : `Sent ${payload.name} to the Dragon Tracker Discord Inbox.`);
       return;
     }
     if (interaction.commandName === "dt-alerts") {
@@ -879,6 +1010,9 @@ async function handleCommand(interaction) {
         `Brood: ${payload.brood}`,
         payload.skin ? `Skin: ${payload.skin}` : "",
         payload.recessiveSkin ? `Recessive: ${payload.recessiveSkin}` : "",
+        payload.pointTraits?.length ? `Points: ${payload.pointTraits.join(", ")}` : "",
+        payload.motherName || payload.fatherName ? `Parents: ${payload.motherName || "Unknown"} / ${payload.fatherName || "Unknown"}` : "",
+        `Stats: ${formatStatsSummary(payload.stats)}${payload.upstat ? " (Upstat)" : ""}`,
         payload.dueAt ? `Due: ${payload.dueAt}` : "",
         `Submitted by: ${interaction.member?.displayName || interaction.user.username}`
       ]);
@@ -943,6 +1077,11 @@ function prefixValue(args, ...keys) {
   return "";
 }
 
+function optionalPrefixBoolean(args, ...keys) {
+  const value = prefixValue(args, ...keys);
+  return value ? parseBooleanChoice(value, null) : null;
+}
+
 async function submitPrefixMessage(message, type, payload) {
   const interactionLike = {
     id: message.id,
@@ -956,6 +1095,7 @@ async function submitPrefixMessage(message, type, payload) {
   return result;
 }
 
+// Optional text commands for servers that explicitly enable message content.
 async function handlePrefixMessage(message) {
   if (message.author.bot || optionalEnv("ENABLE_PREFIX_COMMANDS", "false").toLowerCase() !== "true") return;
   if (!message.content.startsWith("!")) return;
@@ -966,7 +1106,7 @@ async function handlePrefixMessage(message) {
         await message.reply("Only members with the Discord `Breeder` role can submit dragons. Ask a server administrator to assign it.");
         return;
       }
-      const payload = {
+      const payload = normalizeDragonGenetics({
         name: prefixValue(args, "name", "dragon", "account"),
         accountName: prefixValue(args, "account", "name", "dragon"),
         playerName: prefixValue(args, "player", "user") || message.member?.displayName || message.author.username,
@@ -977,21 +1117,31 @@ async function handlePrefixMessage(message) {
         recessiveSkin: prefixValue(args, "recessive", "res"),
         bloodline: prefixValue(args, "bloodline", "bl"),
         nestRole: prefixValue(args, "nest_role", "nestrole", "role") || "Unknown",
+        pointTraits: prefixValue(args, "points", "point_traits", "traits"),
+        motherName: prefixValue(args, "mother", "mom"),
+        fatherName: prefixValue(args, "father", "dad"),
+        stats: prefixValue(args, "stats"),
+        parentFourthPointed: parseBooleanChoice(prefixValue(args, "parent_fourth", "fourth_parent"), false),
         notes: prefixValue(args, "notes", "note")
-      };
+      });
       await submitPrefixMessage(message, "dragon", payload);
       await announceDragonSubmission(message.channel, payload, message.member?.displayName || message.author.username);
     }
     if (command === "eggrequest") {
-      const payload = {
+      const payload = normalizeDragonFilters({
         requester: prefixValue(args, "requester", "player") || message.member?.displayName || message.author.username,
         species: prefixValue(args, "species", "sp"),
         skin: prefixValue(args, "skin"),
         recessiveSkin: prefixValue(args, "recessive", "res"),
         sex: prefixValue(args, "sex"),
-        goal: prefixValue(args, "goal"),
+        bloodline: prefixValue(args, "bloodline", "bl"),
+        pointTraits: prefixValue(args, "points", "point_traits", "traits", "goal"),
+        pairingParent: prefixValue(args, "pairing_parent", "parent"),
+        upstat: optionalPrefixBoolean(args, "upstat"),
+        notifyOwners: optionalPrefixBoolean(args, "pings", "notify"),
+        accountName: prefixValue(args, "account"),
         notes: prefixValue(args, "notes", "note")
-      };
+      });
       const submissionResult = await submitPrefixMessage(message, "egg_request", payload);
       await announceEggRequest(message.channel, payload, message.member?.displayName || message.author.username);
       await deliverEggMatchNotifications(submissionResult);
@@ -1007,7 +1157,7 @@ async function handlePrefixMessage(message) {
       });
     }
     if (command === "broodpouch" || command === "broodvault") {
-      await submitPrefixMessage(message, "brood_pouch", {
+      const genetics = normalizeDragonGenetics({
         name: prefixValue(args, "name", "egg", "account"),
         accountName: prefixValue(args, "account", "name", "egg"),
         playerName: prefixValue(args, "player", "user") || message.member?.displayName || message.author.username,
@@ -1015,6 +1165,15 @@ async function handlePrefixMessage(message) {
         sex: prefixValue(args, "sex") || "Unknown",
         skin: prefixValue(args, "skin"),
         recessiveSkin: prefixValue(args, "recessive", "res"),
+        bloodline: prefixValue(args, "bloodline", "bl"),
+        pointTraits: prefixValue(args, "points", "point_traits", "traits"),
+        motherName: prefixValue(args, "mother", "mom"),
+        fatherName: prefixValue(args, "father", "dad"),
+        stats: prefixValue(args, "stats"),
+        status: "Hatchie"
+      });
+      await submitPrefixMessage(message, "brood_pouch", {
+        ...genetics,
         brood: prefixValue(args, "brood"),
         dueAt: prefixValue(args, "due", "reminder"),
         oddsSummary: prefixValue(args, "odds"),
@@ -1038,6 +1197,7 @@ async function handlePrefixMessage(message) {
   }
 }
 
+// Discord client startup and graceful shutdown
 const intents = [GatewayIntentBits.Guilds];
 if (optionalEnv("ENABLE_PREFIX_COMMANDS", "false").toLowerCase() === "true") {
   intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);

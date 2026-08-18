@@ -1,11 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// The renderer can call only these allowlisted desktop capabilities.
 const allowedKeys = new Set(["clan-sync-session", "clan-sync-discord-pkce", "clan-sync-pending-invite"]);
 
 function keyIsAllowed(key) {
   return typeof key === "string" && allowedKeys.has(key);
 }
 
+// Keep Node and Electron APIs out of page code; expose small Promise-based wrappers.
 contextBridge.exposeInMainWorld("dragonTrackerDesktop", {
   isDesktop: true,
   secureGet(key) {

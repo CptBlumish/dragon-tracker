@@ -1,25 +1,16 @@
 import { SlashCommandBuilder } from "discord.js";
+import { BLOODLINES, POINT_TRAITS, SEXES, SPECIES, STATUSES } from "./genetics.js";
 
-export const SPECIES_CHOICES = [
-  "Flame Stalker",
-  "Shadow Scale",
-  "Acid Spitter",
-  "Inferno Ravager",
-  "Bio",
-  "Blitz Striker",
-  "Brood Watcher",
-  "Mimikor",
-  "Singe Crest",
-  "Feathered Zygovo"
-];
-
-export const SEX_CHOICES = ["Female", "Male", "Unknown"];
-export const STATUS_CHOICES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder"];
-export const BLOODLINE_CHOICES = ["F", "E", "D", "C", "B", "A"];
+export const SPECIES_CHOICES = SPECIES;
+export const SEX_CHOICES = SEXES;
+export const STATUS_CHOICES = STATUSES;
+export const BLOODLINE_CHOICES = BLOODLINES;
 export const NEST_ROLE_CHOICES = ["Unknown", "Fighter", "Breeder", "Pure"];
+export const POINT_TRAIT_CHOICES = POINT_TRAITS;
 export const UPSTAT_STATUS_CHOICES = ["Not Started", "In Progress", "Partial A+", "Near 18A+", "18A+ Complete"];
 export const EGG_MATCH_ALERT_CHOICES = ["Enabled", "Disabled", "Status"];
 
+// Reuse the same option lists so Discord forms match the desktop tracker.
 function addChoices(option, values) {
   return option.addChoices(...values.map((value) => ({ name: value, value })));
 }
@@ -38,9 +29,15 @@ function dragonCommand(name, description) {
     .addStringOption((option) => option.setName("account").setDescription("Account name if different from dragon name").setRequired(false).setMaxLength(80))
     .addStringOption((option) => addChoices(option.setName("bloodline").setDescription("Bloodline quality").setRequired(false), BLOODLINE_CHOICES))
     .addStringOption((option) => addChoices(option.setName("nest_role").setDescription("Tracker nest role, not a Discord server role").setRequired(false), NEST_ROLE_CHOICES))
+    .addStringOption((option) => option.setName("point_traits").setDescription("PvP, Breeder, Pure, and/or Dominant").setRequired(false).setMaxLength(80))
+    .addStringOption((option) => option.setName("mother").setDescription("Mother name").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => option.setName("father").setDescription("Father name").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => option.setName("stats").setDescription("All A+ or named Stat=Grade entries").setRequired(false).setMaxLength(2000))
+    .addBooleanOption((option) => option.setName("parent_fourth_pointed").setDescription("At least one parent is 4th Pointed or Elder"))
     .addStringOption((option) => option.setName("notes").setDescription("Short notes").setRequired(false).setMaxLength(600));
 }
 
+// Only /dt is deployed now; the remaining definitions preserve older integrations.
 export const commands = [
   new SlashCommandBuilder()
     .setName("dt")
@@ -78,7 +75,12 @@ export const commands = [
     .addStringOption((option) => option.setName("skin").setDescription("Wanted visible skin").setRequired(false).setMaxLength(100))
     .addStringOption((option) => option.setName("recessive").setDescription("Wanted recessive skin").setRequired(false).setMaxLength(100))
     .addStringOption((option) => addChoices(option.setName("sex").setDescription("Wanted sex").setRequired(false), SEX_CHOICES))
-    .addStringOption((option) => option.setName("goal").setDescription("Pure, upstat, mutation, or another nesting goal").setRequired(false).setMaxLength(120))
+    .addStringOption((option) => addChoices(option.setName("bloodline").setDescription("Wanted bloodline").setRequired(false), BLOODLINE_CHOICES))
+    .addStringOption((option) => option.setName("point_traits").setDescription("PvP, Breeder, Pure, and/or Dominant").setRequired(false).setMaxLength(80))
+    .addStringOption((option) => option.setName("pairing_parent").setDescription("Existing parent to exclude F-stat matches").setRequired(false).setMaxLength(100))
+    .addBooleanOption((option) => option.setName("upstat").setDescription("Only dragons still being upstatted"))
+    .addBooleanOption((option) => option.setName("pings").setDescription("Privately notify opted-in matching owners"))
+    .addStringOption((option) => option.setName("account").setDescription("Account taking the egg").setRequired(false).setMaxLength(80))
     .addStringOption((option) => option.setName("notes").setDescription("Request notes").setRequired(false).setMaxLength(1000)),
 
   new SlashCommandBuilder()
@@ -110,6 +112,12 @@ export const commands = [
     .addStringOption((option) => option.setName("recessive").setDescription("Recessive skin contains").setRequired(false).setMaxLength(100))
     .addStringOption((option) => addChoices(option.setName("sex").setDescription("Dragon sex").setRequired(false), SEX_CHOICES))
     .addStringOption((option) => addChoices(option.setName("nest_role").setDescription("Nest role").setRequired(false), NEST_ROLE_CHOICES))
+    .addStringOption((option) => addChoices(option.setName("bloodline").setDescription("Bloodline").setRequired(false), BLOODLINE_CHOICES))
+    .addStringOption((option) => option.setName("point_traits").setDescription("PvP, Breeder, Pure, and/or Dominant").setRequired(false).setMaxLength(80))
+    .addStringOption((option) => option.setName("mother").setDescription("Mother name").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => option.setName("father").setDescription("Father name").setRequired(false).setMaxLength(100))
+    .addBooleanOption((option) => option.setName("upstat").setDescription("Filter by upstat status"))
+    .addStringOption((option) => option.setName("name").setDescription("Dragon name contains").setRequired(false).setMaxLength(80))
     .addStringOption((option) => option.setName("player").setDescription("Player name contains").setRequired(false).setMaxLength(80))
     .addStringOption((option) => option.setName("account").setDescription("Account name contains").setRequired(false).setMaxLength(80))
     .addIntegerOption((option) => option.setName("limit").setDescription("Number of matches to show").setRequired(false).setMinValue(1).setMaxValue(12)),
@@ -123,6 +131,13 @@ export const commands = [
     .addStringOption((option) => addChoices(option.setName("sex").setDescription("Known sex").setRequired(false), SEX_CHOICES))
     .addStringOption((option) => option.setName("skin").setDescription("Visible skin or odds note").setRequired(false).setMaxLength(100))
     .addStringOption((option) => option.setName("recessive").setDescription("Recessive skin").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => addChoices(option.setName("bloodline").setDescription("Bloodline quality").setRequired(false), BLOODLINE_CHOICES))
+    .addStringOption((option) => option.setName("point_traits").setDescription("PvP, Breeder, Pure, and/or Dominant").setRequired(false).setMaxLength(80))
+    .addStringOption((option) => option.setName("mother").setDescription("Mother name").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => option.setName("father").setDescription("Father name").setRequired(false).setMaxLength(100))
+    .addStringOption((option) => option.setName("stats").setDescription("All A+ or named Stat=Grade entries").setRequired(false).setMaxLength(2000))
+    .addBooleanOption((option) => option.setName("parent_fourth_pointed").setDescription("At least one parent is 4th Pointed or Elder"))
+    .addBooleanOption((option) => option.setName("upstat").setDescription("Mark this egg as an upstat"))
     .addStringOption((option) => option.setName("player").setDescription("Player taking the egg").setRequired(false).setMaxLength(80))
     .addStringOption((option) => option.setName("account").setDescription("Account taking the egg").setRequired(false).setMaxLength(80))
     .addStringOption((option) => option.setName("due").setDescription("Reminder time, if known").setRequired(false).setMaxLength(80))
@@ -147,6 +162,7 @@ export const commands = [
 ];
 
 export function commandJson() {
+  // The button dashboard replaces the long list of slash commands for new installs.
   return commands
     .filter((command) => command.name === "dt")
     .map((command) => command.toJSON());

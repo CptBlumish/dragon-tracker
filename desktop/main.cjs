@@ -5,6 +5,7 @@ const path = require("path");
 
 const packageJson = require("../package.json");
 
+// Electron owns the native window, secure session storage, and app updates.
 let mainWindow = null;
 let manualUpdateCheck = false;
 let updateDownloadPromptOpen = false;
@@ -23,6 +24,7 @@ const AUTH_PROTOCOL = "dragontracker";
 const SECURE_STORE_FILE = "dragon-tracker-secure.json";
 const SECURE_KEYS = new Set(["clan-sync-session", "clan-sync-discord-pkce", "clan-sync-pending-invite"]);
 
+// Encrypted clan sign-in storage
 function secureStorePath() {
   return path.join(app.getPath("userData"), SECURE_STORE_FILE);
 }
@@ -51,6 +53,7 @@ function isAllowedSecureKey(key) {
   return typeof key === "string" && SECURE_KEYS.has(key);
 }
 
+// Only trusted web protocols may leave the desktop sandbox.
 function isSafeExternalUrl(value) {
   try {
     const url = new URL(value);
@@ -90,6 +93,7 @@ function registerProtocolHandler() {
   app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
 }
 
+// Expose a narrow set of validated native actions to the renderer.
 function setupSecureIpc() {
   ipcMain.handle("dragon-tracker:secure-get", (_event, key) => {
     if (!isAllowedSecureKey(key)) throw new Error("Unsupported secure storage key.");
@@ -142,6 +146,7 @@ function releaseUrl() {
   return `https://github.com/${owner}/${repo}/releases`;
 }
 
+// Desktop window and navigation policy
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -270,6 +275,7 @@ function showUpdateError(error) {
   });
 }
 
+// Update state is mirrored into the renderer for the progress dialog.
 function publishUpdateStatus(nextStatus) {
   updateStatus = {
     ...updateStatus,
@@ -316,6 +322,7 @@ function reportUpdaterError(error) {
   manualUpdateCheck = false;
 }
 
+// GitHub release updater lifecycle
 function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -423,6 +430,7 @@ function checkForUpdates(manual = false) {
   });
 }
 
+// Keep one app instance so auth callbacks always reach the open window.
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   app.quit();

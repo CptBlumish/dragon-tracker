@@ -1,6 +1,7 @@
 (() => {
   "use strict";
 
+  // Public connection details are safe to ship; user sessions stay in secure storage.
   const CONFIG_KEY = "dragon-tracker.sync-config.v1";
   const FALLBACK_SESSION_KEY = "dragon-tracker.sync-session.v1";
   const SESSION_STORE_KEY = "clan-sync-session";
@@ -61,6 +62,7 @@
     }
   }
 
+  // Desktop builds use Electron encryption. Browser builds keep sessions per tab.
   async function secureGet(key) {
     if (window.dragonTrackerDesktop?.secureGet) return window.dragonTrackerDesktop.secureGet(key);
     return sessionStorage.getItem(`${FALLBACK_SESSION_KEY}:${key}`);
@@ -96,6 +98,7 @@
     return discordRedirectUrl();
   }
 
+  // Small API wrapper shared by the desktop and local-browser versions.
   class DragonTrackerSyncClient {
     getConfig() {
       const saved = savedConfig();
@@ -188,6 +191,7 @@
       if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
       if (requireAuth) {
+        // Authenticated requests always use a fresh or refreshed user session.
         const session = await this.getUsableSession();
         if (!session?.access_token) throw new Error("Connect Discord before using clan sync.");
         headers.set("Authorization", `Bearer ${session.access_token}`);
@@ -224,6 +228,7 @@
       return user;
     }
 
+    // Discord uses PKCE so the app never handles a Discord client secret.
     async startDiscordSignIn(options = {}) {
       const config = this.getConfig();
       if (!config.url || !config.anonKey) throw new Error("Connect sync before connecting Discord.");
@@ -276,6 +281,7 @@
       await openExternal(result.url);
     }
 
+    // Clan membership changes run through database functions that enforce roles.
     async rpc(name, params = {}) {
       return this.request(`/rest/v1/rpc/${encodeURIComponent(name)}`, {
         method: "POST",
@@ -319,6 +325,7 @@
       return this.rpc("transfer_clan_ownership", { p_clan_id: clanId, p_new_owner_id: userId });
     }
 
+    // Shared records contain summaries only; full local notes and credentials stay local.
     async getSharedDragons(clanId) {
       return this.request(`/rest/v1/shared_dragons?select=id,source_user_id,source_local_id,summary,updated_at&clan_id=eq.${encodeURIComponent(clanId)}&order=updated_at.desc`, { method: "GET" }, true);
     }
@@ -342,7 +349,7 @@
     }
 
     async getDiscordSubmissions(clanId) {
-      return this.request(`/rest/v1/discord_bot_submissions?select=id,discord_user_id,discord_username,submission_type,payload,status,created_at&clan_id=eq.${encodeURIComponent(clanId)}&status=eq.pending&order=created_at.desc&limit=50`, { method: "GET" }, true);
+      return this.request(`/rest/v1/discord_bot_submissions?select=id,discord_user_id,discord_username,submission_type,payload,status,created_at&clan_id=eq.${encodeURIComponent(clanId)}&status=eq.pending&order=created_at.desc&limit=1000`, { method: "GET" }, true);
     }
 
     async resolveDiscordSubmission(recordId, status) {

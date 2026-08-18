@@ -15,7 +15,7 @@ const ALL_SPECIES_SKINS = ["Iconic", "Brindle", "Crimson", "Golden", "Melanistic
 const SEXES = ["Female", "Male", "Unknown"];
 const STATUSES = ["Hatchie", "Juvi", "Grown", "4th Pointed", "Elder"];
 const NEST_ROLES = ["Unknown", "Fighter", "Breeder", "Pure"];
-const BLOODLINES = ["F", "E", "D", "C", "B", "A"];
+const BLOODLINES = ["E", "D", "C", "B", "A"];
 const UPSTAT_STATUSES = ["Not Started", "In Progress", "Partial A+", "Near 18A+", "18A+ Complete"];
 const CONCURRENCY = 8;
 

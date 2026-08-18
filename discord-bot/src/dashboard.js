@@ -9,6 +9,7 @@ import {
 
 const PREFIX = "dt-ui";
 
+// Small builders keep every dashboard row and modal consistent.
 function actionButton(action, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder()
     .setCustomId(`${PREFIX}:button:${action}`)
@@ -39,6 +40,7 @@ function modal(action, title, rows) {
     .addComponents(...rows);
 }
 
+// Main button menu shown by /dt.
 export function dashboardMessage() {
   return {
     content: [
@@ -62,6 +64,17 @@ export function dashboardMessage() {
         actionButton("help", "Help")
       )
     ]
+  };
+}
+
+export function dragonStatsPromptMessage(submissionId, payload) {
+  const name = String(payload?.name || "dragon").slice(0, 80);
+  return {
+    content: [
+      `Saved **${name}** with the default 18 E stats.`,
+      "Use Enter 18 Stats to replace them in Genetics-screen order, or leave them at E for now."
+    ].join("\n"),
+    components: [actionRow(actionButton(`dragon-stats.${submissionId}`, "Enter 18 Stats", ButtonStyle.Primary))]
   };
 }
 
@@ -95,32 +108,42 @@ export function alertMenuMessage() {
   };
 }
 
+// Each action opens a short form that maps directly to one tracker submission type.
 export function modalForAction(action, displayName = "") {
+  if (action.startsWith("dragon-stats.")) {
+    return modal(action, "Enter 18 Dragon Stats", [
+      input("stats_1", "Life | Scale | Endurance | Bile", { value: "E | E | E | E", maxLength: 40 }),
+      input("stats_2", "Bite | Power | Strength | Nutrient", { value: "E | E | E | E", maxLength: 40 }),
+      input("stats_3", "Water | Toxin | Impact | Pierce", { value: "E | E | E | E", maxLength: 40 }),
+      input("stats_4", "Fire | Frost | Plasma", { value: "E | E | E", maxLength: 30 }),
+      input("stats_5", "Lightning | Acid | Venom", { value: "E | E | E", maxLength: 30 })
+    ]);
+  }
   if (action === "dragon") {
     return modal(action, "Add Dragon", [
-      input("name", "Dragon name", { maxLength: 80 }),
+      input("identity", "Dragon name | Species", { placeholder: "Harbinger | Flame Stalker", maxLength: 165 }),
       input("owner", "Player | Account", { placeholder: "Blumish | Main Account", maxLength: 165 }),
-      input("species", "Species", { placeholder: "Flame Stalker", maxLength: 80 }),
-      input("profile", "Sex | Status", { placeholder: "Female | Elder", maxLength: 70 }),
-      input("genetics", "Skin | Recessive | Bloodline | Role", { placeholder: "Ashfall | Ashfall | A | Pure", required: false, maxLength: 260 })
+      input("profile", "Sex | Status | Bloodline", { placeholder: "Female | Elder | A", maxLength: 80 }),
+      input("skins", "Primary skin | Recessive skin", { placeholder: "Ashfall | Ashfall", required: false, maxLength: 205 }),
+      input("lineage", "Mother | Father | Point traits", { placeholder: "Dam | Sire | Breeder, Pure, Dominant", required: false, maxLength: 300 })
     ]);
   }
   if (action === "egg") {
     return modal(action, "Request an Egg", [
-      input("requester", "Requester", { value: displayName, maxLength: 100 }),
-      input("species", "Species", { placeholder: "Bio", maxLength: 80 }),
-      input("skins", "Visible skin | Recessive skin", { placeholder: "Monarch | Monarch", required: false, maxLength: 205 }),
-      input("target", "Wanted sex | Goal", { placeholder: "Female | Pure", required: false, maxLength: 145 }),
-      input("notes", "Notes", { required: false, long: true, maxLength: 1000 })
+      input("request", "Requester | Species", { value: `${displayName} | `, placeholder: "Blumish | Bio", maxLength: 185 }),
+      input("owner", "Account | Wanted sex", { placeholder: "Main Account | Female", required: false, maxLength: 105 }),
+      input("skins", "Primary skin | Recessive skin", { placeholder: "Monarch | Monarch", required: false, maxLength: 205 }),
+      input("filters", "Bloodline | Point traits", { placeholder: "A | Breeder, Pure, Dominant", required: false, maxLength: 150 }),
+      input("details", "Pairing parent | Upstat | Pings | Notes", { placeholder: "Harbinger | yes | yes | Need an egg", required: false, long: true, maxLength: 1000 })
     ]);
   }
   if (action === "find") {
     return modal(action, "Find a Clan Dragon", [
-      input("species", "Species", { placeholder: "Bio", required: false, maxLength: 80 }),
-      input("skin", "Visible skin contains", { required: false, maxLength: 100 }),
-      input("recessive", "Recessive skin contains", { required: false, maxLength: 100 }),
-      input("traits", "Sex | Nest role", { placeholder: "Female | Pure", required: false, maxLength: 55 }),
-      input("owner", "Player | Account", { required: false, maxLength: 165 })
+      input("identity", "Dragon name | Species", { placeholder: "Harbinger | Bio", required: false, maxLength: 165 }),
+      input("skins", "Primary skin | Recessive skin", { required: false, maxLength: 205 }),
+      input("traits", "Sex | Bloodline | Point traits", { placeholder: "Female | A | Pure, Dominant", required: false, maxLength: 170 }),
+      input("owner", "Player | Account", { required: false, maxLength: 165 }),
+      input("lineage", "Mother | Father | Upstat yes/no", { required: false, maxLength: 220 })
     ]);
   }
   if (action === "upstat-submit") {
@@ -140,11 +163,11 @@ export function modalForAction(action, displayName = "") {
   }
   if (action === "brood") {
     return modal(action, "Add to Brood Pouch", [
-      input("name", "Egg name", { maxLength: 80 }),
+      input("identity", "Egg name | Species", { maxLength: 165 }),
       input("owner", "Player | Account", { placeholder: "Blumish | Main Account", maxLength: 165 }),
-      input("species", "Species", { maxLength: 80 }),
-      input("brood", "Current brood", { maxLength: 80 }),
-      input("details", "Sex | Skin | Recessive | Due | Odds | Notes", { required: false, long: true, maxLength: 1000 })
+      input("profile", "Current brood | Sex | Bloodline", { placeholder: "Brood 2 | Unknown | E", maxLength: 180 }),
+      input("skins", "Primary skin | Recessive skin", { required: false, maxLength: 205 }),
+      input("details", "Mother | Father | Traits | Upstat | Notes", { required: false, long: true, maxLength: 1000 })
     ]);
   }
   if (action === "nest") {
@@ -178,6 +201,7 @@ export function fieldValue(interaction, field) {
   return String(interaction.fields.getTextInputValue(field) || "").trim();
 }
 
+// Compact Discord fields use a pipe to fit related values into one modal row.
 export function splitValues(value, count) {
   const parts = String(value || "").split("|").map((part) => part.trim());
   while (parts.length < count) parts.push("");
@@ -187,4 +211,3 @@ export function splitValues(value, count) {
   }
   return parts;
 }
-
