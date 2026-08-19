@@ -45,6 +45,26 @@ function canonicalChoice(value: unknown, choices: string[], fallback = "") {
   return choices.find((choice) => canonicalKey(choice) === key) || fallback;
 }
 
+// Bot forms accept short community names, while stored records keep one species name.
+function canonicalSpecies(value: unknown) {
+  const aliases: Record<string, string> = {
+    fs: "Flame Stalker",
+    ss: "Shadow Scale",
+    as: "Acid Spitter",
+    asd: "Acid Spitter",
+    acidspitterdrake: "Acid Spitter",
+    ir: "Inferno Ravager",
+    bio: "Bio",
+    bioluminescent: "Bio",
+    bioleuminecent: "Bio",
+    bs: "Blitz Striker",
+    bw: "Brood Watcher",
+    sc: "Singe Crest",
+    fz: "Feathered Zygovo"
+  };
+  return aliases[canonicalKey(value)] || canonicalChoice(value, SPECIES);
+}
+
 function canonicalGrade(value: unknown, fallback = "E") {
   const grade = clean(value, 4).toUpperCase();
   return GRADES.includes(grade) ? grade : fallback;
@@ -136,7 +156,7 @@ function boundedLimit(value: unknown, fallback = 8) {
 
 // Read models used by the bot's search and progress commands.
 async function lookupUpstatProgress(database: ReturnType<typeof serviceClient>, clanId: string, input: Record<string, unknown>) {
-  const species = clean(input.species, 80);
+  const species = canonicalSpecies(input.species);
   const skin = clean(input.skin, 100);
   if (!species || !skin) throw new Error("Species and skin are required for an upstat lookup");
 
@@ -196,7 +216,7 @@ function normalizedDragonRecord(input: Record<string, unknown>, source: string, 
     name: clean(input.displayName || input.name || input.accountName, 80),
     playerName: clean(input.playerName || input.username, 80),
     accountName: clean(input.accountName || input.name, 80),
-    species: clean(input.species, 80),
+    species: canonicalSpecies(input.species) || clean(input.species, 80),
     sex: clean(input.sex, 20),
     status: clean(input.status, 40),
     skin: clean(input.skin, 100),
@@ -221,7 +241,7 @@ function dragonSearchKey(record: Record<string, unknown>) {
 }
 
 function dragonMatchesSearch(record: Record<string, unknown>, input: Record<string, unknown>) {
-  const species = normalizedLookupValue(input.species, 80);
+  const species = normalizedLookupValue(canonicalSpecies(input.species), 80);
   const sex = normalizedLookupValue(input.sex, 20);
   const nestRole = normalizedLookupValue(input.nestRole, 30);
   const bloodline = normalizedLookupValue(input.bloodline, 10);
@@ -572,7 +592,7 @@ async function recordEggMatchNotification(database: ReturnType<typeof serviceCli
 // Keep only the fields and lengths accepted for each submission type.
 function normalizeDragonPayload(input: Record<string, unknown>, context: { inbredReason?: string; parentFourthPointed?: boolean } = {}) {
   const name = clean(input.name || input.accountName, 80);
-  const species = canonicalChoice(input.species, SPECIES);
+  const species = canonicalSpecies(input.species);
   if (!name || !species) throw new Error("Dragon name and a valid species are required");
 
   const traits = pointTraits(input.pointTraits, input.traits, input.nestRole, input.dominantMutation ? "Dominant" : "");
@@ -654,7 +674,7 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>, 
     const payload = {
       requester: clean(input.requester || input.playerName || input.username, 100),
       accountName: clean(input.accountName || input.account, 80),
-      species: canonicalChoice(input.species, SPECIES),
+      species: canonicalSpecies(input.species),
       skin,
       recessiveSkin,
       sex: input.sex ? canonicalChoice(input.sex, SEXES) : "",
@@ -672,7 +692,7 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>, 
   if (type === "upstat") {
     const aPlusCount = Number(input.aPlusCount ?? input.currentAPlus ?? input.aplus);
     const payload = {
-      species: canonicalChoice(input.species, SPECIES),
+      species: canonicalSpecies(input.species),
       skin: clean(input.skin, 100),
       status: clean(input.status, 40),
       aPlusCount: Number.isFinite(aPlusCount) ? Math.max(0, Math.min(18, Math.round(aPlusCount))) : 0,
@@ -701,7 +721,7 @@ function normalizePayload(type: SubmissionType, input: Record<string, unknown>, 
     const payload = {
       father: clean(input.father, 100),
       mother: clean(input.mother, 100),
-      species: canonicalChoice(input.species, SPECIES),
+      species: canonicalSpecies(input.species),
       breeder: clean(input.breeder || input.playerName || input.username, 100),
       requester: clean(input.requester, 100),
       expectedSkin: clean(input.expectedSkin || input.skin, 120),

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   STAT_FIELDS,
+  canonicalSpecies,
   dragonMatchesFilters,
   inbredPairReason,
   normalizeDragonFilters,
@@ -45,9 +46,23 @@ test("matching primary and recessive skins automatically become Pure", () => {
   assert.equal(dragon.nestRole, "Pure");
 });
 
-test("common species abbreviations are accepted", () => {
-  const dragon = normalizeDragonGenetics(baseDragon({ species: "FS" }));
-  assert.equal(dragon.species, "Flame Stalker");
+test("species abbreviations are accepted in every letter case", () => {
+  const aliases = {
+    FS: "Flame Stalker",
+    ss: "Shadow Scale",
+    AsD: "Acid Spitter",
+    ir: "Inferno Ravager",
+    bIo: "Bio",
+    BS: "Blitz Striker",
+    bw: "Brood Watcher"
+  };
+
+  for (const [alias, species] of Object.entries(aliases)) {
+    assert.equal(canonicalSpecies(alias), species);
+    assert.equal(canonicalSpecies(alias.toUpperCase()), species);
+    assert.equal(canonicalSpecies(alias.toLowerCase()), species);
+    assert.equal(normalizeDragonGenetics(baseDragon({ species: alias })).species, species);
+  }
 });
 
 test("Dominant promotes a dragon to 4th Pointed and preserves other traits", () => {
