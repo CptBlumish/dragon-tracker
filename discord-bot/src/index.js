@@ -19,6 +19,7 @@ import {
   formatStatsSummary,
   normalizeDragonFilters,
   normalizeDragonGenetics,
+  parseSpeciesPair,
   parseBooleanChoice,
   parseStats,
   statProgress
@@ -604,7 +605,7 @@ function interactionDisplayName(interaction) {
 
 function modalPayload(interaction, action) {
   if (action === "dragon") {
-    const [accountName, species] = splitValues(fieldValue(interaction, "identity"), 2);
+    const [accountName, species] = parseSpeciesPair(fieldValue(interaction, "identity"));
     const playerName = fieldValue(interaction, "owner");
     const [sex, status, bloodline] = splitValues(fieldValue(interaction, "profile"), 3);
     const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
@@ -626,7 +627,7 @@ function modalPayload(interaction, action) {
     });
   }
   if (action === "egg") {
-    const [requester, species] = splitValues(fieldValue(interaction, "request"), 2);
+    const [requester, species] = parseSpeciesPair(fieldValue(interaction, "request"));
     const [accountName, sex] = splitValues(fieldValue(interaction, "owner"), 2);
     const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
     const [bloodline, pointTraits] = splitValues(fieldValue(interaction, "filters"), 2);
@@ -647,7 +648,7 @@ function modalPayload(interaction, action) {
     });
   }
   if (action === "find") {
-    const [name, species] = splitValues(fieldValue(interaction, "identity"), 2);
+    const [name, species] = parseSpeciesPair(fieldValue(interaction, "identity"));
     const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);
     const [sex, bloodline, pointTraits] = splitValues(fieldValue(interaction, "traits"), 3);
     const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
@@ -686,7 +687,7 @@ function modalPayload(interaction, action) {
     };
   }
   if (action === "brood") {
-    const [name, species] = splitValues(fieldValue(interaction, "identity"), 2);
+    const [name, species] = parseSpeciesPair(fieldValue(interaction, "identity"));
     const [playerName, accountName] = splitValues(fieldValue(interaction, "owner"), 2);
     const [brood, sex, bloodline] = splitValues(fieldValue(interaction, "profile"), 3);
     const [skin, recessiveSkin] = splitValues(fieldValue(interaction, "skins"), 2);

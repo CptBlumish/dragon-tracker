@@ -8,6 +8,7 @@ import {
   inbredPairReason,
   normalizeDragonFilters,
   normalizeDragonGenetics,
+  parseSpeciesPair,
   parseStats,
   statProgress,
   validateStats
@@ -63,6 +64,13 @@ test("species abbreviations are accepted in every letter case", () => {
     assert.equal(canonicalSpecies(alias.toLowerCase()), species);
     assert.equal(normalizeDragonGenetics(baseDragon({ species: alias })).species, species);
   }
+});
+
+test("combined Discord fields preserve identity and recognize flexible species separators", () => {
+  for (const value of ["Maximus | IR", "Maximus ｜ ir", "Maximus / Ir", "Maximus IR"]) {
+    assert.deepEqual(parseSpeciesPair(value), ["Maximus", "Inferno Ravager"]);
+  }
+  assert.deepEqual(parseSpeciesPair("Blumish Account | ASD"), ["Blumish Account", "Acid Spitter"]);
 });
 
 test("Dominant promotes a dragon to 4th Pointed and preserves other traits", () => {

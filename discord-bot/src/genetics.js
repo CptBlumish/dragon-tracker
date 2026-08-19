@@ -79,6 +79,25 @@ export function canonicalSpecies(value) {
   return aliases[key] || canonicalChoice(value, SPECIES);
 }
 
+// Discord combines an account/name and species into one field, so accept common separators and pasted pipe characters.
+export function parseSpeciesPair(value) {
+  const raw = clean(value, 300);
+  const separated = raw.split(/[|｜│┃¦/;,\n]+/).map((part) => part.trim()).filter(Boolean);
+  if (separated.length > 1) {
+    const enteredSpecies = separated.slice(1).join(" ");
+    return [separated[0], canonicalSpecies(enteredSpecies) || enteredSpecies];
+  }
+
+  const words = raw.split(/\s+/).filter(Boolean);
+  for (let index = 0; index < words.length; index += 1) {
+    const species = canonicalSpecies(words.slice(index).join(" "));
+    if (!species) continue;
+    const identity = words.slice(0, index).join(" ").replace(/[|｜│┃¦/;,:-]+$/g, "").trim();
+    return [identity, species];
+  }
+  return [raw, ""];
+}
+
 export function canonicalGrade(value, fallback = "") {
   const grade = clean(value, 4).toUpperCase();
   return GRADES.includes(grade) ? grade : fallback;
@@ -187,7 +206,7 @@ export function statProgress(statsInput) {
 
 export function normalizeDragonGenetics(input = {}, defaults = {}) {
   const species = canonicalSpecies(input.species);
-  if (!species) throw new Error("Choose a valid dragon species.");
+  if (!species) throw new Error("Choose a valid species. In Add Dragon, use Account name | Species, for example Maximus | IR.");
   const name = clean(input.name || input.accountName, 80);
   if (!name) throw new Error("Dragon name is required.");
 
