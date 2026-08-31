@@ -3,7 +3,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.22";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.23";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -15,9 +15,9 @@ const DEFAULT_SPECIES = [
   { name: "Bio", className: "2", element: "Bioluminescence", diet: "Nectarivore" },
   { name: "Blitz Striker", className: "", element: "Lightning", diet: "Carnivore" },
   { name: "Brood Watcher", className: "6", element: "None", diet: "Herbivore" },
-  { name: "Mimikor", className: "", element: "", diet: "", upcoming: true },
   { name: "Singe Crest", className: "", element: "", diet: "", upcoming: true },
-  { name: "Feathered Zygovo", className: "", element: "", diet: "", upcoming: true }
+  { name: "Feathered Zygovo", className: "", element: "", diet: "", upcoming: true },
+  { name: "Mimikor", className: "", element: "", diet: "", upcoming: true }
 ];
 const UPCOMING_SPECIES = new Set(DEFAULT_SPECIES.filter((species) => species.upcoming).map((species) => species.name));
 

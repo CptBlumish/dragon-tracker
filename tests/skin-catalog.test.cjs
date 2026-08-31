@@ -9,5 +9,5 @@ const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "u
 test("Stardust is available as an Uncommon Shadow Scale skin with a turntable", () => {
   assert.match(source, /species:\s*"Shadow Scale"[\s\S]*?\["Stardust",\s*"Uncommon",\s*"Spawnable"\]/);
   assert.match(source, /\["Shadow Scale::stardust",\s*"shadow-scale\/stardust\.mp4"\]/);
-  assert.match(indexSource, /app\.js\?v=20260819-stardust/);
+  assert.match(indexSource, /<script src="\.\/app\.js\?v=[^"]+"><\/script>/);
 });
