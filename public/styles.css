@@ -180,6 +180,15 @@ h1 em { color: var(--teal); font-family: 'Playfair Display', Georgia, serif; fon
 .import-icon { display: grid; place-items: center; flex: 0 0 auto; width: 31px; height: 31px; border-radius: 8px; color: var(--teal); background: #dcefe9; font-size: 19px; }
 .import-intro p { margin-bottom: 5px; color: #46636a; font-size: 11px; line-height: 1.45; }
 .import-intro span { display: block; font-size: 9px; line-height: 1.5; }
+.import-divider { display: flex; align-items: center; gap: 10px; margin: 15px 0; color: #aab5b7; font-family: 'DM Mono', monospace; font-size: 8px; text-transform: uppercase; }
+.import-divider::before, .import-divider::after { flex: 1; height: 1px; content: ''; background: var(--line); }
+.file-picker { display: flex; align-items: center; gap: 11px; padding: 12px; border: 1px dashed #c8dedb; border-radius: 7px; color: #628083; background: #fbfefd; cursor: pointer; transition: .2s ease; }
+.file-picker:hover, .file-picker:focus-within { border-color: #78b7ae; background: #f3fbf8; }
+.file-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.file-picker-icon { display: grid; place-items: center; flex: 0 0 auto; width: 29px; height: 29px; border-radius: 7px; color: var(--teal); background: #e5f3ef; font-size: 17px; }
+.file-picker strong, .file-picker small { display: block; }
+.file-picker strong { color: #567176; font-size: 10px; }
+.file-picker small { margin-top: 3px; color: #9aa7a9; font-size: 8px; font-weight: 400; }
 .sheet-help { margin-top: 14px; padding: 12px 13px; border-left: 2px solid #b9dcd7; background: #f8faf9; }
 .sheet-help strong { display: block; margin-bottom: 5px; color: #5a7478; font-size: 10px; }
 .sheet-help p { margin: 0; color: #8b999d; font-size: 9px; line-height: 1.6; }

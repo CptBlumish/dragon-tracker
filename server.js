@@ -3,7 +3,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { URL } = require("node:url");
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.DRAGON_TRACKER_PORT || process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_FILE = path.resolve(process.env.DRAGON_CSV_PATH || path.join(__dirname, "data", "dragons.csv"));
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -326,6 +326,26 @@ function mergeImport(existingRecords, importRecords) {
   return { records, added, updated, skipped };
 }
 
+async function importCsvIntoRegistry(csvText) {
+  const parsed = parseCsv(csvText);
+  if (parsed.headers.length === 0) throw new Error("The CSV file is empty.");
+
+  const mapping = mapImportHeaders(parsed.headers);
+  const imported = parsed.records.map((row) => mapImportedRecord(row, mapping));
+  const existing = await readRecords();
+  const result = mergeImport(existing, imported);
+  if (result.added + result.updated === 0) {
+    throw new Error("No dragon rows were found. Add a Name column or put dragon names in the first column.");
+  }
+
+  await writeRecords(result.records);
+  return {
+    ...result,
+    total: result.records.length,
+    mappedFields: Object.keys(mapping),
+  };
+}
+
 function getGoogleSheetCsvUrl(rawUrl) {
   let url;
   try {
@@ -404,18 +424,24 @@ function sendError(response, statusCode, message) {
   sendJson(response, statusCode, { error: message });
 }
 
-async function readJsonBody(request) {
+async function readRawBody(request, maximumBytes = MAX_BODY_BYTES, tooLargeMessage = "Request is too large.") {
   const chunks = [];
   let total = 0;
 
   for await (const chunk of request) {
     total += chunk.length;
-    if (total > MAX_BODY_BYTES) throw new Error("Request is too large.");
+    if (total > maximumBytes) throw new Error(tooLargeMessage);
     chunks.push(chunk);
   }
 
+  return Buffer.concat(chunks);
+}
+
+async function readJsonBody(request) {
+  const body = await readRawBody(request);
+
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+    return JSON.parse(body.toString("utf8") || "{}");
   } catch {
     throw new Error("Request body must be valid JSON.");
   }
@@ -507,21 +533,15 @@ async function handleRequest(request, response) {
     if (pathname === "/api/import/google-sheet" && request.method === "POST") {
       const body = await readJsonBody(request);
       const csvText = await fetchGoogleSheetCsv(body.url);
-      const parsed = parseCsv(csvText);
-      if (parsed.headers.length === 0) return sendError(response, 400, "The sheet is empty.");
-      const mapping = mapImportHeaders(parsed.headers);
-      const imported = parsed.records.map((row) => mapImportedRecord(row, mapping));
-      const existing = await readRecords();
-      const result = mergeImport(existing, imported);
-      if (result.added + result.updated === 0) {
-        return sendError(response, 400, "No dragon rows were found. Add a Name column or put dragon names in the first column.");
-      }
-      await writeRecords(result.records);
-      sendJson(response, 200, {
-        ...result,
-        total: result.records.length,
-        mappedFields: Object.keys(mapping),
-      });
+      const result = await importCsvIntoRegistry(csvText);
+      sendJson(response, 200, result);
+      return;
+    }
+
+    if (pathname === "/api/import/csv" && request.method === "POST") {
+      const csvBuffer = await readRawBody(request, MAX_IMPORT_BYTES, "CSV files must be 5 MB or smaller.");
+      const result = await importCsvIntoRegistry(csvBuffer.toString("utf8"));
+      sendJson(response, 200, result);
       return;
     }
 

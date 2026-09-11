@@ -164,10 +164,12 @@
     <div class="modal-backdrop hidden" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
       <div class="modal-card import-card">
         <div class="modal-header"><div><span class="eyebrow">Bring your roster</span><h2 id="import-modal-title">Import a Google Sheet</h2></div><button class="icon-button" type="button" data-close-modal aria-label="Close">×</button></div>
-        <div class="import-intro"><div class="import-icon">↥</div><div><p>Paste a Google Sheets link and Dragon Tracker will read the first tab as CSV.</p><span>Existing records are matched by ID, or by dragon name + account, so re-importing updates instead of duplicating them.</span></div></div>
+        <div class="import-intro"><div class="import-icon">↥</div><div><p>Paste a Google Sheets link or upload a downloaded CSV.</p><span>Existing records are matched by ID, or by dragon name + account, so re-importing updates instead of duplicating them.</span></div></div>
         <form id="import-form">
-          <label class="form-field"><span>Google Sheets URL <b>*</b></span><input id="sheet-url" name="url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/..." /></label>
-          <div class="sheet-help"><strong>Before importing</strong><p>Set the sheet to <em>Anyone with the link can view</em> or publish it to the web. Helpful column names include <code>Name</code>, <code>Species</code>, <code>Skin</code>, <code>Rarity</code>, <code>Element</code>, <code>Age</code>, <code>Health</code>, <code>Status</code>, <code>Location</code>, <code>Account</code>, and <code>Last Seen</code>.</p></div>
+          <label class="form-field"><span>Google Sheets URL <small>(optional if uploading a file)</small></span><input id="sheet-url" name="url" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." /></label>
+          <div class="import-divider"><span>or</span></div>
+          <label class="file-picker" for="csv-file"><span class="file-picker-icon">＋</span><span><strong id="csv-file-label">Choose a downloaded CSV</strong><small>Google Sheets → File → Download → Comma-separated values</small></span><input id="csv-file" type="file" accept=".csv,text/csv" /></label>
+          <div class="sheet-help"><strong>Before importing</strong><p>For a Google Sheet, set it to <em>Anyone with the link can view</em> or publish it to the web. Helpful column names include <code>Name</code>, <code>Species</code>, <code>Skin</code>, <code>Rarity</code>, <code>Element</code>, <code>Age</code>, <code>Health</code>, <code>Status</code>, <code>Location</code>, <code>Account</code>, and <code>Last Seen</code>.</p></div>
           <p class="form-error" id="import-form-error" role="alert"></p>
           <p class="form-success" id="import-form-success" role="status"></p>
           <div class="modal-actions"><button class="button button-quiet" type="button" data-close-modal>Cancel</button><button class="button button-primary" type="submit" id="import-button">Import records</button></div>

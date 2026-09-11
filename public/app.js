@@ -40,6 +40,9 @@ const elements = {
   importError: document.getElementById("import-form-error"),
   importSuccess: document.getElementById("import-form-success"),
   importButton: document.getElementById("import-button"),
+  csvFile: document.getElementById("csv-file"),
+  csvFileLabel: document.getElementById("csv-file-label"),
+  sheetUrl: document.getElementById("sheet-url"),
   saveButton: document.getElementById("save-dragon-button"),
   modalTitle: document.getElementById("dragon-modal-title"),
   toast: document.getElementById("toast"),
@@ -68,6 +71,13 @@ function bindEvents() {
   elements.statusFilter.addEventListener("change", render);
   elements.dragonForm.addEventListener("submit", saveDragon);
   elements.importForm.addEventListener("submit", importGoogleSheet);
+  elements.csvFile.addEventListener("change", updateCsvFileLabel);
+  elements.sheetUrl.addEventListener("input", () => {
+    if (elements.sheetUrl.value && elements.csvFile.files.length) {
+      elements.csvFile.value = "";
+      updateCsvFileLabel();
+    }
+  });
 
   elements.table.addEventListener("click", (event) => {
     const action = event.target.closest("[data-action]");
@@ -248,6 +258,7 @@ function openDragonModal(id = null) {
 
 function openImportModal() {
   elements.importForm.reset();
+  updateCsvFileLabel();
   elements.importError.textContent = "";
   elements.importSuccess.textContent = "";
   elements.importButton.disabled = false;
@@ -311,8 +322,18 @@ async function importGoogleSheet(event) {
   elements.importButton.disabled = true;
   elements.importButton.textContent = "Reading sheet…";
   try {
-    const url = new FormData(elements.importForm).get("url");
-    const result = await apiRequest("/api/import/google-sheet", { method: "POST", body: JSON.stringify({ url }) });
+    const url = String(new FormData(elements.importForm).get("url") || "").trim();
+    const file = elements.csvFile.files[0];
+    if (!url && !file) throw new Error("Paste a Google Sheets URL or choose a downloaded CSV file.");
+    if (url && file) throw new Error("Choose either a Google Sheets URL or a CSV file, not both.");
+
+    let result;
+    if (file) {
+      if (!file.name.toLowerCase().endsWith(".csv")) throw new Error("Please choose a CSV file downloaded from Google Sheets.");
+      result = await uploadCsvFile(file);
+    } else {
+      result = await apiRequest("/api/import/google-sheet", { method: "POST", body: JSON.stringify({ url }) });
+    }
     const summary = `${result.added} added · ${result.updated} updated${result.skipped ? ` · ${result.skipped} skipped` : ""}`;
     elements.importSuccess.textContent = `Import complete — ${summary}.`;
     showToast(`Sheet imported: ${result.added} added, ${result.updated} updated.`);
@@ -324,6 +345,22 @@ async function importGoogleSheet(event) {
     elements.importButton.disabled = false;
     elements.importButton.textContent = "Import records";
   }
+}
+
+async function uploadCsvFile(file) {
+  const response = await fetch("/api/import/csv", {
+    method: "POST",
+    headers: { "Content-Type": "text/csv" },
+    body: file,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "The CSV file could not be imported.");
+  return payload;
+}
+
+function updateCsvFileLabel() {
+  const file = elements.csvFile.files[0];
+  elements.csvFileLabel.textContent = file ? file.name : "Choose a downloaded CSV";
 }
 
 function showToast(message, isError = false) {
