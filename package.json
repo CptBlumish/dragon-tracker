@@ -1,0 +1,14 @@
+{
+  "name": "dragon-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A CSV-backed dragon tracker with Google Sheets import and live visualizations.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

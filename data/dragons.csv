@@ -1,0 +1,7 @@
+id,name,species,skin,rarity,element,age,health,weight,status,location,account,lastSeen,notes
+DRG-001,Ember,Fire Drake,,,Fire,37,92,410,Active,Volcanic Ridge,Alex,2026-09-08,Prefers warm caves
+DRG-002,Mistwing,Cloud Serpent,,,Air,18,78,180,Active,Skyrise Valley,Jordan,2026-09-06,Seen near the eastern cliffs
+DRG-003,Brine,Leviathan,,,Water,64,96,1200,Hatched,Tideglass Bay,Alex,2026-08-29,Recently moved to the nursery
+DRG-004,Thornscale,Forest Wyrm,,,Nature,29,84,530,Missing,Mosslight Grove,Sam,2026-09-01,Last tracked by the old watchtower
+DRG-005,Quartz,Crystal Dragon,,,Earth,52,89,760,Retired,Sunken Archives,Jordan,2026-08-14,Retired from expeditions
+DRG-006,Shadow Scale,Shadow Scale,Celestial,Common,Unknown,,,,Active,,,,

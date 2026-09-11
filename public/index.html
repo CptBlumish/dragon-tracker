@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f1720" />
+    <title>Dragon Tracker</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">✦</div>
+          <div>
+            <span class="brand-kicker">Field journal</span>
+            <strong>Dragon Tracker</strong>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Primary navigation">
+          <a class="nav-item active" href="#dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
+          <a class="nav-item" href="#records"><span class="nav-icon">▤</span>All records</a>
+          <button class="nav-item nav-button" type="button" data-open-import><span class="nav-icon">↥</span>Import sheet</button>
+        </nav>
+
+        <div class="sidebar-source">
+          <span class="eyebrow">Data source</span>
+          <strong><span class="status-dot"></span>dragons.csv</strong>
+          <p>Local, editable, and exportable. Your chart reads from this file.</p>
+        </div>
+
+        <div class="sidebar-footer">
+          <span>CSV-backed tracker</span>
+          <span id="last-synced">Waiting for sync</span>
+        </div>
+      </aside>
+
+      <main class="main-content" id="dashboard">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Workspace</span><span class="crumb-separator">/</span><strong>Overview</strong></div>
+          <div class="topbar-actions">
+            <button class="button button-quiet" type="button" id="export-button"><span aria-hidden="true">↓</span> Export CSV</button>
+            <button class="button button-primary" type="button" id="add-dragon-button"><span aria-hidden="true">+</span> Add dragon</button>
+          </div>
+        </header>
+
+        <section class="hero-section" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow accent-eyebrow">Dragon registry <span class="spark">✦</span></p>
+            <h1 id="page-title">Know every dragon<br /><em>in your realm.</em></h1>
+            <p class="hero-copy">Keep your roster in one place, pull in the sheets you already use, and let the live chart reveal what is hiding in the numbers.</p>
+          </div>
+          <div class="hero-orbit" aria-hidden="true">
+            <div class="orbit orbit-one"></div>
+            <div class="orbit orbit-two"></div>
+            <div class="dragon-silhouette">♢</div>
+            <span class="orbit-label label-one">ROSTER</span>
+            <span class="orbit-label label-two">LIVE DATA</span>
+          </div>
+        </section>
+
+        <section class="stats-grid" aria-label="Dragon summary">
+          <article class="stat-card stat-primary">
+            <div class="stat-icon">✦</div>
+            <div><span class="stat-label">Total dragons</span><strong id="stat-total">—</strong></div>
+            <span class="stat-trend" id="stat-total-note">in your registry</span>
+          </article>
+          <article class="stat-card">
+            <div class="stat-icon soft-blue">◉</div>
+            <div><span class="stat-label">Active sightings</span><strong id="stat-active">—</strong></div>
+            <span class="stat-trend positive" id="stat-active-note">currently active</span>
+          </article>
+          <article class="stat-card">
+            <div class="stat-icon soft-purple">◇</div>
+            <div><span class="stat-label">Elements tracked</span><strong id="stat-elements">—</strong></div>
+            <span class="stat-trend" id="stat-elements-note">different affinities</span>
+          </article>
+          <article class="stat-card">
+            <div class="stat-icon soft-green">⌁</div>
+            <div><span class="stat-label">Avg. health</span><strong id="stat-health">—</strong></div>
+            <span class="stat-trend positive" id="stat-health-note">across known dragons</span>
+          </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel chart-panel">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Live visualization</span>
+                <h2>Dragons by element</h2>
+              </div>
+              <span class="live-pill"><span class="live-dot"></span>Updates from CSV</span>
+            </div>
+            <div class="chart-wrap" id="element-chart" aria-label="Bar chart showing dragons by element"></div>
+            <div class="chart-footer"><span><span class="legend-dot"></span>Dragon records</span><span id="chart-total">— records</span></div>
+          </article>
+
+          <article class="panel workflow-panel">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Simple workflow</span>
+                <h2>From sheet to insight</h2>
+              </div>
+              <span class="panel-number">01—03</span>
+            </div>
+            <div class="workflow-list">
+              <div class="workflow-step"><span class="step-number">01</span><div><strong>Import your sheet</strong><p>Bring in the roster you already maintain in Google Sheets.</p></div></div>
+              <div class="workflow-step"><span class="step-number">02</span><div><strong>Keep it current</strong><p>Add or edit a record whenever a dragon is spotted.</p></div></div>
+              <div class="workflow-step"><span class="step-number">03</span><div><strong>See the pattern</strong><p>The chart redraws itself as your CSV changes.</p></div></div>
+            </div>
+            <button class="text-button" type="button" data-open-import>Import a Google Sheet <span aria-hidden="true">↗</span></button>
+          </article>
+        </section>
+
+        <section class="panel records-panel" id="records">
+          <div class="records-header">
+            <div>
+              <span class="eyebrow">The registry</span>
+              <h2>All dragon records <span class="count-badge" id="record-count">0</span></h2>
+            </div>
+            <div class="record-tools">
+              <label class="search-box"><span aria-hidden="true">⌕</span><input id="search-input" type="search" placeholder="Search dragons..." aria-label="Search dragons" /></label>
+              <label class="filter-select"><span class="sr-only">Filter by element</span><select id="element-filter"><option value="all">All elements</option></select></label>
+              <label class="filter-select"><span class="sr-only">Filter by status</span><select id="status-filter"><option value="all">All statuses</option><option>Active</option><option>Hatched</option><option>Missing</option><option>Retired</option></select></label>
+            </div>
+          </div>
+          <div class="table-wrap" id="table-container"></div>
+        </section>
+
+        <footer class="main-footer">
+          <span>Keep your records close. Keep your dragons closer.</span>
+          <span>Stored in <code>data/dragons.csv</code></span>
+        </footer>
+      </main>
+    </div>
+
+    <div class="modal-backdrop hidden" id="dragon-modal" role="dialog" aria-modal="true" aria-labelledby="dragon-modal-title">
+      <div class="modal-card">
+        <div class="modal-header"><div><span class="eyebrow">Registry entry</span><h2 id="dragon-modal-title">Add a dragon</h2></div><button class="icon-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <form id="dragon-form">
+          <div class="form-grid">
+            <label class="form-field span-two"><span>Dragon name <b>*</b></span><input name="name" required maxlength="80" placeholder="e.g. Ember" /></label>
+            <label class="form-field"><span>Species</span><input name="species" maxlength="80" placeholder="e.g. Fire Drake" /></label>
+            <label class="form-field"><span>Skin</span><input name="skin" maxlength="80" placeholder="e.g. Celestial" /></label>
+            <label class="form-field"><span>Rarity</span><select name="rarity"><option value="">No rarity</option><option>Common</option><option>Uncommon</option><option>Rare</option><option>Epic</option><option>Legendary</option></select></label>
+            <label class="form-field"><span>Element</span><input name="element" maxlength="40" placeholder="e.g. Fire" /></label>
+            <label class="form-field"><span>Age</span><input name="age" type="number" min="0" step="1" placeholder="Years" /></label>
+            <label class="form-field"><span>Health <small>(0–100)</small></span><input name="health" type="number" min="0" max="100" step="1" placeholder="92" /></label>
+            <label class="form-field"><span>Weight</span><input name="weight" type="number" min="0" step="0.1" placeholder="410" /></label>
+            <label class="form-field"><span>Status</span><select name="status"><option>Active</option><option>Hatched</option><option>Missing</option><option>Retired</option></select></label>
+            <label class="form-field"><span>Location</span><input name="location" maxlength="120" placeholder="e.g. Volcanic Ridge" /></label>
+            <label class="form-field"><span>Account / player</span><input name="account" maxlength="80" placeholder="e.g. Alex" /></label>
+            <label class="form-field"><span>Last seen</span><input name="lastSeen" type="date" /></label>
+            <label class="form-field span-two"><span>Notes</span><textarea name="notes" maxlength="300" rows="3" placeholder="Anything worth remembering..."></textarea></label>
+          </div>
+          <p class="form-error" id="dragon-form-error" role="alert"></p>
+          <div class="modal-actions"><button class="button button-quiet" type="button" data-close-modal>Cancel</button><button class="button button-primary" type="submit" id="save-dragon-button">Save record</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+      <div class="modal-card import-card">
+        <div class="modal-header"><div><span class="eyebrow">Bring your roster</span><h2 id="import-modal-title">Import a Google Sheet</h2></div><button class="icon-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <div class="import-intro"><div class="import-icon">↥</div><div><p>Paste a Google Sheets link and Dragon Tracker will read the first tab as CSV.</p><span>Existing records are matched by ID, or by dragon name + account, so re-importing updates instead of duplicating them.</span></div></div>
+        <form id="import-form">
+          <label class="form-field"><span>Google Sheets URL <b>*</b></span><input id="sheet-url" name="url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/..." /></label>
+          <div class="sheet-help"><strong>Before importing</strong><p>Set the sheet to <em>Anyone with the link can view</em> or publish it to the web. Helpful column names include <code>Name</code>, <code>Species</code>, <code>Skin</code>, <code>Rarity</code>, <code>Element</code>, <code>Age</code>, <code>Health</code>, <code>Status</code>, <code>Location</code>, <code>Account</code>, and <code>Last Seen</code>.</p></div>
+          <p class="form-error" id="import-form-error" role="alert"></p>
+          <p class="form-success" id="import-form-success" role="status"></p>
+          <div class="modal-actions"><button class="button button-quiet" type="button" data-close-modal>Cancel</button><button class="button button-primary" type="submit" id="import-button">Import records</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast hidden" id="toast" role="status"></div>
+  </body>
+</html>
