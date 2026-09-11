@@ -11,3 +11,8 @@ test("Stardust is available as an Uncommon Shadow Scale skin with a turntable", 
   assert.match(source, /\["Shadow Scale::stardust",\s*"shadow-scale\/stardust\.mp4"\]/);
   assert.match(indexSource, /<script src="\.\/app\.js\?v=[^"]+"><\/script>/);
 });
+
+test("Celestial is available as a Common Shadow Scale skin with a turntable", () => {
+  assert.match(source, /species:\s*"Shadow Scale"[\s\S]*?\["Celestial",\s*"Common",\s*"Spawnable"\]/);
+  assert.match(source, /\["Shadow Scale::celestial",\s*"shadow-scale\/celestial\.mp4"\]/);
+});

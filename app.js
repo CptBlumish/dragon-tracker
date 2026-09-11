@@ -3,7 +3,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.23";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.24";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -153,6 +153,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added Celestial as a Common Shadow Scale spawn skin in the web and desktop skin selectors.",
   "Added Stardust as an Uncommon Shadow Scale spawn skin in the web and desktop skin selectors.",
   "Added precise map pin entry using the game's 807 N/S and 806 E/W coordinate bounds.",
   "Clan bot dragons now stay in the read-only Clan Library and can be selected directly in Breeding without entering local Players or Dragons.",
@@ -288,6 +289,7 @@ const SKIN_TURNTABLES = new Map([
   ["Inferno Ravager::sulfire", "inferno-ravager/sulfire.mp4"],
   ["Inferno Ravager::tigerclaw", "inferno-ravager/tigerclaw.mp4"],
   ["Shadow Scale::brindle", "shadow-scale/brindle.mp4"],
+  ["Shadow Scale::celestial", "shadow-scale/celestial.mp4"],
   ["Shadow Scale::eclipse", "shadow-scale/eclipse.mp4"],
   ["Shadow Scale::leucistic", "shadow-scale/leucistic.mp4"],
   ["Shadow Scale::leumelan", "shadow-scale/leumelan.mp4"],
@@ -362,6 +364,7 @@ const SPECIES_SKIN_GROUPS = [
     species: "Shadow Scale",
     skins: [
       ["Iconic", "Common", "Spawnable"],
+      ["Celestial", "Common", "Spawnable"],
       ["Sunset", "Rare", "Spawnable"],
       ["Stardust", "Uncommon", "Spawnable"],
       ["Eclipse", "Rare", "Spawnable"],
