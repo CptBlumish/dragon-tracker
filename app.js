@@ -6073,7 +6073,7 @@ function renderElderTick() {
     els.elderTickCountdown.textContent = "Ready to start";
     renderElderTickRing(0, "idle", "Ready to start");
     els.elderTickDescription.textContent = "Start this six hour tick reminder when you log into the account in-game. No Steam link is required.";
-    els.elderTickResetBtn.textContent = "Start 6-Hour Timer";
+    els.elderTickResetBtn.textContent = "Start Six Hour Timer";
     els.elderTickResetBtn.disabled = false;
     els.elderTickForceResetBtn.disabled = true;
     return;
