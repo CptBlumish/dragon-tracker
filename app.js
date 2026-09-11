@@ -608,6 +608,8 @@ const els = {
   syncSettingsState: document.querySelector("#syncSettingsState"),
   syncSettingsDescription: document.querySelector("#syncSettingsDescription"),
   elderTickState: document.querySelector("#elderTickState"),
+  elderTickRing: document.querySelector("#elderTickRing"),
+  elderTickRingFill: document.querySelector("#elderTickRingFill"),
   elderTickCountdown: document.querySelector("#elderTickCountdown"),
   elderTickDescription: document.querySelector("#elderTickDescription"),
   elderTickResetBtn: document.querySelector("#elderTickResetBtn"),
@@ -1704,6 +1706,7 @@ function bindEvents() {
   els.globalSearch?.addEventListener("input", renderGlobalSearch);
   els.globalSearchResults?.addEventListener("click", handleGlobalSearchAction);
   document.addEventListener("click", handleDocumentSearchClose);
+  document.addEventListener("click", handleEmptyStateAction);
   els.addDragonBtn.addEventListener("click", () => openDragonDialog());
   els.homeAddAccountBtn?.addEventListener("click", () => openAccountDialog("", { username: normalizePersonalPlayer(state.settings?.personalPlayer, state.accounts) }));
   els.addAccountBtn.addEventListener("click", () => openAccountDialog());
@@ -2159,28 +2162,43 @@ function renderAccountNameDatalist(username = "") {
   els.accountOptions.innerHTML = accountNames.map((name) => `<option value="${escapeAttr(name)}"></option>`).join("");
 }
 
+function renderEmptyState({ kicker = "Get started", title, description, action = "", actionLabel = "Get started", actionValue = "" } = {}) {
+  const actionMarkup = action
+    ? `<div class="button-row"><button class="primary-button empty-state-action" type="button" data-empty-action="${escapeAttr(action)}"${actionValue ? ` data-empty-value="${escapeAttr(actionValue)}"` : ""}>${escapeHtml(actionLabel)}</button></div>`
+    : "";
+  return `
+    <div class="empty-state">
+      <p class="eyebrow">${escapeHtml(kicker)}</p>
+      <h2>${escapeHtml(title)}</h2>
+      <p>${escapeHtml(description)}</p>
+      ${actionMarkup}
+    </div>
+  `;
+}
+
 function renderDragons() {
   const dragons = getFilteredDragons();
   renderStats(dragons);
 
   if (!state.dragons.length) {
-    els.dragonList.innerHTML = `
-      <div class="empty-state">
-        <h2>No dragons logged yet</h2>
-        <p>Add your first record when you are ready.</p>
-      </div>
-    `;
+    els.dragonList.innerHTML = renderEmptyState({
+      title: "Add your first dragon",
+      description: "Keep the details you reach for most: account, species, skin, status, and stats, in one place.",
+      action: "add-dragon",
+      actionLabel: "Add dragon"
+    });
     renderBackup();
     return;
   }
 
   if (!dragons.length) {
-    els.dragonList.innerHTML = `
-      <div class="empty-state">
-        <h2>No matching dragons</h2>
-        <p>Adjust the filters or add a new record.</p>
-      </div>
-    `;
+    els.dragonList.innerHTML = renderEmptyState({
+      kicker: "Nothing found",
+      title: "No dragons match those filters",
+      description: "Clear a filter or add a new dragon record.",
+      action: "add-dragon",
+      actionLabel: "Add dragon"
+    });
     renderBackup();
     return;
   }
@@ -2272,23 +2290,24 @@ function renderAccounts() {
 
   if (!state.accounts.length) {
     if (els.accountSpeciesMatrix) els.accountSpeciesMatrix.innerHTML = "";
-    els.accountList.innerHTML = `
-      <div class="empty-state">
-        <h2>No players yet</h2>
-        <p>Add a player, then add accounts and dragons under them.</p>
-      </div>
-    `;
+    els.accountList.innerHTML = renderEmptyState({
+      title: "Add your first player",
+      description: "Players own accounts; accounts hold the dragons you want to track.",
+      action: "add-account",
+      actionLabel: "Add player"
+    });
     return;
   }
 
   if (!accounts.length) {
     if (els.accountSpeciesMatrix) els.accountSpeciesMatrix.innerHTML = "";
-    els.accountList.innerHTML = `
-      <div class="empty-state">
-        <h2>No matching players</h2>
-        <p>Adjust the search or add a new player.</p>
-      </div>
-    `;
+    els.accountList.innerHTML = renderEmptyState({
+      kicker: "Nothing found",
+      title: "No players match that search",
+      description: "Try a different name or add a new player.",
+      action: "add-account",
+      actionLabel: "Add player"
+    });
     return;
   }
 
@@ -2305,12 +2324,12 @@ function renderHome() {
   if (!state.accounts.length) {
     renderAccountSpeciesMatrix([], els.homeAccountSpeciesMatrix);
     if (els.homePlayerSummary) els.homePlayerSummary.textContent = "Add a player to choose a personal home view.";
-    els.homeAccountList.innerHTML = `
-      <div class="empty-state">
-        <h2>No accounts yet</h2>
-        <p>Add a player, then add accounts and dragons under them.</p>
-      </div>
-    `;
+    els.homeAccountList.innerHTML = renderEmptyState({
+      title: "Start with a player account",
+      description: "Add a player, then choose the primary account you want to see on Home.",
+      action: "add-account",
+      actionLabel: "Add player"
+    });
     return;
   }
 
@@ -2339,12 +2358,13 @@ function renderHome() {
 
   if (!accounts.length) {
     renderAccountSpeciesMatrix([], els.homeAccountSpeciesMatrix);
-    els.homeAccountList.innerHTML = `
-      <div class="empty-state">
-        <h2>No accounts for ${escapeHtml(personalPlayer)}</h2>
-        <p>Change the personal player in Settings or add an account for this player.</p>
-      </div>
-    `;
+    els.homeAccountList.innerHTML = renderEmptyState({
+      title: `No accounts for ${personalPlayer}`,
+      description: "Change the personal player in Settings or add an account for this player.",
+      action: "add-account",
+      actionLabel: "Add account",
+      actionValue: personalPlayer
+    });
     return;
   }
 
@@ -2774,10 +2794,12 @@ function renderNesting() {
   if (!dragonPool.length) {
     els.createEggBtn.disabled = true;
     els.nestingOutput.innerHTML = `
-      <div class="empty-state">
-        <h2>No parent records</h2>
-        <p>Add dragons before planning nests.</p>
-      </div>
+      ${renderEmptyState({
+        title: "Add dragons before planning nests",
+        description: "The planner needs two saved parent records to calculate skin odds and bloodline notes.",
+        action: "add-dragon",
+        actionLabel: "Add dragon"
+      })}
       <div class="plan-panel full">
         <h2>Pairing Helper</h2>
         ${renderNestPairingHelper()}
@@ -2789,10 +2811,11 @@ function renderNesting() {
   if (!parentA || !parentB) {
     els.createEggBtn.disabled = true;
     els.nestingOutput.innerHTML = `
-      <div class="empty-state">
-        <h2>Select two dragons</h2>
-        <p>The plan will update from their saved records.</p>
-      </div>
+      ${renderEmptyState({
+        kicker: "Next step",
+        title: "Select two dragons",
+        description: "Choose Parent A and Parent B above to see the plan, warnings, and likely skin outcomes."
+      })}
       <div class="plan-panel full">
         <h2>Pairing Helper</h2>
         ${renderNestPairingHelper()}
@@ -2960,12 +2983,12 @@ function renderBroodPouch() {
     .sort((a, b) => sortText(a.entry.brood, b.entry.brood) || new Date(b.entry.updatedAt).getTime() - new Date(a.entry.updatedAt).getTime());
 
   if (!entries.length) {
-    els.broodPouchList.innerHTML = `
-      <div class="empty-state">
-        <h2>No eggs in the brood pouch</h2>
-        <p>In the Nesting Planner, check Add egg to brood pouch before creating an egg.</p>
-      </div>
-    `;
+    els.broodPouchList.innerHTML = renderEmptyState({
+      title: "Your brood pouch is empty",
+      description: "Create an egg in the Nesting Planner and check Add egg to brood pouch to keep it here.",
+      action: "go-breeding",
+      actionLabel: "Open nesting planner"
+    });
     return;
   }
 
@@ -3504,12 +3527,13 @@ function renderSkins() {
     : [];
 
   if (!skins.length && !pendingSpecies.length) {
-    els.skinList.innerHTML = `
-      <div class="empty-state">
-        <h2>No matching skins</h2>
-        <p>Add a skin or adjust the filters.</p>
-      </div>
-    `;
+    els.skinList.innerHTML = renderEmptyState({
+      kicker: "Nothing found",
+      title: "No skins match those filters",
+      description: "Clear a filter or add a custom skin to your catalog.",
+      action: "add-skin",
+      actionLabel: "Add skin"
+    });
     return;
   }
 
@@ -3670,22 +3694,21 @@ function renderUpstats() {
     .sort((a, b) => Number(b.complete) - Number(a.complete) || sortText(a.species, b.species) || sortText(a.skin, b.skin));
 
   if (!state.upstats.length) {
-    els.upstatList.innerHTML = `
-      <div class="empty-state">
-        <h2>No upstats tracked yet</h2>
-        <p>Add a skin when you want to track whether it has reached 18A+.</p>
-      </div>
-    `;
+    els.upstatList.innerHTML = renderEmptyState({
+      title: "Track your first upstat",
+      description: "Record a species, skin, and account to see progress toward 18A+.",
+      action: "add-upstat",
+      actionLabel: "Add upstat"
+    });
     return;
   }
 
   if (!records.length) {
-    els.upstatList.innerHTML = `
-      <div class="empty-state">
-        <h2>No matching upstats</h2>
-        <p>Adjust the search or filters.</p>
-      </div>
-    `;
+    els.upstatList.innerHTML = renderEmptyState({
+      kicker: "Nothing found",
+      title: "No upstats match those filters",
+      description: "Try a different search or process filter."
+    });
     return;
   }
 
@@ -4192,7 +4215,7 @@ function renderClans() {
   if (!els.clanContent.childElementCount) {
     els.clanContent.innerHTML = `
       <section class="clan-panel clan-sync-health">
-        <div class="card-head"><div class="card-title"><h2>Clan Library</h2><p class="card-subtitle">Loading the shared clan workspace</p></div><span class="pill">Loading</span></div>
+        <div class="card-head"><div class="card-title"><h2>Clan Library</h2><p class="card-subtitle">Loading the shared clan workspace</p></div><span class="pill"><span class="loading-indicator" aria-hidden="true"></span>Loading</span></div>
       </section>
     `;
   }
@@ -4372,7 +4395,7 @@ function renderClansContent() {
         <div><dt>Clan dragons</dt><dd>${clanLibraryDragons.length}</dd></div>
         <div><dt>Map pins</dt><dd>${clanUi.sharedPins.length}</dd></div>
       </dl>
-      <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh"${clanUi.loading ? " disabled" : ""}>${clanUi.loading ? "Refreshing..." : "Refresh Clan Library"}</button></div>
+      <div class="card-actions"><button class="primary-button" type="button" data-clan-action="refresh"${clanUi.loading ? " disabled" : ""}>${clanUi.loading ? '<span class="loading-indicator" aria-hidden="true"></span>Refreshing...' : "Refresh Clan Library"}</button></div>
     </section>
 
     <section class="clan-panel clan-identity-panel">
@@ -5407,7 +5430,12 @@ function renderMapPins() {
         </div>
       </article>
     `).join("")
-    : `<div class="empty-state map-empty"><h2>No shared pins</h2><p>Add a pin or import a location code.</p></div>`;
+    : renderEmptyState({
+      title: "Save a map pin",
+      description: "Mark a location on the map or import a location code to keep it handy.",
+      action: "add-map-pin",
+      actionLabel: "Add map pin"
+    });
 }
 
 function visibleClanMapPins() {
@@ -5919,7 +5947,7 @@ function renderSetupChecklist() {
     { label: "Add dragons to the tracker", done: state.dragons.length > 0 },
     { label: "Export a JSON backup", done: Boolean(state.settings?.lastBackupAt) },
     { label: "Join a clan only if you want shared dragons or pins", done: Boolean(activeClanMembership()) },
-    { label: "Start an elder tick timer when needed", done: Boolean(elderTickStartTime() || Object.keys(state.settings?.elderTickAccounts || {}).length) }
+    { label: "Start a six hour tick reminder when needed", done: Boolean(elderTickStartTime() || Object.keys(state.settings?.elderTickAccounts || {}).length) }
   ];
   els.setupChecklist.innerHTML = renderQualityItems(items);
 }
@@ -6011,19 +6039,29 @@ function formatElderTickCountdown(milliseconds) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function renderElderTickRing(remainingMs, stateName, accessibleText) {
+  if (!els.elderTickRing) return;
+  const remaining = Math.max(0, Math.min(ELDER_TICK_INTERVAL_MS, Number(remainingMs) || 0));
+  const percentage = (remaining / ELDER_TICK_INTERVAL_MS) * 100;
+  els.elderTickRing.dataset.state = stateName;
+  els.elderTickRing.setAttribute("aria-valuenow", String(Math.round(percentage)));
+  els.elderTickRing.setAttribute("aria-valuetext", accessibleText);
+  if (els.elderTickRingFill) els.elderTickRingFill.style.strokeDashoffset = String(100 - percentage);
+}
+
 function handleElderTickReset() {
   if (elderTickRemainingMs() > 0) return;
   state.settings.elderTickStartedAt = new Date().toISOString();
   saveState();
   renderElderTick();
-  showToast("Elder tick recorded. Your next reminder is in six hours.");
+  showToast("Six hour tick recorded. Your next reminder is in six hours.");
 }
 
 function handleElderTickForceReset() {
   state.settings.elderTickStartedAt = new Date().toISOString();
   saveState();
   renderElderTick();
-  showToast("Elder tick timer reset. Your next reminder is in six hours.");
+  showToast("Six hour tick timer reset. Your next reminder is in six hours.");
 }
 
 function renderElderTick() {
@@ -6033,7 +6071,8 @@ function renderElderTick() {
   if (!startedAt) {
     els.elderTickState.textContent = "Local Timer";
     els.elderTickCountdown.textContent = "Ready to start";
-    els.elderTickDescription.textContent = "Start this six-hour reminder when you log into the account in-game. No Steam link is required.";
+    renderElderTickRing(0, "idle", "Ready to start");
+    els.elderTickDescription.textContent = "Start this six hour tick reminder when you log into the account in-game. No Steam link is required.";
     els.elderTickResetBtn.textContent = "Start 6-Hour Timer";
     els.elderTickResetBtn.disabled = false;
     els.elderTickForceResetBtn.disabled = true;
@@ -6045,7 +6084,8 @@ function renderElderTick() {
     const dueAt = new Date(startedAt + ELDER_TICK_INTERVAL_MS);
     els.elderTickState.textContent = "Counting Down";
     els.elderTickCountdown.textContent = formatElderTickCountdown(remaining);
-    els.elderTickDescription.textContent = `Next elder tick reminder: ${formatDateTime(dueAt.toISOString())}.`;
+    renderElderTickRing(remaining, "counting", `${formatElderTickCountdown(remaining)} remaining`);
+    els.elderTickDescription.textContent = `Next six hour tick reminder: ${formatDateTime(dueAt.toISOString())}.`;
     els.elderTickResetBtn.textContent = "Mark Tick Taken";
     els.elderTickResetBtn.disabled = true;
     els.elderTickForceResetBtn.disabled = false;
@@ -6054,7 +6094,8 @@ function renderElderTick() {
 
   els.elderTickState.textContent = "Tick Ready";
   els.elderTickCountdown.textContent = "Ready now";
-  els.elderTickDescription.textContent = "Take the elder tick in-game, then mark it taken here to begin the next six-hour reminder.";
+  renderElderTickRing(0, "ready", "Ready now");
+  els.elderTickDescription.textContent = "Take the tick in-game, then mark it taken here to begin the next six hour tick reminder.";
   els.elderTickResetBtn.textContent = "Mark Tick Taken";
   els.elderTickResetBtn.disabled = false;
   els.elderTickForceResetBtn.disabled = false;
@@ -6111,7 +6152,7 @@ function handleElderTickAccountAction(event) {
   };
   saveState();
   renderElderTickAccountList();
-  showToast(`${account.accountName} elder tick timer reset`);
+  showToast(`${account.accountName} six hour tick timer reset`);
 }
 
 function renderSyncSettings() {
@@ -6843,6 +6884,36 @@ async function unshareClanMapPin(pin) {
     showToast(`${pin.label} removed from clan sharing`);
   } catch (error) {
     showToast(clanFriendlyError(error));
+  }
+}
+
+function handleEmptyStateAction(event) {
+  const button = event.target.closest?.("[data-empty-action]");
+  if (!button) return;
+  const action = button.dataset.emptyAction;
+
+  if (action === "add-account") {
+    openAccountDialog("", { username: button.dataset.emptyValue || "" });
+    return;
+  }
+  if (action === "add-dragon") {
+    openDragonDialog();
+    return;
+  }
+  if (action === "add-skin") {
+    openSkinDialog();
+    return;
+  }
+  if (action === "add-upstat") {
+    openUpstatDialog();
+    return;
+  }
+  if (action === "add-map-pin") {
+    startMapPinPlacement();
+    return;
+  }
+  if (action === "go-breeding") {
+    setBreedingView("planner", { updateHash: true });
   }
 }
 

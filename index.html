@@ -4,18 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dragon Tracker</title>
-  <link rel="stylesheet" href="./styles.css?v=20260819-stardust">
+  <link rel="stylesheet" href="./styles.css?v=20260911-black-orange">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="title-block">
+        <p class="eyebrow">Day of Dragons / local tracker</p>
         <h1>Dragon Tracker</h1>
+        <p class="title-subtitle">Track dragons, accounts, skins, and breeding locally. No login required.</p>
       </div>
       <div class="global-search-wrap">
         <div class="field top-search-field">
-          <label for="globalSearch">Find</label>
-          <input id="globalSearch" type="search" autocomplete="off" placeholder="Dragon, player, skin, map, clan">
+          <label for="globalSearch">Search everything</label>
+          <input id="globalSearch" type="search" autocomplete="off" placeholder="Dragons, players, skins, map pins">
         </div>
         <div class="global-search-results" id="globalSearchResults" hidden></div>
       </div>
@@ -55,14 +57,14 @@
     </header>
 
     <nav class="tabs" aria-label="Tracker sections">
-      <button class="tab is-active" type="button" data-tab="home">Home</button>
-      <button class="tab" type="button" data-tab="dragons">Dragons</button>
-      <button class="tab" type="button" data-tab="players">Players</button>
-      <button class="tab" type="button" data-tab="breeding">Breeding</button>
-      <button class="tab" type="button" data-tab="skins">Skins</button>
-      <button class="tab" type="button" data-tab="map">Map</button>
-      <button class="tab" type="button" data-tab="clans">Clans</button>
-      <button class="tab" type="button" data-tab="settings">Settings</button>
+      <button class="tab is-active" type="button" data-tab="home"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></svg>Home</button>
+      <button class="tab" type="button" data-tab="dragons"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15c1.4-4.2 4.1-7 8-7 3.2 0 5.6 1.5 7 4"/><path d="M4 15c1.8 3.2 4.2 5 7.2 5 2.7 0 4.7-1.1 5.8-3"/><path d="M8 11 5 8l4 .2M16 12l4-1-2.8 3"/></svg>Dragons</button>
+      <button class="tab" type="button" data-tab="players"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c.6-3.3 2.6-5 6-5s5.4 1.7 6 5"/><path d="M15 5.2a3 3 0 0 1 0 5.6M17 15c2.3.5 3.6 2.1 4 5"/></svg>Players</button>
+      <button class="tab" type="button" data-tab="breeding"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.4-7-10.2A3.8 3.8 0 0 1 12 8a3.8 3.8 0 0 1 7 2.8C19 16.6 12 21 12 21Z"/><path d="M8.5 4.5 10 2M15.5 4.5 14 2"/></svg>Breeding</button>
+      <button class="tab" type="button" data-tab="skins"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.8-5.4 2.8 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></svg>Skins</button>
+      <button class="tab" type="button" data-tab="map"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg>Map</button>
+      <button class="tab" type="button" data-tab="clans"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c.6-3.3 2.6-5 6-5 3.2 0 5.3 1.7 6 5"/><path d="M14.5 15.2c2.8.2 4.7 1.8 5.3 4.8"/></svg>Clans</button>
+      <button class="tab" type="button" data-tab="settings"><svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8"/></svg>Settings</button>
     </nav>
 
     <!-- Primary page panels; JavaScript switches them with the navigation tabs. -->
@@ -96,16 +98,27 @@
         <div class="account-list home-account-list" id="homeAccountList"></div>
         <section class="home-daily-panel elder-tick-panel" aria-labelledby="homeElderTickHeading">
           <div class="card-head">
-            <div class="card-title"><h2 id="homeElderTickHeading">Elder Tick</h2><p class="card-subtitle">Six-hour local reminder</p></div>
+            <div class="card-title"><h2 id="homeElderTickHeading">Six Hour Tick Reminder</h2></div>
             <span class="pill" id="elderTickState">Local Timer</span>
           </div>
           <div class="home-daily-content">
-            <div>
-              <p class="elder-tick-time" id="elderTickCountdown">Ready to start</p>
-              <p class="form-note" id="elderTickDescription">Start or reset this six-hour reminder when you log into the account in-game. It stays local and does not need Steam.</p>
-              <div class="button-row">
-                <button class="primary-button" type="button" id="elderTickResetBtn" disabled>Mark Tick Taken</button>
-                <button class="tool-button" type="button" id="elderTickForceResetBtn" disabled>Reset 6-Hour Timer</button>
+            <div class="elder-tick-main">
+              <div class="elder-tick-ring" id="elderTickRing" role="progressbar" aria-label="Six hour tick reminder" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Ready to start" data-state="idle">
+                <svg class="elder-tick-ring-svg" viewBox="0 0 220 220" aria-hidden="true">
+                  <circle class="elder-tick-ring-track" cx="110" cy="110" r="94" pathLength="100"></circle>
+                  <circle class="elder-tick-ring-fill" id="elderTickRingFill" cx="110" cy="110" r="94" pathLength="100"></circle>
+                </svg>
+                <div class="elder-tick-ring-center">
+                  <span>Time remaining</span>
+                  <strong class="elder-tick-time" id="elderTickCountdown">Ready to start</strong>
+                </div>
+              </div>
+              <div class="elder-tick-details">
+                <p class="form-note" id="elderTickDescription">Start or reset this six hour tick reminder when you log into the account in-game. It stays local and does not need Steam.</p>
+                <div class="button-row">
+                  <button class="primary-button" type="button" id="elderTickResetBtn" disabled>Mark Tick Taken</button>
+                  <button class="tool-button" type="button" id="elderTickForceResetBtn" disabled>Reset 6-Hour Timer</button>
+                </div>
               </div>
             </div>
             <div class="elder-account-list" id="elderTickAccountList"></div>
