@@ -3,7 +3,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.25";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.26";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -83,6 +83,12 @@ const DLC_LEGACY_ALIASES = new Map([
   ["emotePack", ["flameStalkerEmotePack", "shadowScaleEmotePack", "infernoRavagerEmotePack", "broodWatcherEmotePack"]]
 ]);
 const SKIN_TYPES = ["Unknown", "Common", "Uncommon", "Rare", "Exclusive", "Exotic", "Mutation", "Pearl Overlay", "Golden Hoard Overlay", "Event", "DLC", "Custom"];
+const SKIN_NAME_ALIASES = new Map([
+  ["black", "Melanistic"],
+  ["white", "Leucistic"],
+  ["grey", "Leumelan"],
+  ["gray", "Leumelan"]
+]);
 const GRADES = ["Unknown", "F", "E", "D-", "D", "D+", "C-", "C", "C+", "B-", "B", "B+", "A-", "A", "A+", "A++"];
 const BLOODLINE_GRADES = ["Unknown", "F", "E", "D", "C", "B", "A"];
 const GRADE_ALIASES = new Map([
@@ -153,6 +159,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Standardized Black, White, and Grey skins as Melanistic, Leucistic, and Leumelan, and kept one Feathered Zygovo Snow Slayer preview.",
   "Added Feathered Zygovo and Mimikor skin turntables, plus Midnight for Shadow Scale, including both Snow Slayer views.",
   "Added Celestial as a Common Shadow Scale spawn skin in the web and desktop skin selectors.",
   "Added Stardust as an Uncommon Shadow Scale spawn skin in the web and desktop skin selectors.",
@@ -313,14 +320,14 @@ const SKIN_TURNTABLES = new Map([
   ["Singe Crest::unnamed concept c1", "singe-crest/concept-c1.mp4"],
   ["Singe Crest::unnamed concept c2", "singe-crest/concept-c2.mp4"],
   ["Singe Crest::unnamed concept c3", "singe-crest/concept-c3.mp4"],
-  ["Feathered Zygovo::black", "feathered-zygovo/black.mp4"],
+  ["Feathered Zygovo::melanistic", "feathered-zygovo/black.mp4"],
   ["Feathered Zygovo::content creator", "feathered-zygovo/content-creator.mp4"],
   ["Feathered Zygovo::crimson", "feathered-zygovo/crimson.mp4"],
   ["Feathered Zygovo::golden", "feathered-zygovo/golden.mp4"],
   ["Feathered Zygovo::sky jay", "feathered-zygovo/sky-jay.mp4"],
-  ["Feathered Zygovo::snow slayer", ["feathered-zygovo/snow-slayer.mp4", "feathered-zygovo/snow-slayer-alt.mp4"]],
+  ["Feathered Zygovo::snow slayer", "feathered-zygovo/snow-slayer.mp4"],
   ["Feathered Zygovo::waxwing", "feathered-zygovo/waxwing.mp4"],
-  ["Feathered Zygovo::white", "feathered-zygovo/white.mp4"],
+  ["Feathered Zygovo::leucistic", "feathered-zygovo/white.mp4"],
   ["Mimikor::crimson", "mimikor/crimson.mp4"],
   ["Mimikor::golden", "mimikor/golden.mp4"],
   ["Mimikor::red grey fox", "mimikor/red-grey-fox.mp4"],
@@ -464,8 +471,6 @@ const SPECIES_SKIN_GROUPS = [
   {
     species: "Feathered Zygovo",
     skins: [
-      ["Black", "Unknown", "Skin turntable; classification pending"],
-      ["White", "Unknown", "Skin turntable; classification pending"],
       ["Sky Jay", "Unknown", "Skin turntable; classification pending"],
       ["Waxwing", "Unknown", "Skin turntable; classification pending"],
       ["Content Creator", "Pearl Overlay", "Event reward"],
@@ -1405,7 +1410,12 @@ function olderTimestamp(a, b) {
 
 function mergeSkinCatalog(savedSkins, starterSkins) {
   const byKey = new Map();
-  const savedNormalized = savedSkins.map(normalizeSkin);
+  const savedKeys = new Set();
+  // Merge renamed entries first so an existing shared entry keeps its ID.
+  const savedNormalized = savedSkins
+    .map((skin) => ({ skin, renamed: canonicalSkinLabel(skin.name) !== text(skin.name) }))
+    .sort((a, b) => Number(b.renamed) - Number(a.renamed))
+    .map(({ skin }) => normalizeSkin(skin));
   const ownedByName = new Set(savedNormalized
     .filter((skin) => skin.owned && ALL_SPECIES_SKIN_NAMES.has(skin.name))
     .map((skin) => canonicalSkinName(skin.name)));
@@ -1419,6 +1429,8 @@ function mergeSkinCatalog(savedSkins, starterSkins) {
     if (isDeprecatedStarterSkin(saved)) return;
 
     const key = skinKey(saved);
+    const duplicateSaved = savedKeys.has(key);
+    savedKeys.add(key);
     const starter = byKey.get(key);
     if (!starter) {
       byKey.set(key, saved);
@@ -1433,7 +1445,8 @@ function mergeSkinCatalog(savedSkins, starterSkins) {
       recipeA: saved.recipeA || starter.recipeA,
       recipeB: saved.recipeB || starter.recipeB,
       owned: saved.owned || starter.owned,
-      wishlist: Boolean(saved.wishlist || starter.wishlist)
+      wishlist: Boolean(saved.wishlist || starter.wishlist),
+      notes: duplicateSaved ? mergeTextBlocks(starter.notes, saved.notes) : saved.notes
     };
 
     if (shouldUseStarterMutationDefinition(starter)) {
@@ -1524,9 +1537,9 @@ function normalizeDragon(dragon) {
     status,
     nestRole,
     server: text(dragon.server),
-    skin: text(dragon.skin),
+    skin: canonicalSkinLabel(dragon.skin),
     skinType: validOption(dragon.skinType, SKIN_TYPES, "Unknown"),
-    recessiveSkin: text(dragon.recessiveSkin),
+    recessiveSkin: canonicalSkinLabel(dragon.recessiveSkin),
     motherId: text(dragon.motherId),
     fatherId: text(dragon.fatherId),
     motherName: text(dragon.motherName || dragon.manualMother || dragon.mother),
@@ -1556,16 +1569,18 @@ function normalizeDragon(dragon) {
 
 function normalizeSkin(skin) {
   const now = new Date().toISOString();
+  const name = canonicalSkinLabel(skin.name) || "Unnamed Skin";
+  const renamed = name !== text(skin.name) && text(skin.name) !== "";
   return {
     id: skin.id || uid("skin"),
     createdAt: skin.createdAt || now,
     updatedAt: skin.updatedAt || now,
-    name: text(skin.name) || "Unnamed Skin",
-    type: validOption(skin.type, SKIN_TYPES, "Unknown"),
-    species: canonicalSpeciesName(skin.species) || "All",
+    name,
+    type: renamed ? "Exotic" : validOption(skin.type, SKIN_TYPES, "Unknown"),
+    species: renamed ? "All" : canonicalSpeciesName(skin.species) || "All",
     source: text(skin.source),
-    recipeA: text(skin.recipeA),
-    recipeB: text(skin.recipeB),
+    recipeA: canonicalSkinLabel(skin.recipeA),
+    recipeB: canonicalSkinLabel(skin.recipeB),
     owned: Boolean(skin.owned),
     wishlist: Boolean(skin.wishlist),
     notes: text(skin.notes)
@@ -1580,7 +1595,7 @@ function normalizeUpstat(upstat) {
     createdAt: upstat.createdAt || now,
     updatedAt: upstat.updatedAt || now,
     species: canonicalSpeciesName(upstat.species),
-    skin: text(upstat.skin) || "Unknown Skin",
+    skin: canonicalSkinLabel(upstat.skin) || "Unknown Skin",
     status: complete ? "18A+ Complete" : normalizeUpstatStatus(upstat.status),
     aPlusCount: complete ? 18 : clampInteger(upstat.aPlusCount ?? upstat.currentAPlusCount, 0, 18),
     accountId: text(upstat.accountId),
@@ -1598,7 +1613,7 @@ function normalizeLineageRecord(record) {
     name: text(record.name) || "Unknown Parent",
     sex: validOption(record.sex, SEXES, "Unknown"),
     species: canonicalSpeciesName(record.species),
-    skin: text(record.skin),
+    skin: canonicalSkinLabel(record.skin),
     bloodline: normalizeBloodlineGrade(record.bloodline),
     motherName: text(record.motherName || record.mother),
     fatherName: text(record.fatherName || record.father),
@@ -3619,15 +3634,10 @@ function turntableForSkin(skin) {
   const speciesNames = requestedSpecies === "All"
     ? DEFAULT_SPECIES.map((species) => species.name)
     : [requestedSpecies];
-  const variants = speciesNames.flatMap((species) => {
+  const variants = speciesNames.map((species) => {
     const file = SKIN_TURNTABLES.get(`${species}::${skinName}`);
-    const files = Array.isArray(file) ? file : file ? [file] : [];
-    return files.map((filename, index) => ({
-      species,
-      label: files.length > 1 ? `${species} · View ${index + 1}` : species,
-      src: `./assets/skins/${filename}`
-    }));
-  });
+    return file ? { species, src: `./assets/skins/${file}` } : null;
+  }).filter(Boolean);
 
   if (!variants.length) return null;
   return { ...variants[0], variants };
@@ -3640,7 +3650,7 @@ function renderSkinTurntable(turntable, skin) {
     <label class="skin-turntable-variant">
       <span class="visually-hidden">Preview species</span>
       <select class="skin-turntable-picker" aria-label="Preview species for ${escapeAttr(skin.name)}">
-        ${turntable.variants.map((variant) => `<option value="${escapeAttr(variant.src)}"${variant.src === turntable.src ? " selected" : ""}>${escapeHtml(variant.label)}</option>`).join("")}
+        ${turntable.variants.map((variant) => `<option value="${escapeAttr(variant.src)}"${variant.src === turntable.src ? " selected" : ""}>${escapeHtml(variant.species)}</option>`).join("")}
       </select>
     </label>
   ` : "";
@@ -8894,8 +8904,13 @@ function canonicalSpeciesName(value) {
   return SPECIES_ALIASES.get(clean.toLowerCase()) || clean;
 }
 
+function canonicalSkinLabel(value) {
+  const clean = text(value);
+  return SKIN_NAME_ALIASES.get(clean.toLowerCase()) || clean;
+}
+
 function canonicalSkinName(value) {
-  return text(value).toLowerCase().replace(/\s+/g, " ");
+  return canonicalSkinLabel(value).toLowerCase().replace(/\s+/g, " ");
 }
 
 function splitTags(value) {

@@ -23,29 +23,20 @@ test("Celestial is available as a Common Shadow Scale skin with a turntable", ()
 function loadSkinCatalog() {
   const runtimeMarker = source.indexOf("// Runtime state");
   assert.ok(runtimeMarker > 0, "catalog initialization precedes runtime state");
-  const functions = [
-    "buildStarterSkins", "starterSkin", "dedupeSkins", "skinKey", "text",
-    "canonicalSpeciesName", "canonicalSkinName", "normalizeSkin", "validOption",
-    "uid", "mergeSkinCatalog", "isDeprecatedStarterSkin", "shouldUseStarterSkinSource",
-    "isOldGeneratedSkinSource", "shouldUseStarterMutationDefinition", "sortText",
-    "turntableForSkin", "renderSkinTurntable", "escapeHtml", "escapeAttr"
-  ].map((name) => {
-    const declaration = source.match(new RegExp(`^function ${name}\\([^]*?^\\}`, "m"));
-    assert.ok(declaration, `${name} is available`);
-    return declaration[0];
-  }).join("\n");
+  // Loading declarations also includes dependencies of record normalizers,
+  // while leaving all startup calls and event binding outside the sandbox.
+  const functions = Array.from(source.matchAll(/^function \w+\([^]*?^\}/gm), (match) => match[0]).join("\n");
   return vm.runInNewContext(`${source.slice(0, runtimeMarker)}\n${functions}\n({
-    STARTER_SKINS, SKIN_TURNTABLES, mergeSkinCatalog, turntableForSkin, renderSkinTurntable
+    STARTER_SKINS, SKIN_TURNTABLES, mergeSkinCatalog, turntableForSkin, renderSkinTurntable,
+    normalizeSkin, normalizeDragon, normalizeUpstat, normalizeLineageRecord, canonicalSkinName
   })`, { URLSearchParams, window: { location: { search: "" } } });
 }
 
 const addedPreviews = [
-  ["Feathered Zygovo", "Black", "Unknown", ["feathered-zygovo/black.mp4"]],
-  ["Feathered Zygovo", "White", "Unknown", ["feathered-zygovo/white.mp4"]],
   ["Feathered Zygovo", "Waxwing", "Unknown", ["feathered-zygovo/waxwing.mp4"]],
   ["Feathered Zygovo", "Sky Jay", "Unknown", ["feathered-zygovo/sky-jay.mp4"]],
   ["Feathered Zygovo", "Content Creator", "Pearl Overlay", ["feathered-zygovo/content-creator.mp4"]],
-  ["Feathered Zygovo", "Snow Slayer", "Pearl Overlay", ["feathered-zygovo/snow-slayer.mp4", "feathered-zygovo/snow-slayer-alt.mp4"]],
+  ["Feathered Zygovo", "Snow Slayer", "Pearl Overlay", ["feathered-zygovo/snow-slayer.mp4"]],
   ["Mimikor", "Red Grey Fox", "Unknown", ["mimikor/red-grey-fox.mp4"]],
   ["Mimikor", "Snow Leopard", "Unknown", ["mimikor/snow-leopard.mp4"]],
   ["Mimikor", "Tasmanian Tiger", "Unknown", ["mimikor/tasmanian-tiger.mp4"]],
@@ -54,7 +45,7 @@ const addedPreviews = [
   ["Shadow Scale", "Midnight", "Unknown", ["shadow-scale/midnight.mp4"]]
 ];
 
-test("downloaded skins are selectable catalog entries with all 17 local preview files", () => {
+test("downloaded skins are selectable catalog entries with all 16 retained local preview files", () => {
   const catalog = loadSkinCatalog();
   const previewFiles = [];
   for (const [species, name, type, files] of addedPreviews) {
@@ -75,7 +66,14 @@ test("downloaded skins are selectable catalog entries with all 17 local preview 
       previewFiles.push(file);
     }
   }
-  assert.equal(new Set(previewFiles).size, 17, "every supplied video has a distinct local path");
+  for (const [name, file] of [["Melanistic", "black.mp4"], ["Leucistic", "white.mp4"]]) {
+    const preview = catalog.turntableForSkin({ species: "Feathered Zygovo", name });
+    const relativePath = `feathered-zygovo/${file}`;
+    assert.equal(preview.src, `./assets/skins/${relativePath}`);
+    previewFiles.push(relativePath);
+  }
+  assert.equal(catalog.STARTER_SKINS.filter((skin) => skin.species === "Feathered Zygovo").length, 4);
+  assert.equal(new Set(previewFiles).size, 16, "every retained video has a distinct local path");
   for (const file of previewFiles) {
     const info = fs.statSync(path.join(__dirname, "..", "assets", "skins", file));
     assert.ok(info.isFile() && info.size > 0, `${file} is packaged as a nonempty file`);
@@ -96,18 +94,16 @@ test("shared Crimson and Golden skins expose both new species without duplicate 
   assert.equal(catalog.turntableForSkin({ species: "Mimikor", name: "No preview recorded" }), null);
 });
 
-test("Snow Slayer retains two separately selectable Feathered Zygovo views", () => {
+test("Snow Slayer has one Feathered Zygovo view without the duplicate preview", () => {
   const catalog = loadSkinCatalog();
   const skin = catalog.STARTER_SKINS.find((entry) => entry.species === "Feathered Zygovo" && entry.name === "Snow Slayer");
   const preview = catalog.turntableForSkin(skin);
-  assert.deepEqual(Array.from(preview.variants, (variant) => variant.label), [
-    "Feathered Zygovo · View 1", "Feathered Zygovo · View 2"
-  ]);
+  assert.equal(preview.variants.length, 1);
   assert.equal(preview.src, "./assets/skins/feathered-zygovo/snow-slayer.mp4");
   const markup = catalog.renderSkinTurntable(preview, skin);
-  assert.equal((markup.match(/<option /g) || []).length, 2);
-  assert.match(markup, /value="\.\/assets\/skins\/feathered-zygovo\/snow-slayer\.mp4" selected>Feathered Zygovo · View 1<\/option>/);
-  assert.match(markup, /value="\.\/assets\/skins\/feathered-zygovo\/snow-slayer-alt\.mp4">Feathered Zygovo · View 2<\/option>/);
+  assert.equal((markup.match(/<option /g) || []).length, 0);
+  assert.match(markup, /<video src="\.\/assets\/skins\/feathered-zygovo\/snow-slayer\.mp4"/);
+  assert.ok(!fs.existsSync(path.join(__dirname, "..", "assets", "skins", "feathered-zygovo", "snow-slayer-alt.mp4")));
 });
 
 test("catalog upgrade adds downloaded skins without losing existing ownership, wishlist, or custom notes", () => {
@@ -158,7 +154,91 @@ test("species-specific overlay records retain ownership without sharing it with 
     }
     assert.equal(merged.find((skin) => skin.id === "mimikor-snow-slayer").owned, false, "Zygovo ownership does not grant ownership to another species");
     const preview = catalog.turntableForSkin(merged.find((skin) => skin.id === "zygovo-snow-slayer"));
-    assert.equal(preview.variants.length, 2, "saved overlay retains both downloaded previews");
+    assert.equal(preview.variants.length, 1, "saved overlay uses the retained preview");
     merged = catalog.mergeSkinCatalog(merged, catalog.STARTER_SKINS);
+  }
+});
+
+test("color aliases resolve to shared skin names without changing compound names or inventing a grey preview", () => {
+  const catalog = loadSkinCatalog();
+  for (const [alias, expected] of [["bLaCk", "Melanistic"], [" WHITE ", "Leucistic"], ["Grey", "Leumelan"], ["gray", "Leumelan"]]) {
+    const skin = catalog.normalizeSkin({ species: "Feathered Zygovo", name: alias, type: "Unknown" });
+    assert.equal(skin.name, expected);
+    assert.equal(skin.species, "All");
+    assert.equal(skin.type, "Exotic");
+    assert.equal(catalog.canonicalSkinName(alias), expected.toLowerCase());
+  }
+  const fox = catalog.normalizeSkin({ species: "Mimikor", name: "Red Grey Fox", type: "Unknown" });
+  assert.equal(fox.name, "Red Grey Fox");
+  assert.equal(fox.species, "Mimikor");
+  assert.equal(fox.type, "Unknown");
+  assert.equal(catalog.turntableForSkin({ species: "Feathered Zygovo", name: "Leumelan" }), null);
+  assert.ok(catalog.STARTER_SKINS.some((skin) => skin.species === "All" && skin.name === "Leumelan"));
+  assert.ok(!catalog.STARTER_SKINS.some((skin) => ["Black", "White", "Grey", "Gray"].includes(skin.name)));
+});
+
+test("saved dragon, recessive, upstat, and lineage skin fields use the corrected names", () => {
+  const catalog = loadSkinCatalog();
+  const original = { id: "legacy-dragon", species: "Feathered Zygovo", skin: "Black", recessiveSkin: "White", status: "Grown", notes: "Keep this dragon" };
+  const dragon = catalog.normalizeDragon(original);
+  assert.equal(dragon.id, original.id);
+  assert.equal(dragon.skin, "Melanistic");
+  assert.equal(dragon.recessiveSkin, "Leucistic");
+  assert.equal(dragon.notes, original.notes);
+  assert.equal(original.skin, "Black", "normalization does not mutate the saved input");
+  assert.equal(original.recessiveSkin, "White");
+  assert.equal(catalog.normalizeDragon({ species: "Feathered Zygovo", skin: "GREY", recessiveSkin: "gray" }).recessiveSkin, "Leumelan");
+  assert.equal(catalog.normalizeUpstat({ id: "legacy-upstat", species: "Feathered Zygovo", skin: "Black" }).skin, "Melanistic");
+  assert.equal(catalog.normalizeLineageRecord({ id: "legacy-parent", species: "Feathered Zygovo", skin: "White" }).skin, "Leucistic");
+});
+
+test("legacy Black and White catalog records retain their data when no canonical saved record exists", () => {
+  const catalog = loadSkinCatalog();
+  const saved = [
+    { id: "saved-black", species: "Feathered Zygovo", name: "Black", type: "Unknown", owned: true, wishlist: true, notes: "My black acquisition note" },
+    { id: "saved-white", species: "Feathered Zygovo", name: "White", type: "Unknown", owned: false, wishlist: true, notes: "My white wishlist note" }
+  ];
+  const before = JSON.stringify(saved);
+  let merged = catalog.mergeSkinCatalog(saved, catalog.STARTER_SKINS);
+  for (let load = 0; load < 2; load += 1) {
+    for (const [index, name] of ["Melanistic", "Leucistic"].entries()) {
+      const record = merged.find((skin) => skin.species === "All" && skin.name === name);
+      assert.ok(record);
+      for (const field of ["id", "owned", "wishlist", "notes"]) assert.equal(record[field], saved[index][field]);
+      assert.equal(record.type, "Exotic");
+    }
+    assert.ok(!merged.some((skin) => ["Black", "White"].includes(skin.name)));
+    merged = catalog.mergeSkinCatalog(merged, catalog.STARTER_SKINS);
+  }
+  assert.equal(JSON.stringify(saved), before);
+});
+
+test("legacy aliases merge with existing shared records without losing either record's notes or flags", () => {
+  const catalog = loadSkinCatalog();
+  const records = [
+    { id: "canonical-melanistic", species: "All", name: "Melanistic", type: "Exotic", owned: false, wishlist: true, notes: "Existing canonical note" },
+    { id: "legacy-black", species: "Feathered Zygovo", name: "Black", type: "Unknown", owned: true, wishlist: false, notes: "Legacy black note" },
+    { id: "canonical-leucistic", species: "All", name: "Leucistic", type: "Exotic", owned: true, wishlist: false, notes: "Existing white note" },
+    { id: "legacy-white", species: "Feathered Zygovo", name: "White", type: "Unknown", owned: false, wishlist: true, notes: "Legacy white note" }
+  ];
+  for (const saved of [records, [...records].reverse()]) {
+    const first = catalog.mergeSkinCatalog(saved, catalog.STARTER_SKINS);
+    const second = catalog.mergeSkinCatalog(first, catalog.STARTER_SKINS);
+    for (const [name, id, expectedNotes] of [
+      ["Melanistic", "canonical-melanistic", ["Existing canonical note", "Legacy black note"]],
+      ["Leucistic", "canonical-leucistic", ["Existing white note", "Legacy white note"]]
+    ]) {
+      const matches = first.filter((skin) => skin.species === "All" && skin.name === name);
+      assert.equal(matches.length, 1);
+      const skin = matches[0];
+      assert.equal(skin.id, id, "existing canonical record keeps its identity regardless of input order");
+      assert.equal(skin.owned, true);
+      assert.equal(skin.wishlist, true);
+      assert.deepEqual(skin.notes.split("\n").sort(), [...expectedNotes].sort());
+      const reloaded = second.find((entry) => entry.id === id);
+      assert.equal(reloaded.notes, skin.notes, "reloading does not duplicate combined notes");
+      assert.equal(reloaded.owned, true);
+      assert.equal(reloaded.wishlist, true);
+    }
   }
 });
