@@ -3,7 +3,7 @@ const STORAGE_KEY = "day-of-dragons-tracker.v1";
 const HISTORY_KEY = "day-of-dragons-tracker.undo.v1";
 const LAST_SEEN_VERSION_KEY = "dragon-tracker.last-seen-version.v1";
 const AUTO_SYNC_INTERVAL_MS = 30_000;
-const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.24";
+const APP_VERSION = new URLSearchParams(window.location.search).get("appVersion") || "1.3.25";
 const ELDER_TICK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_UNDO_HISTORY = 12;
 
@@ -153,6 +153,7 @@ const CLAN_LIBRARY_SOURCE_FILTERS = [
 const AUTO_IMPORTABLE_DISCORD_SUBMISSION_TYPES = new Set(["dragon", "map_pin", "upstat", "brood_pouch"]);
 const CLAN_SYNCED_DISCORD_DRAGON_TYPES = new Set(["dragon", "brood_pouch"]);
 const CHANGELOG_ITEMS = [
+  "Added Feathered Zygovo and Mimikor skin turntables, plus Midnight for Shadow Scale, including both Snow Slayer views.",
   "Added Celestial as a Common Shadow Scale spawn skin in the web and desktop skin selectors.",
   "Added Stardust as an Uncommon Shadow Scale spawn skin in the web and desktop skin selectors.",
   "Added precise map pin entry using the game's 807 N/S and 806 E/W coordinate bounds.",
@@ -294,6 +295,7 @@ const SKIN_TURNTABLES = new Map([
   ["Shadow Scale::leucistic", "shadow-scale/leucistic.mp4"],
   ["Shadow Scale::leumelan", "shadow-scale/leumelan.mp4"],
   ["Shadow Scale::melanistic", "shadow-scale/melanistic.mp4"],
+  ["Shadow Scale::midnight", "shadow-scale/midnight.mp4"],
   ["Shadow Scale::piebald", "shadow-scale/piebald.mp4"],
   ["Shadow Scale::stardust", "shadow-scale/stardust.mp4"],
   ["Shadow Scale::stellar nebula", "shadow-scale/stellar-nebula.mp4"],
@@ -310,7 +312,22 @@ const SKIN_TURNTABLES = new Map([
   ["Singe Crest::melanistic", "singe-crest/melanistic.mp4"],
   ["Singe Crest::unnamed concept c1", "singe-crest/concept-c1.mp4"],
   ["Singe Crest::unnamed concept c2", "singe-crest/concept-c2.mp4"],
-  ["Singe Crest::unnamed concept c3", "singe-crest/concept-c3.mp4"]
+  ["Singe Crest::unnamed concept c3", "singe-crest/concept-c3.mp4"],
+  ["Feathered Zygovo::black", "feathered-zygovo/black.mp4"],
+  ["Feathered Zygovo::content creator", "feathered-zygovo/content-creator.mp4"],
+  ["Feathered Zygovo::crimson", "feathered-zygovo/crimson.mp4"],
+  ["Feathered Zygovo::golden", "feathered-zygovo/golden.mp4"],
+  ["Feathered Zygovo::sky jay", "feathered-zygovo/sky-jay.mp4"],
+  ["Feathered Zygovo::snow slayer", ["feathered-zygovo/snow-slayer.mp4", "feathered-zygovo/snow-slayer-alt.mp4"]],
+  ["Feathered Zygovo::waxwing", "feathered-zygovo/waxwing.mp4"],
+  ["Feathered Zygovo::white", "feathered-zygovo/white.mp4"],
+  ["Mimikor::crimson", "mimikor/crimson.mp4"],
+  ["Mimikor::golden", "mimikor/golden.mp4"],
+  ["Mimikor::red grey fox", "mimikor/red-grey-fox.mp4"],
+  ["Mimikor::sand slayer", "mimikor/sand-slayer.mp4"],
+  ["Mimikor::snow leopard", "mimikor/snow-leopard.mp4"],
+  ["Mimikor::tasmanian tiger", "mimikor/tasmanian-tiger.mp4"],
+  ["Mimikor::trash panda", "mimikor/trash-panda.mp4"]
 ]);
 const SPECIES_ALIASES = new Map([
   ["shadow scale", "Shadow Scale"],
@@ -369,6 +386,7 @@ const SPECIES_SKIN_GROUPS = [
       ["Stardust", "Uncommon", "Spawnable"],
       ["Eclipse", "Rare", "Spawnable"],
       ["Twilight", "Rare", "Spawnable"],
+      ["Midnight", "Unknown", "Skin turntable; classification pending"],
       ["Stellar Nebula", "Exotic", "Shadow Scale Emote Pack spawnable"]
     ]
   },
@@ -427,7 +445,13 @@ const SPECIES_SKIN_GROUPS = [
   },
   {
     species: "Mimikor",
-    skins: []
+    skins: [
+      ["Red Grey Fox", "Unknown", "Skin turntable; classification pending"],
+      ["Snow Leopard", "Unknown", "Skin turntable; classification pending"],
+      ["Tasmanian Tiger", "Unknown", "Skin turntable; classification pending"],
+      ["Trash Panda", "Unknown", "Skin turntable; classification pending"],
+      ["Sand Slayer", "Pearl Overlay", "Boss drop"]
+    ]
   },
   {
     species: "Singe Crest",
@@ -439,7 +463,14 @@ const SPECIES_SKIN_GROUPS = [
   },
   {
     species: "Feathered Zygovo",
-    skins: []
+    skins: [
+      ["Black", "Unknown", "Skin turntable; classification pending"],
+      ["White", "Unknown", "Skin turntable; classification pending"],
+      ["Sky Jay", "Unknown", "Skin turntable; classification pending"],
+      ["Waxwing", "Unknown", "Skin turntable; classification pending"],
+      ["Content Creator", "Pearl Overlay", "Event reward"],
+      ["Snow Slayer", "Pearl Overlay", "Boss and Winter Quest drop"]
+    ]
   }
 ];
 
@@ -455,11 +486,6 @@ const ALL_SPECIES_SKINS = [
   ...SHARED_DISCORD_SKINS.filter(([, type]) => ["Exotic", "Mutation"].includes(type))
 ];
 const ALL_SPECIES_SKIN_NAMES = new Set(ALL_SPECIES_SKINS.map(([name]) => name));
-const SHARED_STARTER_SKIN_NAMES = new Set([
-  "Iconic",
-  "Brindle",
-  ...SHARED_DISCORD_SKINS.map(([name]) => name)
-]);
 const DEPRECATED_PLACEHOLDER_SKIN_KEYS = new Set([
   "all::random common",
   "all::rare spawn",
@@ -1381,7 +1407,7 @@ function mergeSkinCatalog(savedSkins, starterSkins) {
   const byKey = new Map();
   const savedNormalized = savedSkins.map(normalizeSkin);
   const ownedByName = new Set(savedNormalized
-    .filter((skin) => skin.owned && SHARED_STARTER_SKIN_NAMES.has(skin.name))
+    .filter((skin) => skin.owned && ALL_SPECIES_SKIN_NAMES.has(skin.name))
     .map((skin) => canonicalSkinName(skin.name)));
 
   starterSkins.map(normalizeSkin).forEach((skin) => {
@@ -1426,7 +1452,7 @@ function isDeprecatedStarterSkin(skin) {
   const species = canonicalSpeciesName(skin.species);
   const key = skinKey(skin);
   if (DEPRECATED_PLACEHOLDER_SKIN_KEYS.has(key)) return true;
-  return species !== "All" && SHARED_STARTER_SKIN_NAMES.has(skin.name);
+  return species !== "All" && ALL_SPECIES_SKIN_NAMES.has(skin.name);
 }
 
 function shouldUseStarterSkinSource(saved, starter) {
@@ -3593,10 +3619,15 @@ function turntableForSkin(skin) {
   const speciesNames = requestedSpecies === "All"
     ? DEFAULT_SPECIES.map((species) => species.name)
     : [requestedSpecies];
-  const variants = speciesNames.map((species) => {
+  const variants = speciesNames.flatMap((species) => {
     const file = SKIN_TURNTABLES.get(`${species}::${skinName}`);
-    return file ? { species, src: `./assets/skins/${file}` } : null;
-  }).filter(Boolean);
+    const files = Array.isArray(file) ? file : file ? [file] : [];
+    return files.map((filename, index) => ({
+      species,
+      label: files.length > 1 ? `${species} · View ${index + 1}` : species,
+      src: `./assets/skins/${filename}`
+    }));
+  });
 
   if (!variants.length) return null;
   return { ...variants[0], variants };
@@ -3609,7 +3640,7 @@ function renderSkinTurntable(turntable, skin) {
     <label class="skin-turntable-variant">
       <span class="visually-hidden">Preview species</span>
       <select class="skin-turntable-picker" aria-label="Preview species for ${escapeAttr(skin.name)}">
-        ${turntable.variants.map((variant) => `<option value="${escapeAttr(variant.src)}"${variant.src === turntable.src ? " selected" : ""}>${escapeHtml(variant.species)}</option>`).join("")}
+        ${turntable.variants.map((variant) => `<option value="${escapeAttr(variant.src)}"${variant.src === turntable.src ? " selected" : ""}>${escapeHtml(variant.label)}</option>`).join("")}
       </select>
     </label>
   ` : "";
